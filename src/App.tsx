@@ -219,6 +219,48 @@ function palm(points: Point[]) {
   const ids = [0,5,9,13,17];
   return ids.reduce((p, i) => ({ x: p.x + points[i].x / ids.length, y: p.y + points[i].y / ids.length }), { x: 0, y: 0 });
 }
+function drawEnergyTrail(
+  ctx: CanvasRenderingContext2D,
+  points: Array<{ x: number; y: number; at: number }>,
+  w: number,
+  h: number,
+  now: number,
+  color: string,
+) {
+  if (points.length < 2) return;
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  ctx.lineCap = 'round';
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1], b = points[i];
+    const age = Math.max(0, now - b.at);
+    const fade = Math.max(0, 1 - age / 520) * (i / points.length);
+    if (fade <= 0) continue;
+    ctx.beginPath();
+    ctx.moveTo(a.x * w, a.y * h);
+    ctx.quadraticCurveTo(
+      (a.x + b.x) * w * 0.5 + Math.sin(now * 0.012 + i) * 2,
+      (a.y + b.y) * h * 0.5 + Math.cos(now * 0.01 + i) * 2,
+      b.x * w, b.y * h,
+    );
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = fade * 0.72;
+    ctx.lineWidth = 1 + fade * 5;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 8 + fade * 17;
+    ctx.stroke();
+    if (i % 3 === 0) {
+      const px = b.x * w, py = b.y * h;
+      ctx.globalAlpha = fade * 0.8;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(px, py, 1 + fade * 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
 function drawLandmarks(ctx: CanvasRenderingContext2D, hands: Point[][], w: number, h: number) {
   ctx.save(); ctx.lineWidth = Math.max(1.5, w * 0.002); ctx.lineCap = 'round';
   for (const hand of hands) {
@@ -567,6 +609,7 @@ export default function App() {
   const [cameraState, setCameraState] = useState<'idle'|'loading'|'ready'|'camera-only'|'error'>('idle');
   const [error, setError] = useState('');
   const [activeJutsu, setActiveJutsu] = useState<Jutsu>('none');
+  const [chargeLevel, setChargeLevel] = useState(0);
   const [gestureLabel, setGestureLabel] = useState('Waiting for hands');
   const [handCount, setHandCount] = useState(0);
   const [showLandmarks, setShowLandmarks] = useState(true);
@@ -583,6 +626,13 @@ export default function App() {
   const comboCandidateAtRef = useRef(0);
   useEffect(() => { soundRef.current=soundEnabled; if(soundEnabled)try{const a=audioRef.current??new window.AudioContext();audioRef.current=a;void a.resume();}catch{/* optional */} }, [soundEnabled]);
   useEffect(() => { landmarksRef.current = showLandmarks; }, [showLandmarks]);
+  useEffect(() => {
+    if (activeJutsu === 'none') { setChargeLevel(0); return; }
+    const tick = () => setChargeLevel(Math.min(100, Math.round(Math.max(0, performance.now() - jutsuStartedAtRef.current) / 2600 * 100)));
+    tick();
+    const timer = window.setInterval(tick, 90);
+    return () => window.clearInterval(timer);
+  }, [activeJutsu]);
 
   const switchJutsu = useCallback((next: Jutsu) => {
     if(activeRef.current===next)return; activeRef.current=next;setActiveJutsu(next);
@@ -686,6 +736,7 @@ export default function App() {
       let lastVideoTime = -1, lastWrist: Point | null = null, move = {x:.2,y:-.05};
       let candidate: Jutsu = 'none', candidateAt = 0, noPoseAt = 0, fpsAt = performance.now(), frames = 0;
       let latest: HandLandmarkerResult | null = null;
+      const energyTrail: Array<{ x: number; y: number; at: number }> = [];
       const frame = () => {
         const v = videoRef.current, canvas = canvasRef.current, model = trackerRef.current;
         if (!v || !canvas || !model || v.readyState < 2) { rafRef.current = requestAnimationFrame(frame); return; }
@@ -812,6 +863,23 @@ export default function App() {
           const hands = smoothedLandmarksRef.current;
           if (landmarksRef.current) drawLandmarks(ctx,hands,w,h);
           const charge = Math.min(1, Math.max(0, (now - jutsuStartedAtRef.current) / 2600));
+          if (activeRef.current !== 'none' && hands.length) {
+            const focus = activeRef.current === 'lightning-burst' && hands.length > 1
+              ? { x: (palm(hands[0]).x + palm(hands[1]).x) / 2, y: (palm(hands[0]).y + palm(hands[1]).y) / 2 }
+              : palm(hands[0]);
+            const previous = energyTrail[energyTrail.length - 1];
+            if (!previous || Math.hypot(focus.x - previous.x, focus.y - previous.y) > 0.0025 || now - previous.at > 45) {
+              energyTrail.push({ ...focus, at: now });
+            }
+          }
+          while (energyTrail.length && now - energyTrail[0].at > 520) energyTrail.shift();
+          const trailColor = activeRef.current === 'fireball' ? 'rgba(255,150,48,.95)'
+            : activeRef.current === 'amaterasu' ? 'rgba(166,119,255,.95)'
+            : activeRef.current === 'clone' ? 'rgba(199,165,255,.92)'
+            : activeRef.current === 'chidori' || activeRef.current === 'lightning-burst' ? 'rgba(115,222,255,.98)'
+            : 'rgba(70,190,255,.95)';
+          if (activeRef.current !== 'none') drawEnergyTrail(ctx, energyTrail, w, h, now, trailColor);
+          else energyTrail.length = 0;
           if (activeRef.current === 'rasengan' && hands.length) drawRasengan(ctx,palm(hands[0]),w,h,now/1000,charge);
           if (activeRef.current === 'chidori' && hands.length) drawChidori(ctx,palm(hands[0]),move,w,h,now/1000,charge,hands[0]);
           if (activeRef.current === 'lightning-burst' && hands.length > 1) drawLightningBurst(ctx,{x:(palm(hands[0]).x+palm(hands[1]).x)/2,y:(palm(hands[0]).y+palm(hands[1]).y)/2},w,h,now/1000,charge);
@@ -944,6 +1012,11 @@ export default function App() {
           <div ref={stageRef} className={'camera-stage ' + (activeInfo ? 'effect-' + activeInfo.color : '')}>
             <div className="stage-grid" /><div className="stage-corner corner-tl" /><div className="stage-corner corner-tr" /><div className="stage-corner corner-bl" /><div className="stage-corner corner-br" />
             <div className="stage-topline"><span><Activity size={13} /> INPUT FEED</span><span>{cameraState === 'ready' ? (fps || '—') + ' FPS' : '1280 × 720 TARGET'}</span></div>
+            {activeJutsu !== 'none' && <div className="chakra-charge-hud" aria-live="polite">
+              <div className="charge-hud-top"><span><Zap size={12} /> CHAKRA OUTPUT</span><strong>{chargeLevel}%</strong></div>
+              <div className="charge-hud-track"><span style={{ width: chargeLevel + '%' }} /></div>
+              <small>{chargeLevel < 35 ? 'GATHERING ENERGY' : chargeLevel < 78 ? 'CHAKRA RESONANCE' : 'MAXIMUM OUTPUT'}</small>
+            </div>}
             <div className="video-wrap">
               <video ref={videoRef} className="camera-video" autoPlay playsInline muted aria-label="Mirrored webcam preview" />
               <canvas ref={canvasRef} className="effects-canvas" />
