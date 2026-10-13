@@ -533,8 +533,10 @@ export default function App() {
           }
           segmenterRef.current = loaded;
           const labels = loaded.getLabels();
-          const personLabel = labels.findIndex((label) => /person|foreground/i.test(label));
-          personMaskIndex = personLabel >= 0 ? personLabel : Math.max(0, labels.length - 1);
+          const personLabel = labels.findIndex((label) => /person|foreground|human/i.test(label));
+          const nonBackgroundLabel = labels.findIndex((label) => !/background/i.test(label));
+          // Some model builds label the background last; never assume the final mask is the person.
+          personMaskIndex = personLabel >= 0 ? personLabel : nonBackgroundLabel >= 0 ? nonBackgroundLabel : 0;
           setCloneStatus('ready');
         } catch {
           segmenterFailed = true;
