@@ -1172,6 +1172,24 @@ export default function App() {
             <button className={'secondary-button ' + (soundEnabled ? 'selected' : '')} onClick={() => { const next = !soundEnabled; setSoundEnabled(next); if (next) { try { const audio = audioRef.current ?? new window.AudioContext(); audioRef.current = audio; void audio.resume().then(() => playJutsuCue(audio, 'chidori')); } catch { /* optional audio */ } } }} title="Tap to turn on and hear a sample; tap again to turn off"><Zap size={16} /> Jutsu sound · test <span className="toggle-pill">{soundEnabled ? 'ON' : 'OFF'}</span></button>
             <button className="reset-button" onClick={() => { switchJutsu('none'); setGestureLabel('Effects cleared'); }} title="Clear current effect"><RotateCcw size={16} /></button>
           </div>
+          <div className="ninja-tool-controls" aria-label="Ninja tool selection">
+            <div className="tool-controls-heading"><span className="section-kicker">HAND-HELD TOOLS</span><small>Select a tool, then make a quick throwing motion</small></div>
+            <div className="tool-buttons">
+              <button className={'tool-button shuriken-tool ' + (activeTool === 'shuriken' ? 'is-selected' : '')} onClick={() => {
+                const next = activeTool === 'shuriken' ? 'none' : 'shuriken'; activeToolRef.current = next; setActiveTool(next);
+                setGestureLabel(next === 'shuriken' ? 'Shuriken ready · move your hand quickly to throw' : 'Tool cleared');
+              }} aria-pressed={activeTool === 'shuriken'}>
+                <span className="tool-symbol shuriken-symbol">✳</span><span><strong>Shuriken</strong><small>{activeTool === 'shuriken' ? 'READY · quick hand motion throws' : 'Select & throw'}</small></span>
+              </button>
+              <button className={'tool-button kunai-tool ' + (activeTool === 'kunai' ? 'is-selected' : '')} onClick={() => {
+                const next = activeTool === 'kunai' ? 'none' : 'kunai'; activeToolRef.current = next; setActiveTool(next);
+                setGestureLabel(next === 'kunai' ? 'Kunai ready · move your hand quickly to throw' : 'Tool cleared');
+              }} aria-pressed={activeTool === 'kunai'}>
+                <span className="tool-symbol kunai-symbol">➤</span><span><strong>Kunai</strong><small>{activeTool === 'kunai' ? 'READY · quick hand motion throws' : 'Select & throw'}</small></span>
+              </button>
+              <button className="tool-clear-button" onClick={() => { activeToolRef.current = 'none'; setActiveTool('none'); setGestureLabel('Tool cleared'); }}>Clear</button>
+            </div>
+          </div>
           {(cameraState === 'error' || cameraState === 'camera-only') && <p className="error-hint"><Info size={14} /> {cameraState === 'camera-only' ? 'The camera preview is being kept active. Hand tracking is unavailable until the model/runtime loads; use the GitHub Actions link to check that the newest build was deployed.' : 'Camera access requires browser permission and a secure context (localhost or HTTPS).'}</p>}
         </div>
         <aside className="right-column">
