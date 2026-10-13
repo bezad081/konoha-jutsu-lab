@@ -22,6 +22,12 @@ const INFO: Record<Exclude<Jutsu, 'none'>, { name: string; color: string }> = {
   clone: { name: 'Shadow Clone', color: 'violet' }
 };
 
+const COMBO_STEPS: Array<{ gesture: Gesture; title: string; instruction: string }> = [
+  { gesture: 'open', title: 'Open Palm', instruction: 'Show one open palm' },
+  { gesture: 'fist', title: 'Fist', instruction: 'Close one hand into a fist' },
+  { gesture: 'two-open', title: 'Double Palm', instruction: 'Show both palms together in frame' },
+];
+
 function dist(a: Point, b: Point) {
   return Math.hypot(a.x - b.x, a.y - b.y, (a.z - b.z) * 0.5);
 }
@@ -191,6 +197,13 @@ export default function App() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [fps, setFps] = useState(0);
   const [cloneStatus, setCloneStatus] = useState<'idle'|'loading'|'ready'|'error'>('idle');
+  const [comboMode, setComboMode] = useState(false);
+  const [comboProgress, setComboProgress] = useState(0);
+  const [comboFeedback, setComboFeedback] = useState('Start the camera, then practise the three-pose chain.');
+  const comboModeRef = useRef(false);
+  const comboProgressRef = useRef(0);
+  const comboCandidateRef = useRef<Gesture>('none');
+  const comboCandidateAtRef = useRef(0);
   useEffect(() => { soundRef.current = soundEnabled; }, [soundEnabled]);
   useEffect(() => { landmarksRef.current = showLandmarks; }, [showLandmarks]);
 
@@ -223,6 +236,7 @@ export default function App() {
     segmenterRef.current?.close(); segmenterRef.current = null;
     cloneSpriteRef.current = null; cloneSpriteReadyRef.current = false;
     setCloneStatus('idle');
+    comboModeRef.current = false; setComboMode(false); comboCandidateRef.current = 'none';
     if (videoRef.current) videoRef.current.srcObject = null;
     switchJutsu('none'); setCameraState('idle'); setHandCount(0); setGestureLabel('Camera stopped');
     const ctx = canvasRef.current?.getContext('2d');
@@ -312,7 +326,38 @@ export default function App() {
           lastVideoTime = v.currentTime; latest = model.detectForVideo(v, now);
           const detected = readJutsu(latest), count = latest.landmarks?.length ?? 0;
           setHandCount(count);
-          if (detected.jutsu !== 'none') {
+          if (comboModeRef.current) {
+            const expected = COMBO_STEPS[comboProgressRef.current];
+            candidate = 'none'; noPoseAt = 0;
+            if (expected && detected.gesture === expected.gesture) {
+              if (comboCandidateRef.current !== expected.gesture) {
+                comboCandidateRef.current = expected.gesture;
+                comboCandidateAtRef.current = now;
+                setComboFeedback(`Hold ${expected.title} steady…`);
+              } else if (now - comboCandidateAtRef.current >= 500) {
+                const nextProgress = comboProgressRef.current + 1;
+                comboProgressRef.current = nextProgress;
+                setComboProgress(nextProgress);
+                comboCandidateRef.current = 'none';
+                if (nextProgress >= COMBO_STEPS.length) {
+                  comboModeRef.current = false;
+                  setComboMode(false);
+                  setComboFeedback('Combo complete — Shadow Clone released!');
+                  setGestureLabel('Sequence complete · Shadow Clone released');
+                  switchJutsu('clone');
+                } else {
+                  setComboFeedback(`Step ${nextProgress} complete. Next: ${COMBO_STEPS[nextProgress].instruction}.`);
+                  setGestureLabel(`Combo practice · step ${nextProgress + 1} of ${COMBO_STEPS.length}`);
+                }
+              }
+            } else {
+              comboCandidateRef.current = 'none';
+              if (detected.gesture !== 'none' && expected) {
+                setComboFeedback(`Not quite — step ${comboProgressRef.current + 1}: ${expected.instruction}.`);
+              }
+              setGestureLabel(expected ? `Combo practice · step ${comboProgressRef.current + 1} of ${COMBO_STEPS.length}` : 'Finishing combo…');
+            }
+          } else if (detected.jutsu !== 'none') {
             noPoseAt = 0;
             if (candidate !== detected.jutsu) { candidate = detected.jutsu; candidateAt = now; }
             if (now - candidateAt > 420) {
@@ -413,6 +458,27 @@ export default function App() {
     }, 2200);
   };
   const activeInfo = activeJutsu === 'none' ? null : INFO[activeJutsu];
+  const toggleCombo = () => {
+    if (comboModeRef.current) {
+      comboModeRef.current = false;
+      setComboMode(false);
+      comboCandidateRef.current = 'none';
+      setComboFeedback('Combo cancelled. Start again whenever you are ready.');
+      return;
+    }
+    if (cameraState !== 'ready') {
+      setComboFeedback('Start the camera before beginning the live combo.');
+      return;
+    }
+    comboModeRef.current = true;
+    comboProgressRef.current = 0;
+    comboCandidateRef.current = 'none';
+    setComboProgress(0);
+    setComboMode(true);
+    switchJutsu('none');
+    setComboFeedback('Step 1: show one open palm and hold it for half a second.');
+    setGestureLabel('Combo practice · step 1 of 3');
+  };
 
   return (
     <main className="app-shell">
@@ -421,7 +487,7 @@ export default function App() {
           <div className="brand-mark"><Sparkles size={21} /></div>
           <div><strong>KONOHA <span>JUTSU LAB</span></strong><small>CAMERA-TRACKED CHAKRA PROTOTYPE</small></div>
         </a>
-        <div className="topbar-right"><div className="build-chip"><span className="status-dot" /> PROTOTYPE / 0.2</div>
+        <div className="topbar-right"><div className="build-chip"><span className="status-dot" /> PROTOTYPE / 0.3</div>
           <button className="icon-button" onClick={() => setHelpOpen((v) => !v)} aria-label="Toggle instructions"><CircleHelp size={18} /></button>
         </div>
       </header>
@@ -436,7 +502,7 @@ export default function App() {
           <div className="stat-item"><span className="stat-icon green"><ShieldCheck size={17} /></span><div><b>No upload</b><small>video stays local</small></div></div>
         </div>
       </section>
-      {helpOpen && <section className="help-panel"><Info size={18} /><div><strong>Quick start</strong><p>Start the camera and allow permission. Hold one open palm for Rasengan or a fist for Chidori for about half a second. Hold two open palms for Shadow Clone. The browser lazily downloads a selfie-segmentation model and uses it to render two tinted copies of your cutout. Video frames stay in the browser.</p></div><button className="text-button" onClick={() => setHelpOpen(false)}>Got it</button></section>}
+      {helpOpen && <section className="help-panel"><Info size={18} /><div><strong>Quick start</strong><p>Start the camera and allow permission. Hold one open palm for Rasengan or a fist for Chidori for about half a second. Hold two open palms for Shadow Clone. The browser lazily downloads a selfie-segmentation model and uses it to render two tinted copies of your cutout. Start the three-pose practice chain to test ordered gestures. Video frames stay in the browser.</p></div><button className="text-button" onClick={() => setHelpOpen(false)}>Got it</button></section>}
       <section className="workspace">
         <div className="camera-column">
           <div className="panel-heading"><div><span className="section-kicker">01 / LIVE INPUT</span><h2>Chakra viewport</h2></div>
@@ -480,6 +546,29 @@ export default function App() {
               <div className="jutsu-art clone-art"><span className="clone-figure figure-one" /><span className="clone-figure figure-two" /><span className="clone-figure figure-three" /><Sparkles className="clone-star" size={17} /></div>
               <div className="jutsu-copy"><div className="jutsu-overline">NINJUTSU / DECOY</div><h3>Shadow Clone</h3><p>Two open hands · segmented body echoes</p><div className="jutsu-foot"><span className="difficulty advanced">IN DEVELOPMENT</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">03</span>
             </button>
+          </div>
+          <div className="combo-card">
+            <div className="combo-header">
+              <div><span className="section-kicker">03 / SEAL SEQUENCE</span><h3>Three-pose combo</h3></div>
+              <span className="combo-count">{comboProgress}/{COMBO_STEPS.length}</span>
+            </div>
+            <div className="combo-steps">
+              {COMBO_STEPS.map((step, index) => (
+                <div className={'combo-step ' + (index < comboProgress ? 'complete' : index === comboProgress && comboMode ? 'current' : '')} key={step.title}>
+                  <span className="combo-step-index">{index < comboProgress ? <Check size={13} /> : String(index + 1).padStart(2, '0')}</span>
+                  <div><strong>{step.title}</strong><small>{step.instruction}</small></div>
+                </div>
+              ))}
+            </div>
+            <p className="combo-feedback">{comboFeedback}</p>
+            <div className="combo-actions">
+              <button className={comboMode ? 'secondary-button combo-cancel' : 'primary-button combo-start'} onClick={toggleCombo} disabled={cameraState === 'loading'}>
+                {comboMode ? <RotateCcw size={15} /> : <Hand size={15} />}
+                {comboMode ? 'Cancel practice' : comboProgress === COMBO_STEPS.length ? 'Practise again' : 'Start combo'}
+              </button>
+              <span>Hold each pose · 0.5 sec</span>
+            </div>
+            <p className="combo-note">Starter gesture chain for testing. Traditional Naruto hand seals are a later milestone.</p>
           </div>
           <div className="detection-card">
             <div className="detection-heading"><div><span className="section-kicker">LIVE READOUT</span><h3>Detection status</h3></div><Activity size={17} /></div>
