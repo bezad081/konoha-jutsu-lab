@@ -29,7 +29,7 @@ async function createHandTracker() {
       for (const modelAssetPath of MODEL_URLS) {
         for (const delegate of ['GPU', 'CPU'] as const) {
           try {
-            return await HandLandmarker.createFromOptions(vision, {
+            const tracker = await HandLandmarker.createFromOptions(vision, {
               baseOptions: { modelAssetPath, delegate },
               runningMode: 'VIDEO',
               numHands: 2,
@@ -37,6 +37,7 @@ async function createHandTracker() {
               minHandPresenceConfidence: 0.5,
               minTrackingConfidence: 0.5,
             });
+            return { tracker, vision };
           } catch (cause) {
             const reason = cause instanceof Error ? cause.message : String(cause);
             failures.push(`${delegate} / ${modelAssetPath}: ${reason}`);
@@ -306,7 +307,7 @@ export default function App() {
       await video.play();
       if (stageRef.current && video.videoWidth && video.videoHeight) stageRef.current.style.aspectRatio = video.videoWidth + ' / ' + video.videoHeight;
       setGestureLabel('Camera is on · loading hand tracking from available mirrors…');
-      const tracker = await createHandTracker();
+      const { tracker, vision } = await createHandTracker();
       trackerRef.current = tracker;
       setCameraState('ready');
       setGestureLabel('Show an open palm or make a fist');
