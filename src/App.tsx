@@ -8,6 +8,8 @@ import { FilesetResolver, HandLandmarker, ImageSegmenter, type HandLandmarkerRes
 type Jutsu = 'none' | 'rasengan' | 'chidori' | 'clone' | 'lightning-burst' | 'fireball' | 'amaterasu' | 'wind-scythe';
 type Gesture = 'none' | 'open' | 'fist' | 'two-open' | 'two-fist' | 'clone-seal' | 'ox-seal' | 'hare-seal' | 'monkey-seal';
 type Point = { x: number; y: number; z: number };
+type NinjaTool = 'none' | 'shuriken' | 'kunai';
+type ThrownTool = { kind: Exclude<NinjaTool, 'none'>; x: number; y: number; vx: number; vy: number; born: number; spin: number };
 
 // Prefer assets shipped with this GitHub Pages build so the browser does not need to reach a third-party model/CDN.
 const LOCAL_MODEL_URL = new URL('models/hand_landmarker.task', document.baseURI).href;
@@ -699,10 +701,13 @@ export default function App() {
   const castUntilRef = useRef(0);
   const cloneVisualUntilRef = useRef(0);
   const soundRef = useRef(false);
+  const activeToolRef = useRef<NinjaTool>('none');
+  const thrownToolsRef = useRef<ThrownTool[]>([]);
   const landmarksRef = useRef(true);
   const [cameraState, setCameraState] = useState<'idle'|'loading'|'ready'|'camera-only'|'error'>('idle');
   const [error, setError] = useState('');
   const [activeJutsu, setActiveJutsu] = useState<Jutsu>('none');
+  const [activeTool, setActiveTool] = useState<NinjaTool>('none');
   const [chargeLevel, setChargeLevel] = useState(0);
   const [gestureLabel, setGestureLabel] = useState('Waiting for hands');
   const [handCount, setHandCount] = useState(0);
@@ -827,7 +832,7 @@ export default function App() {
           segmenterLoading = false;
         }
       };
-      let lastVideoTime = -1, lastWrist: Point | null = null, move = {x:.2,y:-.05};
+      let lastVideoTime = -1, lastWrist: Point | null = null, lastWristAt = 0, lastToolThrowAt = 0, lastProjectileFrameAt = performance.now(), move = {x:.2,y:-.05};
       let candidate: Jutsu = 'none', candidateAt = 0, noPoseAt = 0, fpsAt = performance.now(), frames = 0;
       let latest: HandLandmarkerResult | null = null;
       const energyTrail: Array<{ x: number; y: number; at: number }> = [];
