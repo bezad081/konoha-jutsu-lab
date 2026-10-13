@@ -421,7 +421,7 @@ export default function App() {
           <div className="brand-mark"><Sparkles size={21} /></div>
           <div><strong>KONOHA <span>JUTSU LAB</span></strong><small>CAMERA-TRACKED CHAKRA PROTOTYPE</small></div>
         </a>
-        <div className="topbar-right"><div className="build-chip"><span className="status-dot" /> PROTOTYPE / 0.1</div>
+        <div className="topbar-right"><div className="build-chip"><span className="status-dot" /> PROTOTYPE / 0.2</div>
           <button className="icon-button" onClick={() => setHelpOpen((v) => !v)} aria-label="Toggle instructions"><CircleHelp size={18} /></button>
         </div>
       </header>
@@ -478,7 +478,7 @@ export default function App() {
             </button>
             <button className={'jutsu-card violet-card ' + (activeJutsu === 'clone' ? 'is-active' : '')} onClick={() => preview('clone')}>
               <div className="jutsu-art clone-art"><span className="clone-figure figure-one" /><span className="clone-figure figure-two" /><span className="clone-figure figure-three" /><Sparkles className="clone-star" size={17} /></div>
-              <div className="jutsu-copy"><div className="jutsu-overline">NINJUTSU / DECOY</div><h3>Shadow Clone</h3><p>Two open hands · afterimage preview</p><div className="jutsu-foot"><span className="difficulty advanced">IN DEVELOPMENT</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">03</span>
+              <div className="jutsu-copy"><div className="jutsu-overline">NINJUTSU / DECOY</div><h3>Shadow Clone</h3><p>Two open hands · segmented body echoes</p><div className="jutsu-foot"><span className="difficulty advanced">IN DEVELOPMENT</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">03</span>
             </button>
           </div>
           <div className="detection-card">
@@ -493,7 +493,7 @@ export default function App() {
         </aside>
       </section>
       <section className="bottom-grid">
-        <div className="bottom-card mission-card"><div className="bottom-icon"><Lightbulb size={18} /></div><div><div className="section-kicker">YOUR FIRST MISSION</div><h3>Land your first clean cast</h3><p>Move into frame, hold a single open palm steady, and watch the orb lock onto your hand. Try the preview cards first if your camera is not available.</p></div><ChevronDown size={18} className="muted-chevron" /></div>
+        <div className="bottom-card mission-card"><div className="bottom-icon"><Lightbulb size={18} /></div><div><div className="section-kicker">YOUR FIRST MISSION</div><h3>Land your first clean cast</h3><p>Move into frame and hold a single open palm steady to cast Rasengan. For Shadow Clone, keep both open hands visible while the browser loads body segmentation. Try the preview cards first if your camera is not available.</p></div><ChevronDown size={18} className="muted-chevron" /></div>
         <div className="bottom-card privacy-card"><div className="bottom-icon green-icon"><ShieldCheck size={18} /></div><div><div className="section-kicker">PRIVACY BY DESIGN</div><h3>Your video stays on your device</h3><p>Hand landmarks are processed in the browser. The model is fetched from a public CDN the first time; camera footage is not sent to a server by this prototype.</p></div><Check size={18} className="privacy-check" /></div>
       </section>
       <footer className="footer"><div><span className="footer-mark">木ノ葉</span><span> KONOHA JUTSU LAB</span><span className="footer-dim"> · Early access prototype</span></div><div><span className="footer-dim">Built with MediaPipe · React · Canvas</span><a href="https://github.com/FavorPan/naruto" target="_blank" rel="noreferrer">Inspired by open-source experiments <Expand size={12} /></a></div></footer>
