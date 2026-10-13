@@ -9,17 +9,36 @@ type Jutsu = 'none' | 'rasengan' | 'chidori' | 'clone';
 type Gesture = 'none' | 'open' | 'fist' | 'two-open';
 type Point = { x: number; y: number; z: number };
 
-// Prefer a GitHub Releases mirror because Google Storage can be unreachable in some regions.
+// Prefer assets shipped with this GitHub Pages build so the browser does not need to reach a third-party model/CDN.
+const LOCAL_MODEL_URL = new URL('models/hand_landmarker.task', document.baseURI).href;
+const LOCAL_WASM_URL = new URL('mediapipe/wasm/', document.baseURI).href;
 const MODEL_URLS = [
+  LOCAL_MODEL_URL,
+  'https://huggingface.co/Leo-TX/mediapipe-hand/resolve/main/hand_landmarker.task?download=true',
   'https://github.com/sanderdesnaijer/mediapipe-model-mirrors/releases/download/v1/hand_landmarker.task',
   'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
 ];
 const SEGMENTER_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter_landscape/float16/latest/selfie_segmenter_landscape.tflite';
-// Keep the MediaPipe runtime version pinned; try a second CDN if the first is blocked.
 const WASM_URLS = [
+  LOCAL_WASM_URL,
   'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm',
   'https://unpkg.com/@mediapipe/tasks-vision@0.10.22/wasm',
 ];
+
+function describeFailure(cause: unknown): string {
+  if (cause instanceof Error) return `${cause.name}: ${cause.message}`;
+  if (typeof Event !== 'undefined' && cause instanceof Event) {
+    const target = cause.target as { src?: unknown; responseURL?: unknown; status?: unknown } | null;
+    const resource = typeof target?.src === 'string'
+      ? target.src
+      : typeof target?.responseURL === 'string'
+        ? target.responseURL
+        : '';
+    const status = typeof target?.status === 'number' ? ` (status ${target.status})` : '';
+    return `browser network event "${cause.type}"${resource ? ` for ${resource}` : ''}${status}`;
+  }
+  return String(cause);
+}
 
 async function createHandTracker() {
   const failures: string[] = [];
@@ -39,19 +58,17 @@ async function createHandTracker() {
             });
             return { tracker, vision };
           } catch (cause) {
-            const reason = cause instanceof Error ? cause.message : String(cause);
-            failures.push(`${delegate} / ${modelAssetPath}: ${reason}`);
+            failures.push(`${delegate} / ${modelAssetPath}: ${describeFailure(cause)}`);
           }
         }
       }
     } catch (cause) {
-      const reason = cause instanceof Error ? cause.message : String(cause);
-      failures.push(`WASM ${wasmUrl}: ${reason}`);
+      failures.push(`WASM ${wasmUrl}: ${describeFailure(cause)}`);
     }
   }
-  const lastFailure = failures[failures.length - 1] ?? 'No model source could be initialized.';
+  const recentFailures = failures.slice(-6).join(' | ') || 'No model source could be initialized.';
   throw new Error(
-    `Hand tracking could not initialize. Tried alternate WASM CDNs, model mirrors, and GPU/CPU delegates. Last error: ${lastFailure}`,
+    `Hand tracking could not initialize after trying local assets and fallbacks (${failures.length} failed attempts). Recent diagnostics: ${recentFailures}`,
   );
 }
 const LINKS: Array<[number, number]> = [
@@ -229,7 +246,7 @@ export default function App() {
   const audioRef = useRef<AudioContext | null>(null);
   const soundRef = useRef(false);
   const landmarksRef = useRef(true);
-  const [cameraState, setCameraState] = useState<'idle'|'loading'|'ready'|'error'>('idle');
+  const [cameraState, setCameraState] = useState<'idle'|'loading'|'ready'|'camera-only'|'error'>('idle');
   const [error, setError] = useState('');
   const [activeJutsu, setActiveJutsu] = useState<Jutsu>('none');
   const [gestureLabel, setGestureLabel] = useState('Waiting for hands');
@@ -445,17 +462,24 @@ export default function App() {
       };
       rafRef.current = requestAnimationFrame(frame);
     } catch (cause) {
+      const message = describeFailure(cause);
+      if (message.includes('Hand tracking could not initialize')) {
+        // Keep the camera preview available for diagnostics; a model download failure should not turn the camera itself off.
+        setCameraState('camera-only');
+        setHandCount(0);
+        setGestureLabel('Camera is active, but hand tracking did not initialize.');
+        setError('The webcam is working, but hand tracking could not start. This build now loads its model and WASM from the same site first. Reload once; if this remains, share the diagnostic details below. Details: ' + message);
+        return;
+      }
+
       stopCamera();
       setCameraState('error');
-      const message = cause instanceof Error ? cause.message : String(cause);
       setError(
         message.includes('NotAllowedError')
           ? 'Camera permission was blocked. Allow camera access in browser settings, then try again.'
           : message.includes('NotFoundError')
             ? 'No camera was found. Connect a webcam and try again.'
-            : message.startsWith('Hand tracking could not initialize')
-              ? 'The camera opened, but hand tracking could not download or initialize. The app tried alternate model mirrors, CDN hosts, and GPU/CPU modes. Check that GitHub, jsDelivr, and unpkg are reachable, then reload. Details: ' + message
-              : 'Could not start the camera. Check browser permission and camera availability. Details: ' + message,
+            : 'Could not start the camera. Check browser permission and camera availability. Details: ' + message,
       );
     }
   }, [stopCamera, switchJutsu]);
@@ -546,7 +570,7 @@ export default function App() {
       <section className="workspace">
         <div className="camera-column">
           <div className="panel-heading"><div><span className="section-kicker">01 / LIVE INPUT</span><h2>Chakra viewport</h2></div>
-            <div className={'live-status ' + (cameraState === 'ready' ? 'is-live' : cameraState === 'error' ? 'is-error' : '')}><span />{cameraState === 'ready' ? 'LIVE TRACKING' : cameraState === 'loading' ? 'INITIALIZING' : cameraState === 'error' ? 'CAMERA ERROR' : 'STANDBY'}</div>
+            <div className={'live-status ' + (cameraState === 'ready' || cameraState === 'camera-only' ? 'is-live' : cameraState === 'error' ? 'is-error' : '')}><span />{cameraState === 'ready' ? 'LIVE TRACKING' : cameraState === 'camera-only' ? 'CAMERA ON · TRACKING OFF' : cameraState === 'loading' ? 'INITIALIZING' : cameraState === 'error' ? 'CAMERA ERROR' : 'STANDBY'}</div>
           </div>
           <div ref={stageRef} className={'camera-stage ' + (activeInfo ? 'effect-' + activeInfo.color : '')}>
             <div className="stage-grid" /><div className="stage-corner corner-tl" /><div className="stage-corner corner-tr" /><div className="stage-corner corner-bl" /><div className="stage-corner corner-br" />
@@ -554,22 +578,22 @@ export default function App() {
             <div className="video-wrap">
               <video ref={videoRef} className="camera-video" autoPlay playsInline muted aria-label="Mirrored webcam preview" />
               <canvas ref={canvasRef} className="effects-canvas" />
-              {cameraState !== 'ready' && <div className="camera-placeholder">
+              {cameraState !== 'ready' && cameraState !== 'camera-only' && <div className="camera-placeholder">
                 {cameraState === 'loading' ? <LoaderCircle className="spin" size={38} /> : cameraState === 'error' ? <Camera size={35} /> : <div className="camera-orb"><Camera size={28} /></div>}
                 <strong>{cameraState === 'loading' ? 'Warming up the chakra flow' : cameraState === 'error' ? (error.includes('hand tracking') ? 'Hand tracking unavailable' : 'Camera not ready') : 'Your training space awaits'}</strong>
                 <span>{cameraState === 'loading' ? 'Requesting camera and loading hand tracking…' : cameraState === 'error' ? error : 'Start the camera to see your hands and effects live.'}</span>
               </div>}
             </div>
-            <div className="stage-bottomline"><span><span className={'small-dot ' + (cameraState === 'ready' ? 'active' : '')} /> {cameraState === 'ready' ? handCount + ' HAND' + (handCount === 1 ? '' : 'S') + ' DETECTED' : 'AWAITING VIDEO SOURCE'}</span><span className="mono">MP / HAND LANDMARKER</span></div>
+            <div className="stage-bottomline"><span><span className={'small-dot ' + (cameraState === 'ready' ? 'active' : '')} /> {cameraState === 'ready' ? handCount + ' HAND' + (handCount === 1 ? '' : 'S') + ' DETECTED' : cameraState === 'camera-only' ? 'CAMERA ON · TRACKING UNAVAILABLE' : 'AWAITING VIDEO SOURCE'}</span><span className="mono">MP / HAND LANDMARKER</span></div>
           </div>
           <div className="camera-controls">
-            {cameraState === 'ready' ? <button className="primary-button stop-button" onClick={stopCamera}><span className="stop-square" /> Stop camera</button> :
+            {cameraState === 'ready' || cameraState === 'camera-only' ? <button className="primary-button stop-button" onClick={stopCamera}><span className="stop-square" /> Stop camera</button> :
               <button className="primary-button" onClick={startCamera} disabled={cameraState === 'loading'}>{cameraState === 'loading' ? <LoaderCircle className="spin" size={17} /> : <Camera size={17} />}{cameraState === 'loading' ? 'Starting camera…' : 'Start camera'}</button>}
             <button className={'secondary-button ' + (showLandmarks ? 'selected' : '')} onClick={() => setShowLandmarks((v) => !v)}><Hand size={16} /> Landmark overlay <span className="toggle-pill">{showLandmarks ? 'ON' : 'OFF'}</span></button>
             <button className={'secondary-button ' + (soundEnabled ? 'selected' : '')} onClick={() => setSoundEnabled((v) => !v)}><Zap size={16} /> Cast sound <span className="toggle-pill">{soundEnabled ? 'ON' : 'OFF'}</span></button>
             <button className="reset-button" onClick={() => { switchJutsu('none'); setGestureLabel('Effects cleared'); }} title="Clear current effect"><RotateCcw size={16} /></button>
           </div>
-          {cameraState === 'error' && <p className="error-hint"><Info size={14} /> Camera access requires browser permission and a secure context (localhost or HTTPS).</p>}
+          {(cameraState === 'error' || cameraState === 'camera-only') && <p className="error-hint"><Info size={14} /> {cameraState === 'camera-only' ? 'The camera preview is being kept active. Hand tracking is unavailable until the model/runtime loads; use the GitHub Actions link to check that the newest build was deployed.' : 'Camera access requires browser permission and a secure context (localhost or HTTPS).'}</p>}
         </div>
         <aside className="right-column">
           <div className="panel-heading"><div><span className="section-kicker">02 / TECHNIQUE SELECTOR</span><h2>Choose your jutsu</h2></div><span className="mini-count">03</span></div>
