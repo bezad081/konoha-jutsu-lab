@@ -19,3 +19,28 @@ body{background:radial-gradient(ellipse at 9% 4%,rgba(255,145,48,.12),transparen
 .jutsu-card.blue-card.is-active{border-color:rgba(98,201,255,.78);box-shadow:0 0 0 1px rgba(98,201,255,.13),0 10px 32px rgba(31,105,183,.16)}.jutsu-card.cyan-card.is-active{border-color:rgba(255,197,83,.72);box-shadow:0 0 0 1px rgba(255,197,83,.1),0 10px 32px rgba(226,144,31,.11)}.jutsu-card.violet-card.is-active{border-color:rgba(110,203,120,.72);box-shadow:0 0 0 1px rgba(110,203,120,.12),0 10px 32px rgba(60,165,99,.12)}
 .blue-card .jutsu-overline{color:#7bcfff}.cyan-card .jutsu-overline{color:#ffc56c}.violet-card .jutsu-overline{color:#8de2a0}.section-kicker{color:#a5b9dc}.combo-step.current{border-color:rgba(255,163,65,.58);background:rgba(255,147,48,.1)}.combo-step.current .combo-step-index{background:#ffad53;color:#291709}.combo-count{color:#ffc27b;border-color:rgba(255,163,65,.25);background:rgba(255,147,48,.08)}.footer-mark{color:#ffb15e}
 .help-panel{border-color:rgba(255,163,65,.32);background:linear-gradient(100deg,rgba(255,146,45,.09),rgba(39,87,139,.14))}.help-panel strong{color:#ffd19b}.text-button{color:#ffc27b}
+
+
+/* Team Seven / Hidden Leaf character panels */
+.shinobi-strip{margin:0 0 27px;padding:17px;border:1px solid rgba(255,163,65,.17);border-radius:15px;background:linear-gradient(115deg,rgba(255,145,48,.055),rgba(33,78,130,.13) 55%,rgba(110,203,120,.045));}
+.shinobi-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.shinobi-note{font:8px 'DM Mono',monospace;letter-spacing:.1em;color:#667d9e}
+.shinobi-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.shinobi-card{position:relative;isolation:isolate;display:flex;align-items:flex-end;min-height:185px;overflow:hidden;border:1px solid rgba(153,184,225,.17);border-radius:12px;background:#111c30;transition:transform .2s,border-color .2s,box-shadow .2s}
+.shinobi-card:hover{transform:translateY(-2px);border-color:rgba(255,174,87,.48);box-shadow:0 12px 28px rgba(0,0,0,.22)}
+.shinobi-card img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 24%;opacity:.53;z-index:-2;filter:saturate(.88) contrast(1.08);transition:transform .35s,opacity .25s}
+.shinobi-card:hover img{transform:scale(1.045);opacity:.68}
+.shinobi-card:after{content:'';position:absolute;inset:0;z-index:-1;background:linear-gradient(90deg,rgba(8,15,28,.9),rgba(8,15,28,.48) 48%,rgba(8,15,28,.1)),linear-gradient(0deg,rgba(6,11,22,.96),transparent 74%)}
+.naruto-profile{border-color:rgba(255,160,67,.25)}
+.kakashi-profile{border-color:rgba(92,201,255,.24)}
+.naruto-profile:before,.kakashi-profile:before{content:'';position:absolute;inset:0 auto 0 0;width:3px;background:linear-gradient(180deg,#ffd18b,#ff8738);z-index:2}
+.kakashi-profile:before{background:linear-gradient(180deg,#b8f3ff,#4b8dff)}
+.shinobi-glow{position:absolute;top:20px;right:22px;width:68px;height:68px;border-radius:50%;background:rgba(255,156,61,.12);filter:blur(13px);pointer-events:none}
+.kakashi-profile .shinobi-glow{background:rgba(79,188,255,.17)}
+.shinobi-copy{display:flex;flex-direction:column;gap:6px;padding:17px 19px 16px;max-width:90%}
+.shinobi-copy small{font:8px 'DM Mono',monospace;letter-spacing:.12em;color:#ffc17a}
+.kakashi-profile .shinobi-copy small{color:#8fddff}
+.shinobi-copy strong{font-size:clamp(17px,2vw,24px);line-height:1.1;letter-spacing:-.04em;color:#f4f7ff}
+.shinobi-copy span{font:8px 'DM Mono',monospace;letter-spacing:.08em;color:#b5c6e2}
+.shinobi-symbol{position:absolute;right:15px;top:13px;color:rgba(255,255,255,.7);font-size:10px;letter-spacing:.1em;text-shadow:0 0 12px rgba(255,255,255,.4)}
+@media(max-width:560px){.shinobi-strip{padding:11px;margin-bottom:19px}.shinobi-cards{grid-template-columns:1fr;gap:9px}.shinobi-card{min-height:158px}.shinobi-copy{padding:14px 15px}.shinobi-note{font-size:7px}.shinobi-heading{align-items:flex-start}}
