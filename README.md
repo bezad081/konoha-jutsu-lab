@@ -7,7 +7,7 @@ A React + TypeScript + Vite prototype for webcam-based hand tracking and Naruto-
 - Live webcam preview, mirrored like a selfie camera.
 - MediaPipe Hand Landmarker inference in the browser, with GPU and CPU fallback.
 - Hand landmark overlay, low-pass visual landmark smoothing, and stable-pose gating to reduce jitter and accidental casts.
-- Guided two-pose Chidori sequence: bring two closed fists together, then separate them to shoulder width while keeping them closed. This deliberately avoids the open-palm Rasengan gesture.
+- Reusable, data-driven pose-sequence flow currently powering the guided two-pose Chidori combo: each pose has a visible hold meter, a 0.5-second stability threshold, and a 6.5-second step timeout so an abandoned sequence resets cleanly. This deliberately avoids the open-palm Rasengan gesture.
 - Open palm → Rasengan effect that grows from a compact palm-sized orb over roughly 2.6 seconds, with counter-rotating chakra ribbons, spiral filaments and orbiting particles.
 - Chidori produces a white-hot electric core, branching jagged bolts, moving sparks, and a short trail. Its short synthesized sound layers bird-like chirps with electric crackle; no spoken callout is used.
 - Shadow Clone seal heuristic: two hands close together, index/middle fingers extended in a crossed/plus-like arrangement, outer fingers curled; selfie segmentation creates natural-color cutout copies of the live subject that remain for about six seconds after the seal is released.
