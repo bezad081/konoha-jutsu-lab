@@ -930,9 +930,36 @@ export default function App() {
           }
           const first = latest.landmarks?.[0] as Point[] | undefined;
           if (first) {
-            if (lastWrist) move = {x:first[0].x-lastWrist.x,y:first[0].y-lastWrist.y};
-            lastWrist = { ...first[0] };
-          } else lastWrist = null;
+            if (lastWrist) {
+              move = {x:first[0].x-lastWrist.x,y:first[0].y-lastWrist.y};
+              const elapsed = Math.max(12, now - lastWristAt);
+              const vx = move.x / elapsed * 1000, vy = move.y / elapsed * 1000;
+              const speed = Math.hypot(vx, vy);
+              if (activeToolRef.current !== 'none' && speed > 0.95 && now - lastToolThrowAt > 430) {
+                const launch = palm(smoothedLandmarksRef.current[0] ?? first);
+                const scale = Math.min(1.75, Math.max(.7, speed * .72));
+                thrownToolsRef.current.push({
+                  kind: activeToolRef.current, x: launch.x, y: launch.y,
+                  vx: vx * scale, vy: vy * scale, born: now, spin: Math.random() * Math.PI * 2,
+                });
+                if (thrownToolsRef.current.length > 12) thrownToolsRef.current.shift();
+                lastToolThrowAt = now;
+                setGestureLabel(activeToolRef.current === 'shuriken' ? 'Shuriken thrown · select again to keep throwing' : 'Kunai thrown · select again to keep throwing');
+                if (soundRef.current) {
+                  try {
+                    const audio = audioRef.current ?? new window.AudioContext(); audioRef.current = audio; void audio.resume();
+                    const oscillator = audio.createOscillator(), gain = audio.createGain();
+                    oscillator.type = 'triangle'; oscillator.frequency.setValueAtTime(820, audio.currentTime);
+                    oscillator.frequency.exponentialRampToValueAtTime(240, audio.currentTime + .11);
+                    gain.gain.setValueAtTime(.0001, audio.currentTime); gain.gain.exponentialRampToValueAtTime(.12, audio.currentTime + .012);
+                    gain.gain.exponentialRampToValueAtTime(.0001, audio.currentTime + .12);
+                    oscillator.connect(gain); gain.connect(audio.destination); oscillator.start(); oscillator.stop(audio.currentTime + .13);
+                  } catch { /* optional tool throw cue */ }
+                }
+              }
+            }
+            lastWrist = { ...first[0] }; lastWristAt = now;
+          } else { lastWrist = null; lastWristAt = 0; }
         }
         if (activeRef.current === 'clone') {
           if (!segmenterRef.current && !segmenterLoading && !segmenterFailed) void loadSegmenter();
@@ -990,6 +1017,18 @@ export default function App() {
           }
           if (activeRef.current === 'amaterasu' && hands.length) drawAmaterasu(ctx,palm(hands[0]),w,h,now/1000,charge);
           if (activeRef.current === 'wind-scythe' && hands.length) drawWindScythe(ctx,palm(hands[0]),move,w,h,now/1000,charge);
+          if (activeToolRef.current !== 'none' && hands.length) drawHeldTool(ctx, hands[0], activeToolRef.current, w, h, now / 1000);
+          const dt = Math.min(.05, Math.max(0, (now - lastProjectileFrameAt) / 1000));
+          lastProjectileFrameAt = now;
+          thrownToolsRef.current.forEach((projectile) => {
+            projectile.x += projectile.vx * dt;
+            projectile.y += projectile.vy * dt;
+            projectile.vy += .18 * dt;
+          });
+          thrownToolsRef.current = thrownToolsRef.current.filter((projectile) =>
+            now - projectile.born < 1800 && projectile.x > -.2 && projectile.x < 1.2 && projectile.y > -.2 && projectile.y < 1.2
+          );
+          drawThrownTools(ctx, thrownToolsRef.current, w, h, now);
         }
         frames++;
         if (now - fpsAt >= 1000) { setFps(Math.round(frames*1000/(now-fpsAt))); fpsAt=now; frames=0; }
