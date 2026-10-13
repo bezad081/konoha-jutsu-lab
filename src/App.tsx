@@ -306,7 +306,14 @@ function drawThrownTools(ctx: CanvasRenderingContext2D, projectiles: ThrownTool[
     const fade = Math.max(0, Math.min(1, (1.8 - age) / .28));
     const x = projectile.x * w, y = projectile.y * h;
     const size = Math.min(w, h) * (projectile.kind === 'shuriken' ? .035 : .047);
-    ctx.save(); ctx.translate(x, y);
+    ctx.save();
+    ctx.globalAlpha = fade * .78; ctx.globalCompositeOperation = 'screen';
+    ctx.beginPath();
+    ctx.moveTo((projectile.x - projectile.vx * .065) * w, (projectile.y - projectile.vy * .065) * h);
+    ctx.lineTo(x, y);
+    ctx.strokeStyle = projectile.kind === 'shuriken' ? 'rgba(195,242,255,.82)' : 'rgba(167,211,255,.8)';
+    ctx.lineWidth = Math.max(2, size * .18); ctx.shadowColor = '#9edfff'; ctx.shadowBlur = 13; ctx.stroke();
+    ctx.translate(x, y);
     ctx.rotate(projectile.spin + age * (projectile.kind === 'shuriken' ? 18 : 8));
     ctx.globalAlpha = fade; ctx.globalCompositeOperation = 'screen';
     ctx.shadowColor = '#9edfff'; ctx.shadowBlur = 16;
@@ -954,7 +961,7 @@ export default function App() {
                 });
                 if (thrownToolsRef.current.length > 12) thrownToolsRef.current.shift();
                 lastToolThrowAt = now;
-                setGestureLabel(activeToolRef.current === 'shuriken' ? 'Shuriken thrown · select again to keep throwing' : 'Kunai thrown · select again to keep throwing');
+                setGestureLabel(activeToolRef.current === 'shuriken' ? 'Shuriken thrown · make another quick motion to throw again' : 'Kunai thrown · make another quick motion to throw again');
                 if (soundRef.current) {
                   try {
                     const audio = audioRef.current ?? new window.AudioContext(); audioRef.current = audio; void audio.resume();
