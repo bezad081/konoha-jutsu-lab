@@ -477,7 +477,7 @@ function updateCloneSprite(
 
 function drawAmaterasu(ctx: CanvasRenderingContext2D, p: {x:number;y:number}, w:number, h:number, t:number, charge=0.8) {
   const x=p.x*w,y=p.y*h,base=Math.min(w,h)*(.06+charge*.025);
-  ctx.save();ctx.globalCompositeOperation='screen';ctx.lineCap='round';ctx.lineJoin='round';
+  ctx.save();ctx.globalCompositeOperation='source-over';ctx.lineCap='round';ctx.lineJoin='round';
   const aura=ctx.createRadialGradient(x,y,base*.05,x,y,base*2.2);
   aura.addColorStop(0,'rgba(255,255,255,.8)');aura.addColorStop(.18,'rgba(100,58,150,.58)');aura.addColorStop(.52,'rgba(38,14,58,.42)');aura.addColorStop(1,'rgba(0,0,0,0)');
   ctx.fillStyle=aura;ctx.beginPath();ctx.arc(x,y,base*2.2,0,Math.PI*2);ctx.fill();
@@ -586,7 +586,17 @@ export default function App() {
 
   const switchJutsu = useCallback((next: Jutsu) => {
     if(activeRef.current===next)return; activeRef.current=next;setActiveJutsu(next);
-    if(next!=='none')jutsuStartedAtRef.current=performance.now();
+    if(next!=='none') {
+      jutsuStartedAtRef.current=performance.now();
+      // Reuse the cinematic impact idea: a brief camera-stage flash/shake on every cast.
+      const stage = stageRef.current;
+      if (stage) {
+        stage.classList.remove('jutsu-impact');
+        void stage.offsetWidth;
+        stage.classList.add('jutsu-impact');
+        window.setTimeout(() => stage.classList.remove('jutsu-impact'), 420);
+      }
+    }
     if(next!=='none'&&soundRef.current)try{
       const audio=audioRef.current??new window.AudioContext();audioRef.current=audio;void audio.resume();playJutsuCue(audio,next);
     }catch{/* optional audio */}
@@ -603,6 +613,7 @@ export default function App() {
     smoothedLandmarksRef.current = [];
     setCloneStatus('idle');
     comboModeRef.current = false; setComboMode(false); comboCandidateRef.current = 'none';
+    castUntilRef.current = 0; cloneVisualUntilRef.current = 0;
     if (videoRef.current) videoRef.current.srcObject = null;
     switchJutsu('none'); setCameraState('idle'); setHandCount(0); setGestureLabel('Camera stopped');
     const ctx = canvasRef.current?.getContext('2d');
