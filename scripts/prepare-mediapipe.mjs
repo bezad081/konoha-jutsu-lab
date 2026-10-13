@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -58,7 +58,6 @@ async function prepareModel() {
 
       const temporaryPath = `${modelPath}.download`;
       await writeFile(temporaryPath, bytes);
-      const { rename } = await import('node:fs/promises');
       await rename(temporaryPath, modelPath);
       console.log(`Verified MediaPipe hand model (${(bytes.length / 1_000_000).toFixed(2)} MB).`);
       return;
