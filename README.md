@@ -5,20 +5,20 @@ A React + TypeScript + Vite prototype for webcam-based hand tracking and Naruto-
 ## Current prototype
 
 - Live webcam preview, mirrored like a selfie camera.
-- MediaPipe Hand Landmarker inference in the browser, with GPU and CPU fallback.
+- MediaPipe Hand Landmarker inference in the browser, with GPU and CPU fallback; Face Landmarker supports blink activation and face-anchored effects.
 - Hand landmark overlay, low-pass visual landmark smoothing, and stable-pose gating to reduce jitter and accidental casts.
 - Reusable, data-driven pose-sequence flow currently powering the guided two-pose Chidori combo: each pose has a visible hold meter, a 0.5-second stability threshold, and a 6.5-second step timeout so an abandoned sequence resets cleanly. This deliberately avoids the open-palm Rasengan gesture.
 - Open palm → Rasengan effect that grows from a compact palm-sized orb over roughly 2.6 seconds, with counter-rotating chakra ribbons, spiral filaments and orbiting particles.
 - Chidori produces a white-hot electric core, branching jagged bolts, moving sparks, and a short trail. Its short synthesized sound layers bird-like chirps with electric crackle; no spoken callout is used.
 - Shadow Clone seal heuristic: two hands close together, index/middle fingers extended in a crossed/plus-like arrangement, outer fingers curled; selfie segmentation creates natural-color cutout copies of the live subject that remain for about six seconds after the seal is released.
-- Fire Style: Fireball Jutsu: two separated closed fists trigger a swirling orange fireball with animated chakra rings and sparks.
+- Uchiha Fire Style / Great Fireball: a face-anchored stream of turbulent flames starts at the detected mouth and is followed by a swirling fireball. The original hand-position fireball remains as fallback if face tracking is unavailable.\n- Sharingan eye effect: blink both eyes to toggle a red iris with three black tomoe marks; the overlay follows face/iris landmarks and has a manual toggle.
 - Raiton Pulse: two open palms trigger a blue lightning burst.
 - The sound toggle plays a sample when enabled, making it easy to check the audio before casting.
 - Preview controls when camera access is unavailable.
 - Responsive UI, camera permission errors, camera cleanup, and optional generated sound.
-- Selectable virtual Shuriken and Kunai tools rendered over the tracked hand in the live camera image.
+- Selectable virtual Shuriken and Kunai tools rendered over the tracked hand using locally authored metallic SVG illustrations, with improved held and thrown rendering.
 - A quick hand movement launches the selected tool as a spinning Canvas projectile with a short trail-like glow and a brief synthesized throw cue when sound is enabled. This is a visual prototype: it does not simulate real object contact or damage.
-- Adaptive landmark smoothing dampens small movements while responding more quickly to faster gestures.
+- Adaptive landmark smoothing damps jitter and responds quickly to fast gestures; hands are matched by handedness before smoothing to reduce jumps when detection order changes.
 
 ## Run locally
 
@@ -40,7 +40,7 @@ npm run preview
 
 ## Runtime and privacy
 
-The production build downloads and checksum-verifies the MediaPipe hand-landmark model, then ships it along with the MediaPipe WASM runtime from the same site origin. Video frames and detected hand landmarks are processed in the browser in this prototype; they are not uploaded to an application backend. The optional selfie-segmentation model for Shadow Clone is still fetched from Google Storage on first use.
+The production build downloads and checksum-verifies the hand model, attempts to package the face model for blink/eye tracking, and ships the MediaPipe WASM runtime from the same site origin. Video frames and detected hand landmarks are processed in the browser in this prototype; they are not uploaded to an application backend. The optional selfie-segmentation model for Shadow Clone is still fetched from Google Storage on first use.
 
 ## Known limits / next milestones
 
@@ -74,7 +74,7 @@ A deployment workflow is included at `.github/workflows/deploy.yml`. After the p
 - The images are external Wikimedia Commons assets, not official anime key art. Naruto character names and franchise references belong to their respective rights holders.
 
 
-## Technique updates and inspiration sources
+## Eye and tool assets\n\n- `public/assets/shuriken.svg` and `public/assets/kunai.svg` are original local illustrations with metallic gradients, edge highlights and grip details. They rotate with the tool during throws.\n- Sharingan is rendered procedurally from face/iris landmarks rather than a static sticker; blink recognition depends on camera quality and model availability.\n\n## Technique updates and inspiration sources
 
 - Live chakra HUD shows cast charge from gathering to maximum output; a motion-reactive energy trail follows the detected hand/palm and changes color by technique. These are original procedural Canvas/CSS effects, not copied sprites.
 - Reference-project boundary: FavorPan/naruto and Vaibhavs006/Naruto informed effect layering, motion feedback, and the future seal-training direction. Their assets/models are not silently copied; license and provenance must be checked before any reuse. Jutsu-Hero's non-commercial license is not suitable for an unrestricted commercial release.

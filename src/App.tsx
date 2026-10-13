@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Activity, Camera, Check, ChevronDown, CircleHelp, CirclePlay, Cpu, Expand,
+  Activity, Camera, Check, ChevronDown, CircleHelp, CirclePlay, Cpu, Expand, Eye,
   Hand, Info, Lightbulb, LoaderCircle, RotateCcw, ShieldCheck, Sparkles, Zap
 } from 'lucide-react';
-import { FilesetResolver, HandLandmarker, ImageSegmenter, type HandLandmarkerResult } from '@mediapipe/tasks-vision';
+import { FaceLandmarker, FilesetResolver, HandLandmarker, ImageSegmenter, type FaceLandmarkerResult, type HandLandmarkerResult } from '@mediapipe/tasks-vision';
 
 type Jutsu = 'none' | 'rasengan' | 'chidori' | 'clone' | 'lightning-burst' | 'fireball' | 'amaterasu' | 'wind-scythe';
 type Gesture = 'none' | 'open' | 'fist' | 'two-open' | 'two-fist' | 'clone-seal' | 'ox-seal' | 'hare-seal' | 'monkey-seal';
@@ -20,6 +20,7 @@ const MODEL_URLS = [
   'https://github.com/sanderdesnaijer/mediapipe-model-mirrors/releases/download/v1/hand_landmarker.task',
   'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
 ];
+const FACE_MODEL_URLS = [new URL('models/face_landmarker.task', document.baseURI).href, 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task'];
 const SEGMENTER_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter_landscape/float16/latest/selfie_segmenter_landscape.tflite';
 const WASM_URLS = [
   LOCAL_WASM_URL,
@@ -222,6 +223,21 @@ function palm(points: Point[]) {
   const ids = [0,5,9,13,17];
   return ids.reduce((p, i) => ({ x: p.x + points[i].x / ids.length, y: p.y + points[i].y / ids.length }), { x: 0, y: 0 });
 }
+
+async function createFaceTracker(vision: Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>>) {
+  const failures: string[] = [];
+  for (const modelAssetPath of FACE_MODEL_URLS) for (const delegate of ['GPU', 'CPU'] as const) {
+    try { return await FaceLandmarker.createFromOptions(vision, { baseOptions: { modelAssetPath, delegate }, runningMode: 'VIDEO', numFaces: 1, outputFaceBlendshapes: true }); }
+    catch (cause) { failures.push(`${delegate}: ${describeFailure(cause)}`); }
+  }
+  throw new Error(`Face tracking could not initialize: ${failures.slice(-3).join(' | ')}`);
+}
+const toolImageCache: Partial<Record<'shuriken'|'kunai', HTMLImageElement>> = {};
+function getToolImage(tool: 'shuriken'|'kunai'): HTMLImageElement | null {
+  if (typeof Image === 'undefined') return null;
+  if (!toolImageCache[tool]) { const image = new Image(); image.src = new URL(`assets/${tool}.svg`, document.baseURI).href; toolImageCache[tool] = image; }
+  return toolImageCache[tool] ?? null;
+}
 function drawEnergyTrail(
   ctx: CanvasRenderingContext2D,
   points: Array<{ x: number; y: number; at: number }>,
@@ -272,6 +288,7 @@ function drawHeldTool(ctx: CanvasRenderingContext2D, hand: Point[], tool: Exclud
   const size = Math.min(w, h) * (tool === 'shuriken' ? 0.055 : 0.075);
   ctx.save(); ctx.translate(x, y); ctx.rotate(angle);
   ctx.globalCompositeOperation = 'screen'; ctx.shadowColor = '#bdeeff'; ctx.shadowBlur = 12;
+  const image = getToolImage(tool); if (image?.complete && image.naturalWidth > 0) { ctx.globalCompositeOperation = 'source-over'; ctx.shadowColor = '#a9dfff'; ctx.shadowBlur = 13; ctx.drawImage(image, -size * (tool === 'shuriken' ? 1.02 : .58), -size * (tool === 'shuriken' ? 1.02 : 1.32), size * (tool === 'shuriken' ? 2.04 : 1.16), size * (tool === 'shuriken' ? 2.04 : 2.64)); ctx.restore(); return; }
   if (tool === 'shuriken') {
     ctx.rotate(t * 0.55);
     const metal = ctx.createLinearGradient(-size, -size, size, size);
@@ -300,6 +317,11 @@ function drawHeldTool(ctx: CanvasRenderingContext2D, hand: Point[], tool: Exclud
   ctx.restore();
 }
 
+function drawSharinganEyes(ctx: CanvasRenderingContext2D, face: Point[], w: number, h: number, t: number) {
+  if(face.length<478)return;const eyes=[{center:468,contour:[33,160,158,133,153,144],corners:[33,133]},{center:473,contour:[362,385,387,263,373,380],corners:[362,263]}];ctx.save();ctx.globalCompositeOperation='screen';
+  for(const eye of eyes){const c={x:face[eye.center].x*w,y:face[eye.center].y*h},ew=Math.hypot((face[eye.corners[0]].x-face[eye.corners[1]].x)*w,(face[eye.corners[0]].y-face[eye.corners[1]].y)*h),r=Math.max(3,ew*.255);ctx.save();ctx.beginPath();eye.contour.forEach((id,i)=>{const p=face[id];if(!i)ctx.moveTo(p.x*w,p.y*h);else ctx.lineTo(p.x*w,p.y*h);});ctx.closePath();ctx.clip();const glow=ctx.createRadialGradient(c.x,c.y,r*.1,c.x,c.y,r*1.8);glow.addColorStop(0,'rgba(255,25,40,.54)');glow.addColorStop(1,'rgba(255,0,22,0)');ctx.fillStyle=glow;ctx.beginPath();ctx.arc(c.x,c.y,r*1.8,0,Math.PI*2);ctx.fill();const iris=ctx.createRadialGradient(c.x-r*.24,c.y-r*.3,r*.08,c.x,c.y,r);iris.addColorStop(0,'#ff7777');iris.addColorStop(.34,'#e7192e');iris.addColorStop(.78,'#a90017');iris.addColorStop(1,'#3b0612');ctx.fillStyle=iris;ctx.beginPath();ctx.arc(c.x,c.y,r,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#190007';ctx.lineWidth=Math.max(1,r*.12);ctx.beginPath();ctx.arc(c.x,c.y,r*.9,0,Math.PI*2);ctx.stroke();ctx.strokeStyle='rgba(40,0,7,.72)';ctx.lineWidth=Math.max(.8,r*.045);for(let ray=0;ray<18;ray++){const a=ray*Math.PI/9+t*.025;ctx.beginPath();ctx.moveTo(c.x+Math.cos(a)*r*.28,c.y+Math.sin(a)*r*.28);ctx.lineTo(c.x+Math.cos(a)*r*.82,c.y+Math.sin(a)*r*.82);ctx.stroke();}for(let m=0;m<3;m++){const a=m*Math.PI*2/3-Math.PI/2,mx=c.x+Math.cos(a)*r*.59,my=c.y+Math.sin(a)*r*.59;ctx.save();ctx.translate(mx,my);ctx.rotate(a+Math.PI/2);ctx.fillStyle='#160208';ctx.beginPath();ctx.arc(0,0,r*.19,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.moveTo(r*.04,r*.13);ctx.quadraticCurveTo(r*.37,r*.08,r*.24,-r*.25);ctx.quadraticCurveTo(r*.18,-r*.04,r*.04,r*.13);ctx.fill();ctx.restore();}ctx.fillStyle='#100107';ctx.beginPath();ctx.arc(c.x,c.y,r*.22,0,Math.PI*2);ctx.fill();ctx.fillStyle='rgba(255,255,255,.9)';ctx.beginPath();ctx.arc(c.x-r*.25,c.y-r*.28,Math.max(1,r*.11),0,Math.PI*2);ctx.fill();ctx.restore();}ctx.restore();
+}
+
 function drawThrownTools(ctx: CanvasRenderingContext2D, projectiles: ThrownTool[], w: number, h: number, now: number) {
   for (const projectile of projectiles) {
     const age = (now - projectile.born) / 1000;
@@ -317,6 +339,7 @@ function drawThrownTools(ctx: CanvasRenderingContext2D, projectiles: ThrownTool[
     ctx.rotate(projectile.spin + age * (projectile.kind === 'shuriken' ? 18 : 8));
     ctx.globalAlpha = fade; ctx.globalCompositeOperation = 'screen';
     ctx.shadowColor = '#9edfff'; ctx.shadowBlur = 16;
+    const image = getToolImage(projectile.kind); if (image?.complete && image.naturalWidth > 0) { ctx.globalCompositeOperation = 'source-over'; ctx.shadowColor = '#b7e6ff'; ctx.shadowBlur = 13; ctx.drawImage(image, -size * (projectile.kind === 'shuriken' ? .95 : .54), -size * (projectile.kind === 'shuriken' ? .95 : 1.24), size * (projectile.kind === 'shuriken' ? 1.9 : 1.08), size * (projectile.kind === 'shuriken' ? 1.9 : 2.48)); ctx.restore(); continue; }
     if (projectile.kind === 'shuriken') {
       ctx.beginPath();
       for (let i = 0; i < 16; i++) {
@@ -538,6 +561,17 @@ function drawLightningBurst(ctx: CanvasRenderingContext2D, p: {x:number;y:number
   ctx.restore();
 }
 
+function drawUchihaMouthFire(ctx: CanvasRenderingContext2D, face: Point[], w: number, h: number, t: number, charge = 0.8): {x:number;y:number} {
+  if(face.length<292)return {x:.5,y:.5};
+  const mouth={x:(face[13].x+face[14].x)*.5*w,y:(face[13].y+face[14].y)*.5*h},mouthWidth=Math.max(12,Math.hypot((face[61].x-face[291].x)*w,(face[61].y-face[291].y)*h));
+  const eyeMid={x:(face[33].x+face[263].x)*.5*w,y:(face[33].y+face[263].y)*.5*h},nose={x:face[1].x*w,y:face[1].y*h};
+  const angle=Math.atan2(nose.y-eyeMid.y,nose.x-eyeMid.x)+.04*Math.sin(t*1.4),dx=Math.cos(angle),dy=Math.sin(angle),nx=-dy,ny=dx,length=Math.min(w,h)*(.23+charge*.08),base=mouthWidth*(.22+charge*.1);
+  ctx.save();ctx.globalCompositeOperation='screen';ctx.lineCap='round';ctx.lineJoin='round';ctx.beginPath();ctx.moveTo(mouth.x,mouth.y);ctx.quadraticCurveTo(mouth.x+dx*length*.48+nx*base,mouth.y+dy*length*.48+ny*base,mouth.x+dx*length,mouth.y+dy*length);ctx.strokeStyle='rgba(255,76,12,.48)';ctx.lineWidth=base*4.8;ctx.shadowColor='#ff4b0b';ctx.shadowBlur=base*3.8;ctx.stroke();
+  for(let r=0;r<7;r++){const side=(r-3)/3;ctx.beginPath();for(let s=0;s<=12;s++){const p=s/12,wiggle=Math.sin(t*(7+r*.19)+p*15+r*1.7)*base*(.12+p*.42),spread=side*base*(.15+p*2.6),along=p*length,x=mouth.x+dx*along+nx*(spread+wiggle),y=mouth.y+dy*along+ny*(spread+wiggle);if(!s)ctx.moveTo(x,y);else ctx.lineTo(x,y);}ctx.strokeStyle=r%3===0?'rgba(255,246,190,.96)':r%3===1?'rgba(255,167,42,.94)':'rgba(255,58,12,.88)';ctx.lineWidth=base*(r%3===0?.36:.72);ctx.shadowColor=r%3===0?'#fff1a3':'#ff4b0b';ctx.shadowBlur=base*(1.2+charge);ctx.stroke();}
+  for(let i=0;i<24;i++){const p=((i*.61803398875+t*.11)%1),side=Math.sin(i*2.37+t*5.5)*base*(.15+p*2.3),along=p*length,x=mouth.x+dx*along+nx*side,y=mouth.y+dy*along+ny*side,q=base*(.16+((Math.sin(t*13+i*3.1)+1)*.5)*.55)*(1-p*.45);ctx.beginPath();ctx.moveTo(x-nx*q*.2,y-ny*q*.2);ctx.quadraticCurveTo(x+dx*q*.55+nx*q,y+dy*q*.55+ny*q,x+dx*q*1.15-nx*q*.18,y+dy*q*1.15-ny*q*.18);ctx.strokeStyle=i%4===0?'#fff6c5':i%2?'#ffb43c':'#ff4a16';ctx.lineWidth=Math.max(1.2,q*.32);ctx.shadowColor='#ff6b1b';ctx.shadowBlur=9;ctx.stroke();}
+  const glow=ctx.createRadialGradient(mouth.x,mouth.y,1,mouth.x,mouth.y,base*2.1);glow.addColorStop(0,'rgba(255,255,224,.98)');glow.addColorStop(.25,'rgba(255,179,61,.82)');glow.addColorStop(1,'rgba(255,50,9,0)');ctx.fillStyle=glow;ctx.beginPath();ctx.ellipse(mouth.x,mouth.y,base*1.5,base*.9,angle,0,Math.PI*2);ctx.fill();ctx.restore();return {x:(mouth.x+dx*length)/w,y:(mouth.y+dy*length)/h};
+}
+
 function drawFireball(ctx: CanvasRenderingContext2D, p: {x:number;y:number}, w:number, h:number, t:number, charge=0.8) {
   const x=p.x*w,y=p.y*h,r=Math.min(w,h)*(.07+charge*.045),pulse=1+Math.sin(t*13)*.07;
   ctx.save();ctx.globalCompositeOperation='screen';ctx.lineCap='round';ctx.lineJoin='round';
@@ -698,7 +732,10 @@ export default function App() {
   const segmenterRef = useRef<ImageSegmenter | null>(null);
   const cloneSpriteRef = useRef<HTMLCanvasElement | null>(null);
   const cloneSpriteReadyRef = useRef(false);
+  const faceTrackerRef = useRef<FaceLandmarker | null>(null);
+  const sharinganRef = useRef(false);
   const smoothedLandmarksRef = useRef<Point[][]>([]);
+  const smoothedHandednessRef = useRef<string[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number | null>(null);
   const timeoutRef = useRef<number | null>(null);
@@ -723,6 +760,8 @@ export default function App() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [fps, setFps] = useState(0);
   const [cloneStatus, setCloneStatus] = useState<'idle'|'loading'|'ready'|'error'>('idle');
+  const [faceTrackingState, setFaceTrackingState] = useState<'loading'|'ready'|'unavailable'>('loading');
+  const [sharinganActive, setSharinganActive] = useState(false);
   const [comboMode, setComboMode] = useState(false);
   const [comboProgress, setComboProgress] = useState(0);
   const [comboHoldProgress, setComboHoldProgress] = useState(0);
@@ -767,9 +806,11 @@ export default function App() {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     trackerRef.current?.close(); trackerRef.current = null;
+    faceTrackerRef.current?.close(); faceTrackerRef.current = null;
     segmenterRef.current?.close(); segmenterRef.current = null;
     cloneSpriteRef.current = null; cloneSpriteReadyRef.current = false;
-    smoothedLandmarksRef.current = [];
+    smoothedLandmarksRef.current = []; smoothedHandednessRef.current = [];
+    sharinganRef.current = false; setSharinganActive(false); setFaceTrackingState('loading');
     setCloneStatus('idle');
     comboModeRef.current = false; setComboMode(false); comboCandidateRef.current = 'none';
     castUntilRef.current = 0; cloneVisualUntilRef.current = 0;
@@ -803,6 +844,8 @@ export default function App() {
       setGestureLabel('Camera is on · loading hand tracking from available mirrors…');
       const { tracker, vision } = await createHandTracker();
       trackerRef.current = tracker;
+      const cameraStream = stream; setFaceTrackingState('loading');
+      void createFaceTracker(vision).then((faceTracker) => { if (streamRef.current !== cameraStream) { faceTracker.close(); return; } faceTrackerRef.current = faceTracker; setFaceTrackingState('ready'); }).catch(() => setFaceTrackingState('unavailable'));
       setCameraState('ready');
       setGestureLabel('Rasengan: open palm · Chidori: two closed-fist moves · Fireball: two fists apart · Amaterasu: one fist');
       let segmenterLoading = false, segmenterFailed = false, personMaskIndex = 0;
@@ -842,9 +885,10 @@ export default function App() {
           segmenterLoading = false;
         }
       };
-      let lastVideoTime = -1, lastWrist: Point | null = null, lastWristAt = 0, lastToolThrowAt = 0, lastProjectileFrameAt = performance.now(), move = {x:.2,y:-.05};
+      let lastVideoTime = -1, lastWrist: Point | null = null, lastWristAt = 0, lastToolThrowAt = 0, lastProjectileFrameAt = performance.now(), lastFaceDetectAt = 0, move = {x:.2,y:-.05};
       let candidate: Jutsu = 'none', candidateAt = 0, noPoseAt = 0, fpsAt = performance.now(), frames = 0;
-      let latest: HandLandmarkerResult | null = null;
+      let latest: HandLandmarkerResult | null = null, latestFace: FaceLandmarkerResult | null = null;
+      let eyesClosed = false, eyeClosedAt = 0, lastBlinkAt = 0;
       const energyTrail: Array<{ x: number; y: number; at: number }> = [];
       const frame = () => {
         const v = videoRef.current, canvas = canvasRef.current, model = trackerRef.current;
@@ -854,17 +898,21 @@ export default function App() {
         const now = performance.now();
         if (v.currentTime !== lastVideoTime) {
           lastVideoTime = v.currentTime; latest = model.detectForVideo(v, now);
+          if (faceTrackerRef.current && now - lastFaceDetectAt > 42) { lastFaceDetectAt = now; try { const fr = faceTrackerRef.current.detectForVideo(v, now); latestFace = fr; const cats = fr.faceBlendshapes?.[0]?.categories ?? []; const left = cats.find((c) => c.categoryName === 'eyeBlinkLeft')?.score ?? 0, right = cats.find((c) => c.categoryName === 'eyeBlinkRight')?.score ?? 0, closed = left > .48 && right > .48; if (closed && !eyesClosed) eyeClosedAt = now; if (!closed && eyesClosed) { const duration = now - eyeClosedAt; if (duration >= 55 && duration <= 720 && now - lastBlinkAt > 950) { lastBlinkAt = now; sharinganRef.current = !sharinganRef.current; setSharinganActive(sharinganRef.current); setGestureLabel(sharinganRef.current ? 'Sharingan awakened · blink again to seal the eye' : 'Sharingan sealed · blink to awaken'); } } eyesClosed = closed; } catch { faceTrackerRef.current?.close(); faceTrackerRef.current = null; setFaceTrackingState('unavailable'); } }
           const rawHands = (latest.landmarks ?? []) as Point[][];
           const previousHands = smoothedLandmarksRef.current;
-          // A light exponential low-pass filter damps landmark jitter without changing gesture classification.
+          const oldHandedness = smoothedHandednessRef.current;
+          const currentHandedness = latest.handedness?.map((entry, index) => entry[0]?.categoryName ?? `Unknown-${index}`) ?? rawHands.map((_, index) => `Unknown-${index}`);
+          // Match left/right hands by handedness to prevent sudden smoothing jumps.
           smoothedLandmarksRef.current = rawHands.map((hand, handIndex) => {
-            const previous = previousHands[handIndex];
+            const priorIndex = oldHandedness.indexOf(currentHandedness[handIndex]);
+            const previous = previousHands[priorIndex >= 0 ? priorIndex : handIndex];
             if (!previous || previous.length !== hand.length) return hand.map((point) => ({ ...point }));
             return hand.map((point, pointIndex) => {
               const prior = previous[pointIndex];
               const speed = Math.hypot(point.x - prior.x, point.y - prior.y);
               // Smooth slow jitter, but let fast gestures respond quickly enough for throwing.
-              const alpha = Math.min(0.84, 0.34 + speed * 6.2);
+              const alpha = Math.min(0.88, 0.28 + speed * 7.5);
               return {
                 x: prior.x + (point.x - prior.x) * alpha,
                 y: prior.y + (point.y - prior.y) * alpha,
@@ -872,6 +920,7 @@ export default function App() {
               };
             });
           });
+          smoothedHandednessRef.current = currentHandedness;
           const detected = readJutsu(latest), count = rawHands.length;
           setHandCount(count);
           if (!comboModeRef.current && activeRef.current !== 'none') {
@@ -1050,7 +1099,7 @@ export default function App() {
           if (activeRef.current === 'rasengan' && hands.length) drawRasengan(ctx,palm(hands[0]),w,h,now/1000,charge);
           if (activeRef.current === 'chidori' && hands.length) drawChidori(ctx,palm(hands[0]),move,w,h,now/1000,charge,hands[0]);
           if (activeRef.current === 'lightning-burst' && hands.length > 1) drawLightningBurst(ctx,{x:(palm(hands[0]).x+palm(hands[1]).x)/2,y:(palm(hands[0]).y+palm(hands[1]).y)/2},w,h,now/1000,charge);
-          if (activeRef.current === 'fireball') drawFireball(ctx,hands.length > 1 ? {x:(palm(hands[0]).x+palm(hands[1]).x)/2,y:(palm(hands[0]).y+palm(hands[1]).y)/2} : {x:.5,y:.5},w,h,now/1000,charge);
+          if (activeRef.current === 'fireball') { const face = latestFace?.faceLandmarks?.[0] as Point[] | undefined; if (face && face.length >= 292) { const target = drawUchihaMouthFire(ctx, face, w, h, now / 1000, charge); drawFireball(ctx, target, w, h, now / 1000, charge); } else { drawFireball(ctx, hands.length > 1 ? {x:(palm(hands[0]).x+palm(hands[1]).x)/2,y:(palm(hands[0]).y+palm(hands[1]).y)/2} : {x:.5,y:.5},w,h,now/1000,charge); } }
           if (activeRef.current === 'clone' && now < cloneVisualUntilRef.current) {
             const cloneFade = Math.min(1, Math.max(0, (cloneVisualUntilRef.current - now) / 550));
             ctx.save(); ctx.globalAlpha = cloneFade;
@@ -1060,6 +1109,8 @@ export default function App() {
           }
           if (activeRef.current === 'amaterasu' && hands.length) drawAmaterasu(ctx,palm(hands[0]),w,h,now/1000,charge);
           if (activeRef.current === 'wind-scythe' && hands.length) drawWindScythe(ctx,palm(hands[0]),move,w,h,now/1000,charge);
+          const facePoints = latestFace?.faceLandmarks?.[0] as Point[] | undefined;
+          if (sharinganRef.current && facePoints && facePoints.length >= 478) drawSharinganEyes(ctx, facePoints, w, h, now / 1000);
           if (activeToolRef.current !== 'none' && hands.length) drawHeldTool(ctx, hands[0], activeToolRef.current, w, h, now / 1000);
           const dt = Math.min(.05, Math.max(0, (now - lastProjectileFrameAt) / 1000));
           lastProjectileFrameAt = now;
@@ -1192,7 +1243,7 @@ export default function App() {
             <div className={'live-status ' + (cameraState === 'ready' || cameraState === 'camera-only' ? 'is-live' : cameraState === 'error' ? 'is-error' : '')}><span />{cameraState === 'ready' ? 'LIVE TRACKING' : cameraState === 'camera-only' ? 'CAMERA ON · TRACKING OFF' : cameraState === 'loading' ? 'INITIALIZING' : cameraState === 'error' ? 'CAMERA ERROR' : 'STANDBY'}</div>
           </div>
           <div ref={stageRef} className={'camera-stage ' + (activeInfo ? 'effect-' + activeInfo.color : '')}>
-            <div className="stage-grid" /><div className="stage-corner corner-tl" /><div className="stage-corner corner-tr" /><div className="stage-corner corner-bl" /><div className="stage-corner corner-br" />
+            <div className="stage-grid" />{sharinganActive && <div className="sharingan-badge"><Eye size={12} /> SHARINGAN AWAKENED <small>BLINK TO SEAL</small></div>}<div className="stage-corner corner-tl" /><div className="stage-corner corner-tr" /><div className="stage-corner corner-bl" /><div className="stage-corner corner-br" />
             <div className="stage-topline"><span><Activity size={13} /> INPUT FEED</span><span>{cameraState === 'ready' ? (fps || '—') + ' FPS' : '1280 × 720 TARGET'}</span></div>
             {activeJutsu !== 'none' && <div className="chakra-charge-hud" aria-live="polite">
               <div className="charge-hud-top"><span><Zap size={12} /> CHAKRA OUTPUT</span><strong>{chargeLevel}%</strong></div>
@@ -1292,7 +1343,7 @@ export default function App() {
           <div className="detection-card">
             <div className="detection-heading"><div><span className="section-kicker">LIVE READOUT</span><h3>Detection status</h3></div><Activity size={17} /></div>
             <div className="readout-row"><span>Current signal</span><strong className={activeJutsu !== 'none' ? 'signal-active' : ''}>{activeJutsu === 'none' ? 'No active jutsu' : INFO[activeJutsu].name}</strong></div>
-            <div className="readout-row"><span>Hand landmarks</span><strong>{cameraState === 'ready' ? (handCount ? handCount + ' hand' + (handCount === 1 ? '' : 's') + ' tracked' : 'Searching…') : 'Not connected'}</strong></div>
+            <div className="readout-row"><span>Face / eye tracking</span><strong>{faceTrackingState === "ready" ? (sharinganActive ? "Sharingan active" : "Ready · blink to awaken") : faceTrackingState === "loading" ? "Loading model…" : "Unavailable · manual toggle"}</strong></div><div className="readout-row"><span>Hand landmarks</span><strong>{cameraState === 'ready' ? (handCount ? handCount + ' hand' + (handCount === 1 ? '' : 's') + ' tracked' : 'Searching…') : 'Not connected'}</strong></div>
             <div className="readout-row"><span>Gesture classifier</span><strong>{cameraState === 'ready' ? 'Running locally' : 'Awaiting camera'}</strong></div>
             <div className="readout-row"><span>Clone cutout</span><strong>{cloneStatus === 'ready' ? 'Segmentation ready' : cloneStatus === 'loading' ? 'Loading model…' : cloneStatus === 'error' ? 'Visual fallback' : 'Loads on first clone'}</strong></div>
             <div className="signal-track"><span style={{ width: cameraState === 'ready' ? (handCount ? '86%' : '32%') : '5%' }} /></div>

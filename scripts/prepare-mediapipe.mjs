@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const modelPath = path.join(root, 'public', 'models', 'hand_landmarker.task');
+const faceModelPath = path.join(root, 'public', 'models', 'face_landmarker.task');
 const wasmSource = path.join(root, 'node_modules', '@mediapipe', 'tasks-vision', 'wasm');
 const wasmTarget = path.join(root, 'public', 'mediapipe', 'wasm');
 
@@ -15,6 +16,7 @@ const modelSources = [
   'https://huggingface.co/Leo-TX/mediapipe-hand/resolve/main/hand_landmarker.task?download=true',
   'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
 ];
+const faceModelSources = ['https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task'];
 
 function sha256(data) {
   return createHash('sha256').update(data).digest('hex');
@@ -74,6 +76,13 @@ async function prepareModel() {
   );
 }
 
+async function prepareFaceModel() {
+  await mkdir(path.dirname(faceModelPath), { recursive: true });
+  try { const existing = await readFile(faceModelPath); if (existing.length > 1_000_000) { console.log('Using local MediaPipe face model.'); return; } } catch { /* download below */ }
+  for (const url of faceModelSources) { try { const response = await fetch(url, {redirect:'follow',signal:AbortSignal.timeout(90_000),headers:{'user-agent':'Konoha-Jutsu-Lab-build/1.0'}}); if (!response.ok) throw new Error(`HTTP ${response.status}`); const bytes=Buffer.from(await response.arrayBuffer()); if(bytes.length<1_000_000)throw new Error('Face model download too small'); const temp=`${faceModelPath}.download`; await writeFile(temp,bytes); await rename(temp,faceModelPath); console.log(`Saved face model (${(bytes.length/1_000_000).toFixed(2)} MB).`); return; } catch(cause) { console.warn(`Optional face model download failed: ${cause instanceof Error?cause.message:String(cause)}`); } }
+  console.warn('Face tracking will try runtime download; hand tracking remains available.');
+}
+
 async function prepareWasm() {
   const sourceFiles = await readdir(wasmSource);
   if (!sourceFiles.some((file) => file === 'vision_wasm_internal.js') ||
@@ -90,4 +99,5 @@ async function prepareWasm() {
 }
 
 await prepareModel();
+await prepareFaceModel();
 await prepareWasm();
