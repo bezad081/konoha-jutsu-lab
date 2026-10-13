@@ -6,7 +6,7 @@ import {
 import { FilesetResolver, HandLandmarker, ImageSegmenter, type HandLandmarkerResult } from '@mediapipe/tasks-vision';
 
 type Jutsu = 'none' | 'rasengan' | 'chidori' | 'clone';
-type Gesture = 'none' | 'open' | 'fist' | 'two-open' | 'clone-seal';
+type Gesture = 'none' | 'open' | 'fist' | 'two-open' | 'clone-seal' | 'ox-seal' | 'hare-seal' | 'monkey-seal';
 type Point = { x: number; y: number; z: number };
 
 // Prefer assets shipped with this GitHub Pages build so the browser does not need to reach a third-party model/CDN.
@@ -82,9 +82,9 @@ const INFO: Record<Exclude<Jutsu, 'none'>, { name: string; color: string }> = {
 };
 
 const COMBO_STEPS: Array<{ gesture: Gesture; title: string; instruction: string }> = [
-  { gesture: 'open', title: 'Charge Chakra', instruction: 'Show one open palm' },
-  { gesture: 'fist', title: 'Lightning Stance', instruction: 'Close one hand into a fist' },
-  { gesture: 'clone-seal', title: 'Shadow Clone Seal', instruction: 'Bring both hands together and cross the fingers into a plus (+)' },
+  { gesture: 'ox-seal', title: 'Ox · Ushi', instruction: 'Bring both closed hands together near your chest' },
+  { gesture: 'hare-seal', title: 'Hare · Usagi', instruction: 'Raise index and middle fingers; curl the other fingers' },
+  { gesture: 'monkey-seal', title: 'Monkey · Saru', instruction: 'Bring both open hands together, palms facing' },
 ];
 
 function dist(a: Point, b: Point) {
@@ -143,13 +143,17 @@ function isShadowCloneSeal(hands: Point[][]) {
   return angle > 24 && tipsNear;
 }
 function readJutsu(result: HandLandmarkerResult | null): { jutsu: Jutsu; gesture: Gesture } {
-  const hands = (result?.landmarks ?? []) as Point[][];
-  const gestures = hands.map((hand) => classify(hand));
-  if (isShadowCloneSeal(hands)) return { jutsu: 'clone', gesture: 'clone-seal' };
-  if (hands.length > 1 && gestures.filter((g) => g === 'open').length > 1) return { jutsu: 'none', gesture: 'two-open' };
-  if (gestures.includes('open')) return { jutsu: 'rasengan', gesture: 'open' };
-  if (gestures.includes('fist')) return { jutsu: 'chidori', gesture: 'fist' };
-  return { jutsu: 'none', gesture: 'none' };
+  const hands=(result?.landmarks??[]) as Point[][], gestures=hands.map((hand)=>classify(hand));
+  if(isShadowCloneSeal(hands)) return {jutsu:'clone',gesture:'clone-seal'};
+  const near=hands.length===2&&hands.every(hand=>hand.length>=21)&&Math.hypot(palm(hands[0]).x-palm(hands[1]).x,palm(hands[0]).y-palm(hands[1]).y)<(dist(hands[0][0],hands[0][9])+dist(hands[1][0],hands[1][9]))*1.25;
+  if(near&&gestures.every(g=>g==='fist'))return {jutsu:'none',gesture:'ox-seal'};
+  const hare=hands.some(hand=>hand.length>=21&&fingerExtended(hand,8,6,5)&&fingerExtended(hand,12,10,9)&&!fingerExtended(hand,16,14,13)&&!fingerExtended(hand,20,18,17));
+  if(hare)return {jutsu:'none',gesture:'hare-seal'};
+  if(near&&gestures.every(g=>g==='open'))return {jutsu:'none',gesture:'monkey-seal'};
+  if(hands.length>1&&gestures.filter(g=>g==='open').length>1)return {jutsu:'none',gesture:'two-open'};
+  if(gestures.includes('open'))return {jutsu:'rasengan',gesture:'open'};
+  if(gestures.includes('fist'))return {jutsu:'none',gesture:'fist'};
+  return {jutsu:'none',gesture:'none'};
 }
 function palm(points: Point[]) {
   const ids = [0,5,9,13,17];
@@ -180,7 +184,7 @@ function drawRasengan(
 ) {
   const x = p.x * w, y = p.y * h;
   const pulse = 1 + Math.sin(t * 5.2) * 0.035 + charge * 0.035;
-  const r = Math.min(w, h) * (0.064 + charge * 0.018) * pulse;
+  const r = Math.min(w, h) * (0.024 + charge * 0.054) * pulse;
   ctx.save();
   ctx.globalCompositeOperation = 'screen';
 
@@ -249,6 +253,7 @@ function drawChidori(
   h: number,
   t: number,
   charge = 0.72,
+  hand?: Point[],
 ) {
   const x = p.x * w, y = p.y * h;
   const pulse = 1 + Math.sin(t * 12.5) * 0.055;
@@ -263,6 +268,21 @@ function drawChidori(
   haze.addColorStop(0.48, 'rgba(49,159,255,.38)');
   haze.addColorStop(1, 'rgba(22,112,255,0)');
   ctx.fillStyle = haze; ctx.beginPath(); ctx.arc(x, y, r * 1.7, 0, Math.PI * 2); ctx.fill();
+
+  // Lightning coats the detected hand: palm, knuckles, fingers and fingertips.
+  if (hand && hand.length >= 21) {
+    ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (const [a, b] of LINKS) {
+      const ax=hand[a].x*w, ay=hand[a].y*h, bx=hand[b].x*w, by=hand[b].y*h;
+      const dx=bx-ax, dy=by-ay, length=Math.hypot(dx,dy)||1, nx=-dy/length, ny=dx/length;
+      const jitter=Math.sin(t*31+a*3.7+b)*Math.min(8,length*.17), mx=(ax+bx)/2+nx*jitter, my=(ay+by)/2+ny*jitter;
+      ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(mx,my);ctx.lineTo(bx,by);ctx.strokeStyle='rgba(62,166,255,.96)';ctx.lineWidth=Math.max(4,Math.min(13,length*.28));ctx.shadowColor='#2fa8ff';ctx.shadowBlur=17+charge*10;ctx.stroke();
+      ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(mx,my);ctx.lineTo(bx,by);ctx.strokeStyle='rgba(225,250,255,.94)';ctx.lineWidth=Math.max(1.2,Math.min(3.5,length*.07));ctx.shadowColor='#d9f7ff';ctx.shadowBlur=8;ctx.stroke();
+      if((a+b)%3===0){const side=Math.sin(t*27+a*5)>0?1:-1;ctx.beginPath();ctx.moveTo(mx,my);ctx.lineTo(mx+nx*side*(5+charge*8),my+ny*side*(5+charge*8));ctx.lineTo(mx+nx*side*(10+charge*13)+dx*.12,my+ny*side*(10+charge*13)+dy*.12);ctx.strokeStyle='rgba(168,229,255,.9)';ctx.lineWidth=1.2;ctx.shadowBlur=9;ctx.stroke();}
+    }
+    for(const id of [4,8,12,16,20]){const tip=hand[id],tx=tip.x*w,ty=tip.y*h,g=ctx.createRadialGradient(tx,ty,0,tx,ty,12+charge*7);g.addColorStop(0,'rgba(255,255,255,.98)');g.addColorStop(.28,'rgba(105,209,255,.78)');g.addColorStop(1,'rgba(42,145,255,0)');ctx.fillStyle=g;ctx.beginPath();ctx.arc(tx,ty,12+charge*7,0,Math.PI*2);ctx.fill();}
+    ctx.restore();
+  }
 
   // Fine jagged bolts branch out from a compact, bright core.
   for (let bolt = 0; bolt < 17; bolt++) {
@@ -366,10 +386,10 @@ function drawSegmentedClones(
   t: number,
 ) {
   ctx.save();
-  ctx.globalCompositeOperation = 'screen';
+  ctx.globalCompositeOperation = 'source-over';
   const echoes = [
-    { x: -0.16 + Math.sin(t * 1.4) * 0.008, y: 0.018, scale: 0.91, alpha: 0.37, hue: 135 },
-    { x: 0.16 + Math.sin(t * 1.7 + 1) * 0.008, y: -0.008, scale: 0.88, alpha: 0.31, hue: 205 },
+    { x: -0.23 + Math.sin(t * 1.4) * 0.012, y: 0.006, scale: 0.96, alpha: 0.76, hue: 135 },
+    { x: 0.23 + Math.sin(t * 1.7 + 1) * 0.012, y: -0.004, scale: 0.94, alpha: 0.72, hue: 205 },
   ];
   for (const [index, echo] of echoes.entries()) {
     const cloneX = w * (0.5 + echo.x);
@@ -397,7 +417,7 @@ function drawSegmentedClones(
     }
     ctx.save();
     ctx.globalAlpha = echo.alpha;
-    ctx.filter = `hue-rotate(${echo.hue}deg) saturate(1.75) brightness(1.3) drop-shadow(0 0 12px rgba(92,190,255,.85))`;
+    ctx.filter = `hue-rotate(${echo.hue}deg) saturate(1.9) brightness(1.18) drop-shadow(0 0 18px rgba(92,190,255,.95))`;
     ctx.drawImage(
       sprite,
       w * echo.x + (w - w * echo.scale) / 2,
@@ -424,6 +444,8 @@ export default function App() {
   const timeoutRef = useRef<number | null>(null);
   const activeRef = useRef<Jutsu>('none');
   const audioRef = useRef<AudioContext | null>(null);
+  const jutsuStartedAtRef = useRef(0);
+  const castUntilRef = useRef(0);
   const soundRef = useRef(false);
   const landmarksRef = useRef(true);
   const [cameraState, setCameraState] = useState<'idle'|'loading'|'ready'|'camera-only'|'error'>('idle');
@@ -443,27 +465,22 @@ export default function App() {
   const comboProgressRef = useRef(0);
   const comboCandidateRef = useRef<Gesture>('none');
   const comboCandidateAtRef = useRef(0);
-  useEffect(() => { soundRef.current = soundEnabled; }, [soundEnabled]);
+  useEffect(() => { soundRef.current=soundEnabled; if(soundEnabled)try{const a=audioRef.current??new window.AudioContext();audioRef.current=a;void a.resume();}catch{/* optional */} }, [soundEnabled]);
   useEffect(() => { landmarksRef.current = showLandmarks; }, [showLandmarks]);
 
   const switchJutsu = useCallback((next: Jutsu) => {
-    if (activeRef.current === next) return;
-    activeRef.current = next; setActiveJutsu(next);
-    if (next !== 'none' && soundRef.current) {
-      try {
-        const AudioCtor = window.AudioContext;
-        const audio = audioRef.current ?? new AudioCtor();
-        audioRef.current = audio;
-        const osc = audio.createOscillator(), gain = audio.createGain();
-        osc.type = next === 'chidori' ? 'sawtooth' : 'sine';
-        osc.frequency.setValueAtTime(next === 'clone' ? 520 : next === 'chidori' ? 760 : 420, audio.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(150, audio.currentTime + .22);
-        gain.gain.setValueAtTime(.0001, audio.currentTime);
-        gain.gain.exponentialRampToValueAtTime(.045, audio.currentTime + .025);
-        gain.gain.exponentialRampToValueAtTime(.0001, audio.currentTime + .25);
-        osc.connect(gain); gain.connect(audio.destination); osc.start(); osc.stop(audio.currentTime + .26);
-      } catch { /* Audio is an optional enhancement. */ }
-    }
+    if(activeRef.current===next)return; activeRef.current=next;setActiveJutsu(next);
+    if(next!=='none')jutsuStartedAtRef.current=performance.now();
+    if(next!=='none'&&soundRef.current)try{
+      const audio=audioRef.current??new window.AudioContext();audioRef.current=audio;void audio.resume();const now=audio.currentTime,master=audio.createGain();
+      master.gain.setValueAtTime(.0001,now);master.gain.exponentialRampToValueAtTime(next==='chidori'?.11:.065,now+.035);master.gain.exponentialRampToValueAtTime(.0001,now+(next==='chidori'?.78:.48));master.connect(audio.destination);
+      const buffer=audio.createBuffer(1,Math.floor(audio.sampleRate*.8),audio.sampleRate),data=buffer.getChannelData(0);for(let i=0;i<data.length;i++)data[i]=(Math.random()*2-1)*(1-i/data.length*.35);
+      const noise=audio.createBufferSource(),filter=audio.createBiquadFilter(),ng=audio.createGain();noise.buffer=buffer;filter.type=next==='chidori'?'bandpass':'lowpass';filter.frequency.setValueAtTime(next==='chidori'?2400:next==='rasengan'?850:600,now);filter.frequency.exponentialRampToValueAtTime(next==='chidori'?1100:180,now+.68);filter.Q.value=next==='chidori'?1.6:.7;ng.gain.setValueAtTime(.0001,now);ng.gain.exponentialRampToValueAtTime(next==='chidori'?.58:.24,now+.045);ng.gain.exponentialRampToValueAtTime(.0001,now+.76);noise.connect(filter);filter.connect(ng);ng.connect(master);noise.start(now);noise.stop(now+.78);
+      if(next==='chidori')for(let i=0;i<9;i++){const chirp=audio.createOscillator(),cg=audio.createGain(),st=now+i*.072;chirp.type='sine';chirp.frequency.setValueAtTime(1900+(i%3)*260,st);chirp.frequency.exponentialRampToValueAtTime(2900+(i%2)*320,st+.028);chirp.frequency.exponentialRampToValueAtTime(1450+(i%4)*180,st+.065);cg.gain.setValueAtTime(.0001,st);cg.gain.exponentialRampToValueAtTime(.24,st+.012);cg.gain.exponentialRampToValueAtTime(.0001,st+.068);chirp.connect(cg);cg.connect(master);chirp.start(st);chirp.stop(st+.07);}
+      if(next==='rasengan'){const hum=audio.createOscillator(),hg=audio.createGain();hum.type='sine';hum.frequency.setValueAtTime(210,now);hum.frequency.exponentialRampToValueAtTime(82,now+.45);hg.gain.setValueAtTime(.0001,now);hg.gain.exponentialRampToValueAtTime(.18,now+.08);hg.gain.exponentialRampToValueAtTime(.0001,now+.46);hum.connect(hg);hg.connect(master);hum.start(now);hum.stop(now+.47);}
+      // Browser Japanese voice callout; not the original copyrighted anime recording.
+      if('speechSynthesis'in window){const u=new SpeechSynthesisUtterance(next==='chidori'?'千鳥！':next==='rasengan'?'螺旋丸！':'影分身の術！');u.lang='ja-JP';u.rate=.88;u.pitch=1.12;u.volume=.72;const v=window.speechSynthesis.getVoices().find(x=>x.lang.toLowerCase().startsWith('ja'));if(v)u.voice=v;window.speechSynthesis.speak(u);}
+    }catch{/* optional audio */}
   }, []);
 
   const stopCamera = useCallback(() => {
@@ -508,7 +525,7 @@ export default function App() {
       const { tracker, vision } = await createHandTracker();
       trackerRef.current = tracker;
       setCameraState('ready');
-      setGestureLabel('Show an open palm or make a fist');
+      setGestureLabel('Rasengan: open palm · Chidori: Start Chidori and follow Ox → Hare → Monkey');
       let segmenterLoading = false, segmenterFailed = false, personMaskIndex = 0;
       let lastSegmentationAt = 0, lastSegmentationVideoTime = -1;
       const cloneSprite = document.createElement('canvas');
@@ -588,9 +605,10 @@ export default function App() {
                 if (nextProgress >= COMBO_STEPS.length) {
                   comboModeRef.current = false;
                   setComboMode(false);
-                  setComboFeedback('Combo complete — Shadow Clone released!');
-                  setGestureLabel('Sequence complete · Shadow Clone released');
-                  switchJutsu('clone');
+                  setComboFeedback('Chidori released! Lightning is gathering around your hand.');
+                  setGestureLabel('Chidori sequence complete · Ox → Hare → Monkey');
+                  castUntilRef.current = now + 2800;
+                  switchJutsu('chidori');
                 } else {
                   setComboFeedback(`Step ${nextProgress} complete. Next: ${COMBO_STEPS[nextProgress].instruction}.`);
                   setGestureLabel(`Combo practice · step ${nextProgress + 1} of ${COMBO_STEPS.length}`);
@@ -620,8 +638,8 @@ export default function App() {
             } else setGestureLabel('Hold the pose steady…');
           } else {
             candidate = 'none'; candidateAt = now; if (!noPoseAt) noPoseAt = now;
-            setGestureLabel(count ? 'Pose not mapped — try an open palm or fist' : 'Move your hands into the frame');
-            if (now - noPoseAt > 700) switchJutsu('none');
+            setGestureLabel(count ? 'Pose detected · try a clear open palm or the guided Chidori seals' : 'Move your hands into the frame');
+            if (now > castUntilRef.current && now - noPoseAt > 700) switchJutsu('none');
           }
           const first = latest.landmarks?.[0] as Point[] | undefined;
           if (first) {
@@ -653,9 +671,9 @@ export default function App() {
           ctx.clearRect(0,0,w,h);
           const hands = smoothedLandmarksRef.current;
           if (landmarksRef.current) drawLandmarks(ctx,hands,w,h);
-          const charge = Math.min(1, 0.48 + (now - candidateAt) / 2400);
+          const charge = Math.min(1, Math.max(0, (now - jutsuStartedAtRef.current) / 2600));
           if (activeRef.current === 'rasengan' && hands.length) drawRasengan(ctx,palm(hands[0]),w,h,now/1000,charge);
-          if (activeRef.current === 'chidori' && hands.length) drawChidori(ctx,palm(hands[0]),move,w,h,now/1000,charge);
+          if (activeRef.current === 'chidori' && hands.length) drawChidori(ctx,palm(hands[0]),move,w,h,now/1000,charge,hands[0]);
           if (activeRef.current === 'clone') {
             if (cloneSpriteReadyRef.current && cloneSpriteRef.current) drawSegmentedClones(ctx,cloneSpriteRef.current,w,h,now/1000);
             else drawCloneEcho(ctx,w,h,now/1000);
@@ -732,11 +750,11 @@ export default function App() {
       comboModeRef.current = false;
       setComboMode(false);
       comboCandidateRef.current = 'none';
-      setComboFeedback('Combo cancelled. Start again whenever you are ready.');
+      setComboFeedback('Sequence cancelled. Start again whenever you are ready.');
       return;
     }
     if (cameraState !== 'ready') {
-      setComboFeedback('Start the camera before beginning the live combo.');
+      setComboFeedback('Start the camera before beginning the live Chidori sequence.');
       return;
     }
     comboModeRef.current = true;
@@ -745,8 +763,8 @@ export default function App() {
     setComboProgress(0);
     setComboMode(true);
     switchJutsu('none');
-    setComboFeedback('Step 1: show one open palm and hold it for half a second.');
-    setGestureLabel('Combo practice · step 1 of 3');
+    setComboFeedback('Step 1: bring both closed hands together for the Ox seal and hold.');
+    setGestureLabel('Chidori practice · step 1 of 3');
   };
 
   return (
@@ -771,7 +789,7 @@ export default function App() {
           <div className="stat-item"><span className="stat-icon green"><ShieldCheck size={17} /></span><div><b>No upload</b><small>video stays local</small></div></div>
         </div>
       </section>
-      {helpOpen && <section className="help-panel"><Info size={18} /><div><strong>Quick start · How to cast</strong><p><b>1.</b> Press Start camera and allow permission. Keep your hands well lit and fully inside the frame. <b>2. Rasengan:</b> show one open palm toward the camera and hold it steady. <b>3. Chidori:</b> close one hand into a clear fist and hold. <b>4. Shadow Clone:</b> bring both hands together and cross the index/middle fingers into a visible plus (+) shape; keep ring and little fingers curled. Hold the seal still while the clones appear. <b>5. Training:</b> press Start combo, then hold open palm → fist → both open palms, about half a second each. The cards below are visual previews only, not casts. Video is processed in your browser.</p></div><button className="text-button" onClick={() => setHelpOpen(false)}>Got it</button></section>}
+      {helpOpen && <section className="help-panel"><Info size={18} /><div><strong>Quick start · How to cast</strong><p><b>1.</b> Start the camera and allow permission. <b>2. Rasengan:</b> show one open palm; the orb grows from palm-sized over about 2–3 seconds. <b>3. Chidori:</b> press Start Chidori and perform Ox → Hare → Monkey, holding each pose for half a second. A bird-like electric chirp and Japanese voice callout play when sound is enabled. <b>4. Shadow Clone:</b> cross the index/middle fingers of both hands into a plus (+) shape; two brighter copies of your silhouette should split out to either side. Video is processed in your browser.</p></div><button className="text-button" onClick={() => setHelpOpen(false)}>Got it</button></section>}
       <section className="workspace">
         <div className="camera-column">
           <div className="panel-heading"><div><span className="section-kicker">01 / LIVE INPUT</span><h2>Chakra viewport</h2></div>
@@ -805,11 +823,11 @@ export default function App() {
           <div className="jutsu-list">
             <button className={'jutsu-card blue-card ' + (activeJutsu === 'rasengan' ? 'is-active' : '')} onClick={() => preview('rasengan')}>
               <div className="jutsu-art rasengan-art"><span className="orb-core" /><span className="orb-ring ring-one" /><span className="orb-ring ring-two" /><span className="orb-spark s1" /><span className="orb-spark s2" /></div>
-              <div className="jutsu-copy"><div className="jutsu-overline">WIND / CHAKRA</div><h3>Rasengan</h3><p>Open one palm to the camera and hold steady · blue chakra orb</p><div className="jutsu-foot"><span className="difficulty easy">BEGINNER</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">01</span>
+              <div className="jutsu-copy"><div className="jutsu-overline">WIND / CHAKRA</div><h3>Rasengan</h3><p>Open palm · small orb grows gradually into a bright, spinning chakra sphere</p><div className="jutsu-foot"><span className="difficulty easy">BEGINNER</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">01</span>
             </button>
             <button className={'jutsu-card cyan-card ' + (activeJutsu === 'chidori' ? 'is-active' : '')} onClick={() => preview('chidori')}>
               <div className="jutsu-art lightning-art"><Zap className="lightning-symbol" size={44} /><i className="bolt b1" /><i className="bolt b2" /><i className="bolt b3" /></div>
-              <div className="jutsu-copy"><div className="jutsu-overline">LIGHTNING STYLE</div><h3>Chidori</h3><p>Make a clear fist and hold steady · electric-blue lightning</p><div className="jutsu-foot"><span className="difficulty medium">INTERMEDIATE</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">02</span>
+              <div className="jutsu-copy"><div className="jutsu-overline">LIGHTNING STYLE</div><h3>Chidori</h3><p>Complete Ox → Hare → Monkey · electric chakra coats the full hand</p><div className="jutsu-foot"><span className="difficulty medium">INTERMEDIATE</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">02</span>
             </button>
             <button className={'jutsu-card violet-card ' + (activeJutsu === 'clone' ? 'is-active' : '')} onClick={() => preview('clone')}>
               <div className="jutsu-art clone-art"><span className="clone-figure figure-one" /><span className="clone-figure figure-two" /><span className="clone-figure figure-three" /><Sparkles className="clone-star" size={17} /></div>
@@ -833,11 +851,11 @@ export default function App() {
             <div className="combo-actions">
               <button className={comboMode ? 'secondary-button combo-cancel' : 'primary-button combo-start'} onClick={toggleCombo} disabled={cameraState === 'loading'}>
                 {comboMode ? <RotateCcw size={15} /> : <Hand size={15} />}
-                {comboMode ? 'Cancel practice' : comboProgress === COMBO_STEPS.length ? 'Practise again' : 'Start combo'}
+                {comboMode ? 'Cancel sequence' : comboProgress === COMBO_STEPS.length ? 'Practise again' : 'Start Chidori'}
               </button>
               <span>Hold each pose · 0.5 sec</span>
             </div>
-            <p className="combo-note">Practice sequence: one open palm → one fist → both open palms. This is a starter gesture combo, not yet the traditional Naruto hand-seal sequence.</p>
+            <p className="combo-note">Guided sequence: Ox → Hare → Monkey. The webcam recognizes simplified hand-shape approximations; hold each pose clearly in frame.</p>
           </div>
           <div className="detection-card">
             <div className="detection-heading"><div><span className="section-kicker">LIVE READOUT</span><h3>Detection status</h3></div><Activity size={17} /></div>
