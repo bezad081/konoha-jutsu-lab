@@ -88,3 +88,19 @@ body{background:radial-gradient(ellipse at 9% 4%,rgba(255,145,48,.12),transparen
 .chakra-charge-hud small{font:8px 'DM Mono',monospace;letter-spacing:.09em;color:#7c9bbd}
 @keyframes chargeHudIn{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:translateY(0)}}
 @media(max-width:700px){.chakra-charge-hud{top:43px;right:8px;width:155px;padding:8px 9px}.charge-hud-top{font-size:7px}.charge-hud-top strong{font-size:11px}.chakra-charge-hud small{font-size:7px}}
+
+
+/* Wind Fang: a restrained green gale motif, matching the existing technique cards. */
+.wind-card{border-color:rgba(105,255,190,.19)!important}
+.wind-card:hover,.wind-card.is-active{border-color:rgba(105,255,190,.62)!important;box-shadow:0 0 30px rgba(51,227,151,.1)}
+.wind-card .jutsu-overline{color:#79f3bb}
+.wind-art{background:radial-gradient(circle at 50% 50%,rgba(83,255,179,.18),transparent 64%),linear-gradient(140deg,rgba(18,58,52,.9),rgba(11,20,35,.98))}
+.wind-ring{position:absolute;border:1px solid rgba(121,255,195,.68);border-radius:50%;width:68px;height:30px;left:50%;top:50%;transform:translate(-50%,-50%) rotate(-28deg);box-shadow:0 0 12px rgba(91,255,177,.22)}
+.wind-ring-a{animation:windOrbit 2.8s linear infinite}
+.wind-ring-b{width:52px;height:22px;transform:translate(-50%,-50%) rotate(38deg);border-color:rgba(236,255,246,.78);animation:windOrbit 2.1s linear infinite reverse}
+.wind-blade{position:absolute;width:51px;height:24px;left:50%;top:50%;border:2px solid transparent;border-top-color:#b8ffda;border-radius:50%;filter:drop-shadow(0 0 5px #45f4a3)}
+.wind-blade.blade-a{transform:translate(-50%,-50%) rotate(-34deg)}
+.wind-blade.blade-b{transform:translate(-50%,-50%) rotate(146deg);border-top-color:#42d993}
+.wind-star{position:absolute;left:calc(50% - 9px);top:calc(50% - 9px);color:#d7ffec;filter:drop-shadow(0 0 8px #47ef9d);animation:windPulse 1.3s ease-in-out infinite}
+@keyframes windOrbit{to{transform:translate(-50%,-50%) rotate(332deg)}}
+@keyframes windPulse{0%,100%{opacity:.65;scale:.86}50%{opacity:1;scale:1.12}}
