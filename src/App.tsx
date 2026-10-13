@@ -725,11 +725,14 @@ export default function App() {
   const [cloneStatus, setCloneStatus] = useState<'idle'|'loading'|'ready'|'error'>('idle');
   const [comboMode, setComboMode] = useState(false);
   const [comboProgress, setComboProgress] = useState(0);
+  const [comboHoldProgress, setComboHoldProgress] = useState(0);
   const [comboFeedback, setComboFeedback] = useState('Start Chidori, bring both fists close together, then thrust one fist forward while pulling the other back.');
   const comboModeRef = useRef(false);
   const comboProgressRef = useRef(0);
   const comboCandidateRef = useRef<Gesture>('none');
   const comboCandidateAtRef = useRef(0);
+  const comboStepStartedAtRef = useRef(0);
+  const comboProgressUiAtRef = useRef(0);
   useEffect(() => { soundRef.current=soundEnabled; if(soundEnabled)try{const a=audioRef.current??new window.AudioContext();audioRef.current=a;void a.resume();}catch{/* optional */} }, [soundEnabled]);
   useEffect(() => { landmarksRef.current = showLandmarks; }, [showLandmarks]);
   useEffect(() => {
@@ -891,18 +894,39 @@ export default function App() {
             candidate = 'none'; noPoseAt = 0;
             setGestureLabel('Chidori released · lightning surrounds your hand!');
           } else if (comboModeRef.current) {
-            const expected = COMBO_STEPS[comboProgressRef.current];
+            let expected = COMBO_STEPS[comboProgressRef.current];
             candidate = 'none'; noPoseAt = 0;
+            // Reset abandoned sequences rather than leaving a stale step armed indefinitely.
+            if (comboStepStartedAtRef.current && now - comboStepStartedAtRef.current > 6500) {
+              comboProgressRef.current = 0;
+              comboCandidateRef.current = 'none';
+              comboCandidateAtRef.current = 0;
+              comboStepStartedAtRef.current = now;
+              setComboProgress(0); setComboHoldProgress(0);
+              setComboFeedback('Sequence timed out. Start again with both fists close together.');
+              setGestureLabel('Chidori sequence timed out · restart from step 1');
+              expected = COMBO_STEPS[0];
+            }
             if (expected && detected.gesture === expected.gesture) {
               if (comboCandidateRef.current !== expected.gesture) {
                 comboCandidateRef.current = expected.gesture;
                 comboCandidateAtRef.current = now;
+                setComboHoldProgress(0);
                 setComboFeedback(`Hold ${expected.title} steady…`);
-              } else if (now - comboCandidateAtRef.current >= 500) {
+              }
+              const heldFor = now - comboCandidateAtRef.current;
+              if (now - comboProgressUiAtRef.current > 70) {
+                setComboHoldProgress(Math.min(100, heldFor / 500 * 100));
+                comboProgressUiAtRef.current = now;
+              }
+              if (heldFor >= 500) {
                 const nextProgress = comboProgressRef.current + 1;
                 comboProgressRef.current = nextProgress;
                 setComboProgress(nextProgress);
                 comboCandidateRef.current = 'none';
+                comboCandidateAtRef.current = 0;
+                setComboHoldProgress(0);
+                comboStepStartedAtRef.current = now;
                 if (nextProgress >= COMBO_STEPS.length) {
                   comboModeRef.current = false;
                   setComboMode(false);
@@ -917,8 +941,10 @@ export default function App() {
               }
             } else {
               comboCandidateRef.current = 'none';
+              comboCandidateAtRef.current = 0;
+              setComboHoldProgress(0);
               if (detected.gesture !== 'none' && expected) {
-                setComboFeedback(`Not quite — step ${comboProgressRef.current + 1}: ${expected.instruction}.`);
+                setComboFeedback(`Keep going — step ${comboProgressRef.current + 1}: ${expected.instruction}.`);
               }
               setGestureLabel(expected ? `Combo practice · step ${comboProgressRef.current + 1} of ${COMBO_STEPS.length}` : 'Finishing combo…');
             }
@@ -1128,7 +1154,9 @@ export default function App() {
     comboModeRef.current = true;
     comboProgressRef.current = 0;
     comboCandidateRef.current = 'none';
-    setComboProgress(0);
+    comboCandidateAtRef.current = 0;
+    comboStepStartedAtRef.current = performance.now();
+    setComboProgress(0); setComboHoldProgress(0);
     setComboMode(true);
     switchJutsu('none');
     setComboFeedback('Step 1: bring both closed fists together and hold.');
@@ -1250,13 +1278,14 @@ export default function App() {
                 </div>
               ))}
             </div>
+            <div className="combo-hold-meter" aria-label={`Pose hold progress ${Math.round(comboHoldProgress)} percent`}><span style={{ width: `${comboHoldProgress}%` }} /></div>
             <p className="combo-feedback">{comboFeedback}</p>
             <div className="combo-actions">
               <button className={comboMode ? 'secondary-button combo-cancel' : 'primary-button combo-start'} onClick={toggleCombo} disabled={cameraState === 'loading'}>
                 {comboMode ? <RotateCcw size={15} /> : <Hand size={15} />}
                 {comboMode ? 'Cancel sequence' : comboProgress === COMBO_STEPS.length ? 'Practise again' : 'Start Chidori'}
               </button>
-              <span>Hold each pose · 0.5 sec</span>
+              <span>Hold each pose · 0.5 sec · 6.5 sec step timeout</span>
             </div>
             <p className="combo-note">No open palm needed: bring both closed fists close together in front of your upper chest, then thrust one fist toward the camera while pulling the other back by your shoulder. Hold each pose for half a second.</p>
           </div>
