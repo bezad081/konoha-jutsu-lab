@@ -73,6 +73,9 @@ A deployment workflow is included at `.github/workflows/deploy.yml`. After the p
 
 ## Technique updates and inspiration sources
 
+- Live chakra HUD shows cast charge from gathering to maximum output; a motion-reactive energy trail follows the detected hand/palm and changes color by technique. These are original procedural Canvas/CSS effects, not copied sprites.
+- Reference-project boundary: FavorPan/naruto and Vaibhavs006/Naruto informed effect layering, motion feedback, and the future seal-training direction. Their assets/models are not silently copied; license and provenance must be checked before any reuse. Jutsu-Hero's non-commercial license is not suitable for an unrestricted commercial release.
+- The current prototype still recognizes a small set of geometric poses, not the full canon set of twelve Naruto hand seals. A robust seal system needs a labelled sample workflow and validation across camera angles; we should add this as a dedicated next milestone rather than falsely label a fist/open-palm heuristic as full seal recognition.
 - The current-jutsu lock is a deliberate temporal interaction rule: a recognized technique stays active while a hand remains in frame, preventing transient open-palm/fist classifications from switching effects. Leave the camera frame with both hands to reset.
 - Chidori uses a two-pose closed-fist combo, plus a directional lightning tail and a brief impact flash/shake.
 - Amaterasu is an original Canvas/CSS fan-effect implementation, with animated black flame shapes and violet highlights.
