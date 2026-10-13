@@ -16,6 +16,9 @@ A React + TypeScript + Vite prototype for webcam-based hand tracking and Naruto-
 - The sound toggle plays a sample when enabled, making it easy to check the audio before casting.
 - Preview controls when camera access is unavailable.
 - Responsive UI, camera permission errors, camera cleanup, and optional generated sound.
+- Selectable virtual Shuriken and Kunai tools rendered over the tracked hand in the live camera image.
+- A quick hand movement launches the selected tool as a spinning Canvas projectile with a short trail-like glow and a brief synthesized throw cue when sound is enabled. This is a visual prototype: it does not simulate real object contact or damage.
+- Adaptive landmark smoothing dampens small movements while responding more quickly to faster gestures.
 
 ## Run locally
 
