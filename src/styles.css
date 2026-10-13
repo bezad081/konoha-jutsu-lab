@@ -47,7 +47,9 @@ body{background:radial-gradient(ellipse at 9% 4%,rgba(255,145,48,.12),transparen
 
 
 
-/* Anime character art and Amaterasu's animated black flames. */
+/* Anime character art, Amaterasu flames, and a short cinematic impact cue. */
+.camera-stage.jutsu-impact{animation:jutsuImpact .42s ease-out}
+@keyframes jutsuImpact{0%{filter:brightness(1.45) saturate(1.35);box-shadow:0 0 0 2px rgba(220,245,255,.75),0 0 38px rgba(90,190,255,.35)}22%{transform:translateX(-2px) scale(1.002)}42%{transform:translateX(2px)}62%{transform:translateX(-1px)}100%{transform:translateX(0) scale(1);filter:brightness(1) saturate(1);box-shadow:none}}
 .topbar-portraits img{background:radial-gradient(circle at 50% 40%,rgba(255,255,255,.13),rgba(7,10,20,.92) 72%);object-fit:contain;object-position:center 20%;padding:1px}
 .shinobi-card img{object-fit:contain;object-position:center bottom;background:linear-gradient(135deg,rgba(10,16,31,.18),rgba(3,7,16,.68))}
 .amaterasu-card{border-color:rgba(151,108,255,.28);background:linear-gradient(115deg,rgba(23,16,40,.97),rgba(7,10,20,.97))}
