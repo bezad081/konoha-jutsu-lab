@@ -845,12 +845,17 @@ export default function App() {
           smoothedLandmarksRef.current = rawHands.map((hand, handIndex) => {
             const previous = previousHands[handIndex];
             if (!previous || previous.length !== hand.length) return hand.map((point) => ({ ...point }));
-            const alpha = 0.46;
-            return hand.map((point, pointIndex) => ({
-              x: previous[pointIndex].x + (point.x - previous[pointIndex].x) * alpha,
-              y: previous[pointIndex].y + (point.y - previous[pointIndex].y) * alpha,
-              z: previous[pointIndex].z + (point.z - previous[pointIndex].z) * alpha,
-            }));
+            return hand.map((point, pointIndex) => {
+              const prior = previous[pointIndex];
+              const speed = Math.hypot(point.x - prior.x, point.y - prior.y);
+              // Smooth slow jitter, but let fast gestures respond quickly enough for throwing.
+              const alpha = Math.min(0.84, 0.34 + speed * 6.2);
+              return {
+                x: prior.x + (point.x - prior.x) * alpha,
+                y: prior.y + (point.y - prior.y) * alpha,
+                z: prior.z + (point.z - prior.z) * alpha,
+              };
+            });
           });
           const detected = readJutsu(latest), count = rawHands.length;
           setHandCount(count);
