@@ -262,6 +262,76 @@ function drawEnergyTrail(
   ctx.restore();
 }
 
+
+function drawHeldTool(ctx: CanvasRenderingContext2D, hand: Point[], tool: Exclude<NinjaTool, 'none'>, w: number, h: number, t: number) {
+  if (hand.length < 21) return;
+  const p = palm(hand), x = p.x * w, y = p.y * h;
+  const angle = Math.atan2(hand[8].y - hand[5].y, hand[8].x - hand[5].x) + Math.PI / 2;
+  const size = Math.min(w, h) * (tool === 'shuriken' ? 0.055 : 0.075);
+  ctx.save(); ctx.translate(x, y); ctx.rotate(angle);
+  ctx.globalCompositeOperation = 'screen'; ctx.shadowColor = '#bdeeff'; ctx.shadowBlur = 12;
+  if (tool === 'shuriken') {
+    ctx.rotate(t * 0.55);
+    const metal = ctx.createLinearGradient(-size, -size, size, size);
+    metal.addColorStop(0, '#f8ffff'); metal.addColorStop(.45, '#8da9c4'); metal.addColorStop(1, '#eaf8ff');
+    ctx.beginPath();
+    for (let i = 0; i < 16; i++) {
+      const a = -Math.PI / 2 + i * Math.PI / 8, radius = i % 2 === 0 ? size : size * .34;
+      const px = Math.cos(a) * radius, py = Math.sin(a) * radius;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath(); ctx.fillStyle = metal; ctx.fill();
+    ctx.lineWidth = Math.max(1.5, size * .055); ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, size * .16, 0, Math.PI * 2); ctx.fillStyle = '#263c54'; ctx.fill();
+  } else {
+    ctx.beginPath(); ctx.moveTo(0, -size * 1.25); ctx.lineTo(size * .23, -size * .52);
+    ctx.lineTo(size * .18, size * .48); ctx.lineTo(0, size * .7);
+    ctx.lineTo(-size * .18, size * .48); ctx.lineTo(-size * .23, -size * .52); ctx.closePath();
+    const metal = ctx.createLinearGradient(-size * .3, 0, size * .3, 0);
+    metal.addColorStop(0, '#6e8aa5'); metal.addColorStop(.45, '#f1fbff'); metal.addColorStop(1, '#7795b1');
+    ctx.fillStyle = metal; ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.92)'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, size * .68); ctx.lineTo(0, size * 1.2);
+    ctx.strokeStyle = '#c9a77c'; ctx.lineWidth = Math.max(2, size * .11); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, size * 1.22, size * .13, 0, Math.PI * 2);
+    ctx.strokeStyle = '#d8e7f4'; ctx.lineWidth = Math.max(1.5, size * .07); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawThrownTools(ctx: CanvasRenderingContext2D, projectiles: ThrownTool[], w: number, h: number, now: number) {
+  for (const projectile of projectiles) {
+    const age = (now - projectile.born) / 1000;
+    const fade = Math.max(0, Math.min(1, (1.8 - age) / .28));
+    const x = projectile.x * w, y = projectile.y * h;
+    const size = Math.min(w, h) * (projectile.kind === 'shuriken' ? .035 : .047);
+    ctx.save(); ctx.translate(x, y);
+    ctx.rotate(projectile.spin + age * (projectile.kind === 'shuriken' ? 18 : 8));
+    ctx.globalAlpha = fade; ctx.globalCompositeOperation = 'screen';
+    ctx.shadowColor = '#9edfff'; ctx.shadowBlur = 16;
+    if (projectile.kind === 'shuriken') {
+      ctx.beginPath();
+      for (let i = 0; i < 16; i++) {
+        const a = -Math.PI / 2 + i * Math.PI / 8, radius = i % 2 === 0 ? size : size * .32;
+        const px = Math.cos(a) * radius, py = Math.sin(a) * radius;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath(); ctx.fillStyle = '#dff7ff'; ctx.fill();
+      ctx.lineWidth = Math.max(1, size * .08); ctx.strokeStyle = '#ffffff'; ctx.stroke();
+      ctx.beginPath(); ctx.arc(0, 0, size * .15, 0, Math.PI * 2); ctx.fillStyle = '#526b82'; ctx.fill();
+    } else {
+      ctx.beginPath(); ctx.moveTo(0, -size * 1.35); ctx.lineTo(size * .25, -size * .42);
+      ctx.lineTo(size * .16, size * .52); ctx.lineTo(0, size * .72);
+      ctx.lineTo(-size * .16, size * .52); ctx.lineTo(-size * .25, -size * .42); ctx.closePath();
+      const metal = ctx.createLinearGradient(-size * .3, 0, size * .3, 0);
+      metal.addColorStop(0, '#7896b3'); metal.addColorStop(.5, '#f7ffff'); metal.addColorStop(1, '#7896b3');
+      ctx.fillStyle = metal; ctx.fill(); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.2; ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, size * .7); ctx.lineTo(0, size * 1.25);
+      ctx.strokeStyle = '#c7a078'; ctx.lineWidth = Math.max(2, size * .11); ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
 function drawLandmarks(ctx: CanvasRenderingContext2D, hands: Point[][], w: number, h: number) {
   ctx.save(); ctx.lineWidth = Math.max(1.5, w * 0.002); ctx.lineCap = 'round';
   for (const hand of hands) {
