@@ -9,7 +9,7 @@ A React + TypeScript + Vite prototype for webcam-based hand tracking and Naruto-
 - Hand landmark overlay and stable-pose gating to reduce accidental casts.
 - Open palm → Rasengan-style orb effect.
 - Fist → Chidori-style lightning effect.
-- Two open palms → placeholder afterimage illustration for Shadow Clone; full-body segmentation and cutout duplication are not implemented yet.
+- Two open palms → lazily loaded MediaPipe selfie segmentation creates two tinted, offset cutout echoes of the live camera image for Shadow Clone.
 - Preview controls when camera access is unavailable.
 - Responsive UI, camera permission errors, camera cleanup, and optional generated sound.
 
@@ -39,14 +39,14 @@ The browser downloads the MediaPipe WASM runtime and hand-landmark model from pu
 
 1. This version recognizes broad open-palm and fist poses. It does not yet recognize the full set of Naruto hand seals or validate an ordered multi-seal sequence.
 2. Rasengan and Chidori are 2D Canvas effects attached to a detected hand; they are not production-grade 3D assets.
-3. The Shadow Clone effect is explicitly a placeholder. Add selfie segmentation/body cutout and draw time-offset copies for true clones.
+3. Shadow Clone now uses selfie segmentation to draw live cutout echoes. Hair, sleeves, motion blur and background edges can still produce artifacts; this is a prototype effect, not a studio-quality rotoscope.
 4. Add per-user calibration, confidence smoothing, pose capture/testing, and device performance profiling.
 5. Before public or commercial release, audit dependencies and use original or properly licensed visual/audio assets. Naruto-related branding and character assets may have separate rights.
 
 ## Design choices
 
 - React, TypeScript, Vite and CSS for a browser-first UI.
-- `@mediapipe/tasks-vision` for hand landmarks.
+- `@mediapipe/tasks-vision` for hand landmarks and on-demand selfie segmentation.
 - Canvas for procedural effects to avoid a large asset bundle at this stage.
 - Relative Vite base path to support subpath hosting.
 
