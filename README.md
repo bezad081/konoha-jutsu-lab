@@ -69,3 +69,12 @@ A deployment workflow is included at `.github/workflows/deploy.yml`. After the p
 - Naruto Uzumaki cosplay photo: Z, [Cosplay - AWA15 - Naruto Uzumaki](https://commons.wikimedia.org/wiki/File:Cosplay_-_AWA15_-_Naruto_Uzumaki_(3982533553).jpg), CC BY 2.0.
 - Kakashi Hatake cosplay photo: [Kakashi Hatake Cosplay](https://commons.wikimedia.org/wiki/File:Kakashi_Hatake_Cosplay.jpg), CC0 1.0.
 - The images are external Wikimedia Commons assets, not official anime key art. Naruto character names and franchise references belong to their respective rights holders.
+
+
+## Technique updates and inspiration sources
+
+- The current-jutsu lock is a deliberate temporal interaction rule: a recognized technique stays active while a hand remains in frame, preventing transient open-palm/fist classifications from switching effects. Leave the camera frame with both hands to reset.
+- Chidori uses a two-pose closed-fist combo, plus a directional lightning tail and a brief impact flash/shake.
+- Amaterasu is an original Canvas/CSS fan-effect implementation, with animated black flame shapes and violet highlights.
+- Public implementation references reviewed for interaction/effect ideas: [FavorPan/naruto](https://github.com/FavorPan/naruto) (MIT; gesture model and smoke/clone effects) and [Vaibhavs006/Naruto](https://github.com/Vaibhavs006/Naruto) (hand pose variety, Canvas effects, screen flash/shake). No third-party character videos or unlicensed sound recordings were copied into this build.
+- Character art currently hotlinks anime-style PNG illustrations from third-party image hosts; those image files are not part of this repository.
