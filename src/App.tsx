@@ -606,7 +606,15 @@ export default function App() {
             if (candidate !== detected.jutsu) { candidate = detected.jutsu; candidateAt = now; }
             if (now - candidateAt > 420) {
               switchJutsu(detected.jutsu);
-              setGestureLabel(detected.gesture === 'two-open' ? 'Two open hands detected' : detected.gesture === 'open' ? 'Open palm detected' : 'Fist detected');
+              setGestureLabel(
+                detected.gesture === 'clone-seal'
+                  ? 'Shadow Clone plus-seal detected'
+                  : detected.gesture === 'two-open'
+                    ? 'Two open hands detected'
+                    : detected.gesture === 'open'
+                      ? 'Open palm detected'
+                      : 'Fist detected',
+              );
             } else setGestureLabel('Hold the pose steady…');
           } else {
             candidate = 'none'; candidateAt = now; if (!noPoseAt) noPoseAt = now;
