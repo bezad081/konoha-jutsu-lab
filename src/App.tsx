@@ -3,13 +3,14 @@ import {
   Activity, Camera, Check, ChevronDown, CircleHelp, CirclePlay, Cpu, Expand,
   Hand, Info, Lightbulb, LoaderCircle, RotateCcw, ShieldCheck, Sparkles, Zap
 } from 'lucide-react';
-import { FilesetResolver, HandLandmarker, type HandLandmarkerResult } from '@mediapipe/tasks-vision';
+import { FilesetResolver, HandLandmarker, ImageSegmenter, type HandLandmarkerResult } from '@mediapipe/tasks-vision';
 
 type Jutsu = 'none' | 'rasengan' | 'chidori' | 'clone';
 type Gesture = 'none' | 'open' | 'fist' | 'two-open';
 type Point = { x: number; y: number; z: number };
 
 const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
+const SEGMENTER_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter_landscape/float16/latest/selfie_segmenter_landscape.tflite';
 const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm';
 const LINKS: Array<[number, number]> = [
   [0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],
@@ -108,11 +109,71 @@ function drawCloneEcho(ctx: CanvasRenderingContext2D, w: number, h: number, t: n
   ctx.restore();
 }
 
+type ConfidenceMask = { width: number; height: number; getAsFloat32Array(): Float32Array };
+
+function updateCloneSprite(
+  video: HTMLVideoElement,
+  mask: ConfidenceMask,
+  sprite: HTMLCanvasElement,
+) {
+  const width = mask.width, height = mask.height;
+  if (!width || !height) return;
+  if (sprite.width !== width || sprite.height !== height) {
+    sprite.width = width;
+    sprite.height = height;
+  }
+  const ctx = sprite.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return;
+  ctx.clearRect(0, 0, width, height);
+  ctx.drawImage(video, 0, 0, width, height);
+  const pixels = ctx.getImageData(0, 0, width, height);
+  const scores = mask.getAsFloat32Array();
+  const count = Math.min(scores.length, width * height);
+  for (let i = 0; i < count; i++) {
+    const confidence = Math.max(0, Math.min(1, (scores[i] - 0.18) / 0.58));
+    const soft = confidence * confidence * (3 - 2 * confidence);
+    pixels.data[i * 4 + 3] = Math.round(pixels.data[i * 4 + 3] * soft);
+  }
+  ctx.putImageData(pixels, 0, 0);
+}
+
+function drawSegmentedClones(
+  ctx: CanvasRenderingContext2D,
+  sprite: HTMLCanvasElement,
+  w: number,
+  h: number,
+  t: number,
+) {
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  const echoes = [
+    { x: -0.16 + Math.sin(t * 1.4) * 0.008, y: 0.018, scale: 0.91, alpha: 0.37, hue: 135 },
+    { x: 0.16 + Math.sin(t * 1.7 + 1) * 0.008, y: -0.008, scale: 0.88, alpha: 0.31, hue: 205 },
+  ];
+  for (const echo of echoes) {
+    ctx.save();
+    ctx.globalAlpha = echo.alpha;
+    ctx.filter = `hue-rotate(${echo.hue}deg) saturate(1.75) brightness(1.3) drop-shadow(0 0 12px rgba(92,190,255,.85))`;
+    ctx.drawImage(
+      sprite,
+      w * echo.x + (w - w * echo.scale) / 2,
+      h * echo.y + (h - h * echo.scale) / 2,
+      w * echo.scale,
+      h * echo.scale,
+    );
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
 export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const trackerRef = useRef<HandLandmarker | null>(null);
+  const segmenterRef = useRef<ImageSegmenter | null>(null);
+  const cloneSpriteRef = useRef<HTMLCanvasElement | null>(null);
+  const cloneSpriteReadyRef = useRef(false);
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number | null>(null);
   const timeoutRef = useRef<number | null>(null);
@@ -129,6 +190,7 @@ export default function App() {
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [fps, setFps] = useState(0);
+  const [cloneStatus, setCloneStatus] = useState<'idle'|'loading'|'ready'|'error'>('idle');
   useEffect(() => { soundRef.current = soundEnabled; }, [soundEnabled]);
   useEffect(() => { landmarksRef.current = showLandmarks; }, [showLandmarks]);
 
@@ -158,6 +220,9 @@ export default function App() {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     trackerRef.current?.close(); trackerRef.current = null;
+    segmenterRef.current?.close(); segmenterRef.current = null;
+    cloneSpriteRef.current = null; cloneSpriteReadyRef.current = false;
+    setCloneStatus('idle');
     if (videoRef.current) videoRef.current.srcObject = null;
     switchJutsu('none'); setCameraState('idle'); setHandCount(0); setGestureLabel('Camera stopped');
     const ctx = canvasRef.current?.getContext('2d');
@@ -199,6 +264,41 @@ export default function App() {
         });
       }
       trackerRef.current = tracker; setCameraState('ready'); setGestureLabel('Show an open palm or make a fist');
+      let segmenterLoading = false, segmenterFailed = false, personMaskIndex = 0;
+      let lastSegmentationAt = 0, lastSegmentationVideoTime = -1;
+      const cloneSprite = document.createElement('canvas');
+      cloneSpriteRef.current = cloneSprite; cloneSpriteReadyRef.current = false;
+      setCloneStatus('idle');
+      const loadSegmenter = async () => {
+        if (segmenterLoading || segmenterRef.current || segmenterFailed) return;
+        segmenterLoading = true;
+        setCloneStatus('loading');
+        try {
+          let loaded: ImageSegmenter;
+          try {
+            loaded = await ImageSegmenter.createFromOptions(vision, {
+              baseOptions: { modelAssetPath: SEGMENTER_MODEL_URL, delegate: 'GPU' },
+              runningMode: 'VIDEO', outputCategoryMask: false, outputConfidenceMasks: true,
+            });
+          } catch {
+            loaded = await ImageSegmenter.createFromOptions(vision, {
+              baseOptions: { modelAssetPath: SEGMENTER_MODEL_URL, delegate: 'CPU' },
+              runningMode: 'VIDEO', outputCategoryMask: false, outputConfidenceMasks: true,
+            });
+          }
+          segmenterRef.current = loaded;
+          const labels = loaded.getLabels();
+          const personLabel = labels.findIndex((label) => /person|foreground/i.test(label));
+          personMaskIndex = personLabel >= 0 ? personLabel : Math.max(0, labels.length - 1);
+          setCloneStatus('ready');
+        } catch {
+          segmenterFailed = true;
+          setCloneStatus('error');
+          setGestureLabel('Shadow Clone cutout unavailable; using the visual fallback');
+        } finally {
+          segmenterLoading = false;
+        }
+      };
       let lastVideoTime = -1, lastWrist: Point | null = null, move = {x:.2,y:-.05};
       let candidate: Jutsu = 'none', candidateAt = 0, noPoseAt = 0, fpsAt = performance.now(), frames = 0;
       let latest: HandLandmarkerResult | null = null;
@@ -230,6 +330,25 @@ export default function App() {
             lastWrist = { ...first[0] };
           } else lastWrist = null;
         }
+        if (activeRef.current === 'clone') {
+          if (!segmenterRef.current && !segmenterLoading && !segmenterFailed) void loadSegmenter();
+          if (segmenterRef.current && v.currentTime !== lastSegmentationVideoTime && now - lastSegmentationAt > 125) {
+            lastSegmentationVideoTime = v.currentTime;
+            lastSegmentationAt = now;
+            try {
+              segmenterRef.current.segmentForVideo(v, now, (result) => {
+                const masks = result.confidenceMasks ?? [];
+                const personMask = masks[personMaskIndex] ?? masks[0];
+                if (personMask && cloneSpriteRef.current) {
+                  updateCloneSprite(v, personMask, cloneSpriteRef.current);
+                  cloneSpriteReadyRef.current = true;
+                }
+              });
+            } catch {
+              setCloneStatus('error');
+            }
+          }
+        }
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.clearRect(0,0,w,h);
@@ -237,7 +356,10 @@ export default function App() {
           if (landmarksRef.current) drawLandmarks(ctx,hands,w,h);
           if (activeRef.current === 'rasengan' && hands.length) drawRasengan(ctx,palm(hands[0]),w,h,now/1000);
           if (activeRef.current === 'chidori' && hands.length) drawChidori(ctx,palm(hands[0]),move,w,h,now/1000);
-          if (activeRef.current === 'clone') drawCloneEcho(ctx,w,h,now/1000);
+          if (activeRef.current === 'clone') {
+            if (cloneSpriteReadyRef.current && cloneSpriteRef.current) drawSegmentedClones(ctx,cloneSpriteRef.current,w,h,now/1000);
+            else drawCloneEcho(ctx,w,h,now/1000);
+          }
         }
         frames++;
         if (now - fpsAt >= 1000) { setFps(Math.round(frames*1000/(now-fpsAt))); fpsAt=now; frames=0; }
@@ -258,6 +380,7 @@ export default function App() {
     if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current);
     streamRef.current?.getTracks().forEach((track) => track.stop());
     trackerRef.current?.close();
+    segmenterRef.current?.close();
     audioRef.current?.close().catch(() => undefined);
   }, []);
 
@@ -313,7 +436,7 @@ export default function App() {
           <div className="stat-item"><span className="stat-icon green"><ShieldCheck size={17} /></span><div><b>No upload</b><small>video stays local</small></div></div>
         </div>
       </section>
-      {helpOpen && <section className="help-panel"><Info size={18} /><div><strong>Quick start</strong><p>Start the camera and allow permission. Hold one open palm for Rasengan or a fist for Chidori for about half a second. Hold two open palms for the Shadow Clone afterimage preview. Video frames stay in the browser; the hand model is downloaded on first use.</p></div><button className="text-button" onClick={() => setHelpOpen(false)}>Got it</button></section>}
+      {helpOpen && <section className="help-panel"><Info size={18} /><div><strong>Quick start</strong><p>Start the camera and allow permission. Hold one open palm for Rasengan or a fist for Chidori for about half a second. Hold two open palms for Shadow Clone. The browser lazily downloads a selfie-segmentation model and uses it to render two tinted copies of your cutout. Video frames stay in the browser.</p></div><button className="text-button" onClick={() => setHelpOpen(false)}>Got it</button></section>}
       <section className="workspace">
         <div className="camera-column">
           <div className="panel-heading"><div><span className="section-kicker">01 / LIVE INPUT</span><h2>Chakra viewport</h2></div>
@@ -363,6 +486,7 @@ export default function App() {
             <div className="readout-row"><span>Current signal</span><strong className={activeJutsu !== 'none' ? 'signal-active' : ''}>{activeJutsu === 'none' ? 'No active jutsu' : INFO[activeJutsu].name}</strong></div>
             <div className="readout-row"><span>Hand landmarks</span><strong>{cameraState === 'ready' ? (handCount ? handCount + ' hand' + (handCount === 1 ? '' : 's') + ' tracked' : 'Searching…') : 'Not connected'}</strong></div>
             <div className="readout-row"><span>Gesture classifier</span><strong>{cameraState === 'ready' ? 'Running locally' : 'Awaiting camera'}</strong></div>
+            <div className="readout-row"><span>Clone cutout</span><strong>{cloneStatus === 'ready' ? 'Segmentation ready' : cloneStatus === 'loading' ? 'Loading model…' : cloneStatus === 'error' ? 'Visual fallback' : 'Loads on first clone'}</strong></div>
             <div className="signal-track"><span style={{ width: cameraState === 'ready' ? (handCount ? '86%' : '32%') : '5%' }} /></div>
             <p className="signal-caption">{gestureLabel}</p>
           </div>
