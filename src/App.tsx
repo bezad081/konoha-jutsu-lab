@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { FilesetResolver, HandLandmarker, ImageSegmenter, type HandLandmarkerResult } from '@mediapipe/tasks-vision';
 
-type Jutsu = 'none' | 'rasengan' | 'chidori' | 'clone' | 'lightning-burst' | 'fireball' | 'amaterasu';
+type Jutsu = 'none' | 'rasengan' | 'chidori' | 'clone' | 'lightning-burst' | 'fireball' | 'amaterasu' | 'wind-scythe';
 type Gesture = 'none' | 'open' | 'fist' | 'two-open' | 'two-fist' | 'clone-seal' | 'ox-seal' | 'hare-seal' | 'monkey-seal';
 type Point = { x: number; y: number; z: number };
 
@@ -81,7 +81,8 @@ const INFO: Record<Exclude<Jutsu, 'none'>, { name: string; color: string }> = {
   clone: { name: 'Shadow Clone', color: 'violet' },
   'lightning-burst': { name: 'Raiton Pulse', color: 'violet' },
   fireball: { name: 'Fire Style: Fireball Jutsu', color: 'orange' },
-  amaterasu: { name: 'Amaterasu · Black Flames', color: 'black' }
+  amaterasu: { name: 'Amaterasu · Black Flames', color: 'black' },
+  'wind-scythe': { name: 'Wind Fang · Gale Slash', color: 'green' }
 };
 
 const COMBO_STEPS: Array<{ gesture: Gesture; title: string; instruction: string }> = [
@@ -201,7 +202,7 @@ function readJutsu(result: HandLandmarkerResult | null): { jutsu: Jutsu; gesture
   if(hands.length===2&&gestures.every(g=>g==='fist'))return {jutsu:'fireball',gesture:'two-fist'};
   if(hands.length===1&&gestures[0]==='fist')return {jutsu:'amaterasu',gesture:'fist'};
   const hare=hands.some(hand=>hand.length>=21&&fingerExtended(hand,8,6,5)&&fingerExtended(hand,12,10,9)&&!fingerExtended(hand,16,14,13)&&!fingerExtended(hand,20,18,17));
-  if(hare)return {jutsu:'none',gesture:'hare-seal'};
+  if(hare)return {jutsu:'wind-scythe',gesture:'hare-seal'};
   const openHands = gestures.map((gesture, index) => gesture === 'open' ? index : -1).filter((index) => index >= 0);
   if(openHands.length > 1) {
     if(result && openHands.every((index) => palmOrientationAllowsRasengan(result, index))) return {jutsu:'lightning-burst',gesture:'two-open'};
@@ -517,6 +518,29 @@ function updateCloneSprite(
   ctx.putImageData(pixels, 0, 0);
 }
 
+function drawWindScythe(ctx: CanvasRenderingContext2D, p: {x:number;y:number}, move: {x:number;y:number}, w:number, h:number, t:number, charge=0.8) {
+  const x=p.x*w,y=p.y*h,base=Math.min(w,h)*(.11+charge*.045),speed=Math.hypot(move.x,move.y);
+  ctx.save();ctx.globalCompositeOperation='screen';ctx.lineCap='round';ctx.lineJoin='round';
+  const aura=ctx.createRadialGradient(x,y,base*.05,x,y,base*2.2);
+  aura.addColorStop(0,'rgba(235,255,247,.65)');aura.addColorStop(.35,'rgba(100,255,190,.32)');aura.addColorStop(1,'rgba(50,255,170,0)');
+  ctx.fillStyle=aura;ctx.beginPath();ctx.arc(x,y,base*2.2,0,Math.PI*2);ctx.fill();
+  const direction=Math.atan2(move.y,move.x)+(speed>.012?0:-.22);
+  for(let blade=0;blade<3;blade++){
+    const phase=t*(2.1+blade*.38)+blade*2.05,angle=direction+phase*.14;
+    const radius=base*(.8+blade*.27),start=angle-.92,end=angle+.92;
+    ctx.beginPath();ctx.ellipse(x+Math.cos(phase)*base*.2,y+Math.sin(phase)*base*.2,radius*1.12,radius*.48,angle,start,end);
+    ctx.strokeStyle=blade===0?'rgba(255,255,255,.96)':blade===1?'rgba(137,255,204,.92)':'rgba(53,206,151,.72)';
+    ctx.lineWidth=blade===0?3.2:2.1;ctx.shadowColor='#6cffbd';ctx.shadowBlur=18+charge*10;ctx.stroke();
+  }
+  for(let i=0;i<18;i++){
+    const a=i*2.399+t*(i%2?1.8:-1.2),r=base*(.42+((i*7)%11)/11*1.55);
+    const px=x+Math.cos(a)*r,py=y+Math.sin(a)*r;
+    ctx.beginPath();ctx.moveTo(px,py);ctx.lineTo(px+Math.cos(a+.7)*(3+(i%4)*2),py+Math.sin(a+.7)*(3+(i%4)*2));
+    ctx.strokeStyle=i%3?'rgba(101,255,190,.86)':'rgba(255,255,255,.95)';ctx.lineWidth=i%3?1.5:2.4;ctx.shadowBlur=8;ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawAmaterasu(ctx: CanvasRenderingContext2D, p: {x:number;y:number}, w:number, h:number, t:number, charge=0.8) {
   const x=p.x*w,y=p.y*h,base=Math.min(w,h)*(.06+charge*.025);
   ctx.save();ctx.globalCompositeOperation='source-over';ctx.lineCap='round';ctx.lineJoin='round';
@@ -824,7 +848,9 @@ export default function App() {
                     ? 'Raiton Pulse · two palms detected'
                     : detected.gesture === 'open'
                       ? 'Open palm detected'
-                      : 'Fist detected',
+                      : detected.gesture === 'hare-seal'
+                        ? 'Hare seal · Wind Fang activated'
+                        : 'Fist detected',
               );
             } else setGestureLabel('Hold the pose steady…');
           } else {
@@ -875,6 +901,7 @@ export default function App() {
           while (energyTrail.length && now - energyTrail[0].at > 520) energyTrail.shift();
           const trailColor = activeRef.current === 'fireball' ? 'rgba(255,150,48,.95)'
             : activeRef.current === 'amaterasu' ? 'rgba(166,119,255,.95)'
+            : activeRef.current === 'wind-scythe' ? 'rgba(104,255,190,.96)'
             : activeRef.current === 'clone' ? 'rgba(199,165,255,.92)'
             : activeRef.current === 'chidori' || activeRef.current === 'lightning-burst' ? 'rgba(115,222,255,.98)'
             : 'rgba(70,190,255,.95)';
@@ -892,6 +919,7 @@ export default function App() {
             ctx.restore();
           }
           if (activeRef.current === 'amaterasu' && hands.length) drawAmaterasu(ctx,palm(hands[0]),w,h,now/1000,charge);
+          if (activeRef.current === 'wind-scythe' && hands.length) drawWindScythe(ctx,palm(hands[0]),move,w,h,now/1000,charge);
         }
         frames++;
         if (now - fpsAt >= 1000) { setFps(Math.round(frames*1000/(now-fpsAt))); fpsAt=now; frames=0; }
@@ -1003,7 +1031,7 @@ export default function App() {
           <div className="stat-item"><span className="stat-icon green"><ShieldCheck size={17} /></span><div><b>No upload</b><small>video stays local</small></div></div>
         </div>
       </section>
-      {helpOpen && <section className="help-panel"><Info size={18} /><div><strong>Quick start · How to cast</strong><p><b>1.</b> Start the camera. <b>2. Rasengan:</b> show one open palm. <b>3. Chidori:</b> press Start Chidori, bring both closed fists close together in front of your upper chest, then thrust one fist toward the camera while pulling the other back by your shoulder. <b>4. Fireball:</b> hold two closed fists apart. <b>5. Amaterasu:</b> show one closed fist. <b>6. Shadow Clone:</b> cross the index/middle fingers of both hands into a plus (+) shape. Once a jutsu activates, it stays locked while your hands remain in frame; move both hands fully out of frame to reset. Clones linger for six seconds after the seal is released. Video is processed in your browser.</p></div><button className="text-button" onClick={() => setHelpOpen(false)}>Got it</button></section>}
+      {helpOpen && <section className="help-panel"><Info size={18} /><div><strong>Quick start · How to cast</strong><p><b>1.</b> Start the camera. <b>2. Rasengan:</b> show one open palm. <b>3. Chidori:</b> press Start Chidori, bring both closed fists close together in front of your upper chest, then thrust one fist toward the camera while pulling the other back by your shoulder. <b>4. Fireball:</b> hold two closed fists apart. <b>5. Amaterasu:</b> show one closed fist. <b>6. Shadow Clone:</b> cross the index/middle fingers of both hands into a plus (+) shape. <b>7. Wind Fang:</b> raise the index and middle fingers of one hand while curling the ring and little fingers. Move that hand to sweep the green wind blade. Once a jutsu activates, it stays locked while your hands remain in frame; move both hands fully out of frame to reset. Clones linger for six seconds after the seal is released. Video is processed in your browser.</p></div><button className="text-button" onClick={() => setHelpOpen(false)}>Got it</button></section>}
       <section className="workspace">
         <div className="camera-column">
           <div className="panel-heading"><div><span className="section-kicker">01 / LIVE INPUT</span><h2>Chakra viewport</h2></div>
@@ -1038,7 +1066,7 @@ export default function App() {
           {(cameraState === 'error' || cameraState === 'camera-only') && <p className="error-hint"><Info size={14} /> {cameraState === 'camera-only' ? 'The camera preview is being kept active. Hand tracking is unavailable until the model/runtime loads; use the GitHub Actions link to check that the newest build was deployed.' : 'Camera access requires browser permission and a secure context (localhost or HTTPS).'}</p>}
         </div>
         <aside className="right-column">
-          <div className="panel-heading"><div><span className="section-kicker">02 / TECHNIQUE SELECTOR</span><h2>Choose your jutsu</h2></div><span className="mini-count">05</span></div>
+          <div className="panel-heading"><div><span className="section-kicker">02 / TECHNIQUE SELECTOR</span><h2>Choose your jutsu</h2></div><span className="mini-count">06</span></div>
           <div className="jutsu-list">
             <button className={'jutsu-card blue-card ' + (activeJutsu === 'rasengan' ? 'is-active' : '')} onClick={() => preview('rasengan')}>
               <div className="jutsu-art rasengan-art"><span className="orb-core" /><span className="orb-ring ring-one" /><span className="orb-ring ring-two" /><span className="orb-spark s1" /><span className="orb-spark s2" /></div>
@@ -1061,6 +1089,10 @@ export default function App() {
               <div className="jutsu-copy"><div className="jutsu-overline">MANGEKYŌ SHARINGAN</div><h3>Amaterasu</h3><p>Raise one closed fist to summon writhing black flames edged with violet chakra.</p><div className="jutsu-foot"><span className="difficulty advanced">ADVANCED</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">05</span>
             </button>
           </div>
+            <button className={'jutsu-card wind-card ' + (activeJutsu === 'wind-scythe' ? 'is-active' : '')} onClick={() => preview('wind-scythe')}>
+              <div className="jutsu-art wind-art"><span className="wind-ring wind-ring-a" /><span className="wind-ring wind-ring-b" /><i className="wind-blade blade-a" /><i className="wind-blade blade-b" /><Sparkles className="wind-star" size={19} /></div>
+              <div className="jutsu-copy"><div className="jutsu-overline">WIND STYLE · GALE</div><h3>Wind Fang</h3><p>Raise two fingers and sweep your hand to spin a bright green crescent slash with drifting wind particles.</p><div className="jutsu-foot"><span className="difficulty easy">NEW · HAND SIGN</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">06</span>
+            </button>
           <div className="combo-card">
             <div className="combo-header">
               <div><span className="section-kicker">03 / SEAL SEQUENCE</span><h3>Two-move Chidori</h3></div>
@@ -1096,7 +1128,7 @@ export default function App() {
         </aside>
       </section>
       <section className="bottom-grid">
-        <div className="bottom-card mission-card"><div className="bottom-icon"><Lightbulb size={18} /></div><div><div className="section-kicker">YOUR FIRST MISSION</div><h3>Land your first clean cast</h3><p>Move into frame and hold a single open palm steady to cast Rasengan. For Shadow Clone, keep both open hands visible while the browser loads body segmentation. Try two open palms together to cast Raiton Pulse, two closed fists apart for Fireball, or one closed fist for Amaterasu. Show your palm—not the back of your hand—for Rasengan. Move both hands out of frame before switching jutsu.</p></div><ChevronDown size={18} className="muted-chevron" /></div>
+        <div className="bottom-card mission-card"><div className="bottom-icon"><Lightbulb size={18} /></div><div><div className="section-kicker">YOUR FIRST MISSION</div><h3>Land your first clean cast</h3><p>Move into frame and hold a single open palm steady to cast Rasengan. For Shadow Clone, keep both open hands visible while the browser loads body segmentation. Try two open palms together to cast Raiton Pulse, two closed fists apart for Fireball, one closed fist for Amaterasu, or the two-finger hare seal for Wind Fang. Show your palm—not the back of your hand—for Rasengan. Move both hands out of frame before switching jutsu.</p></div><ChevronDown size={18} className="muted-chevron" /></div>
         <div className="bottom-card privacy-card"><div className="bottom-icon green-icon"><ShieldCheck size={18} /></div><div><div className="section-kicker">PRIVACY BY DESIGN</div><h3>Your video stays on your device</h3><p>Hand landmarks are processed in the browser. The model is fetched from a public CDN the first time; camera footage is not sent to a server by this prototype.</p></div><Check size={18} className="privacy-check" /></div>
       </section>
       <section className="shinobi-strip" aria-label="Featured shinobi">
