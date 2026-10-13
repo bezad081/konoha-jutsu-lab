@@ -4,3 +4,7 @@ dist/
 .DS_Store
 .env
 *.tsbuildinfo
+
+# Generated locally by scripts/prepare-mediapipe.mjs; included in the site build only.
+public/models/hand_landmarker.task
+public/mediapipe/wasm/
