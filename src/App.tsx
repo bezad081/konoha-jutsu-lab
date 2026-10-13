@@ -788,7 +788,7 @@ export default function App() {
             </button>
             <button className={'jutsu-card violet-card ' + (activeJutsu === 'clone' ? 'is-active' : '')} onClick={() => preview('clone')}>
               <div className="jutsu-art clone-art"><span className="clone-figure figure-one" /><span className="clone-figure figure-two" /><span className="clone-figure figure-three" /><Sparkles className="clone-star" size={17} /></div>
-              <div className="jutsu-copy"><div className="jutsu-overline">NINJUTSU / DECOY</div><h3>Shadow Clone</h3><p>Both hands · cross index/middle fingers into a + seal</p><div className="jutsu-foot"><span className="difficulty advanced">IN DEVELOPMENT</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">03</span>
+              <div className="jutsu-copy"><div className="jutsu-overline">NINJUTSU / DECOY</div><h3>Shadow Clone</h3><p>Both hands · cross index/middle fingers into a + seal</p><div className="jutsu-foot"><span className="difficulty advanced">CROSSED SEAL</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">03</span>
             </button>
           </div>
           <div className="combo-card">
