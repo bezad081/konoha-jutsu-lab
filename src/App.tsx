@@ -5,8 +5,8 @@ import {
 } from 'lucide-react';
 import { FilesetResolver, HandLandmarker, ImageSegmenter, type HandLandmarkerResult } from '@mediapipe/tasks-vision';
 
-type Jutsu = 'none' | 'rasengan' | 'chidori' | 'clone';
-type Gesture = 'none' | 'open' | 'fist' | 'two-open' | 'clone-seal' | 'ox-seal' | 'hare-seal' | 'monkey-seal';
+type Jutsu = 'none' | 'rasengan' | 'chidori' | 'clone' | 'lightning-burst';
+type Gesture = 'none' | 'open' | 'fist' | 'two-open' | 'clone-seal' | 'chidori-thrust' | 'ox-seal' | 'hare-seal' | 'monkey-seal';
 type Point = { x: number; y: number; z: number };
 
 // Prefer assets shipped with this GitHub Pages build so the browser does not need to reach a third-party model/CDN.
@@ -78,13 +78,13 @@ const LINKS: Array<[number, number]> = [
 const INFO: Record<Exclude<Jutsu, 'none'>, { name: string; color: string }> = {
   rasengan: { name: 'Rasengan', color: 'blue' },
   chidori: { name: 'Chidori', color: 'cyan' },
-  clone: { name: 'Shadow Clone', color: 'violet' }
+  clone: { name: 'Shadow Clone', color: 'violet' },
+  'lightning-burst': { name: 'Raiton Pulse', color: 'violet' }
 };
 
 const COMBO_STEPS: Array<{ gesture: Gesture; title: string; instruction: string }> = [
-  { gesture: 'ox-seal', title: 'Ox · Ushi', instruction: 'Bring both closed hands together near your chest' },
-  { gesture: 'hare-seal', title: 'Hare · Usagi', instruction: 'Raise index and middle fingers; curl the other fingers' },
-  { gesture: 'monkey-seal', title: 'Monkey · Saru', instruction: 'Bring both open hands together, palms facing' },
+  { gesture: 'fist', title: 'Charge · Gather chakra', instruction: 'Make one clear fist and hold it near your chest' },
+  { gesture: 'chidori-thrust', title: 'Release · Lightning thrust', instruction: 'Open your palm toward the camera and push your hand forward' },
 ];
 
 function dist(a: Point, b: Point) {
@@ -142,6 +142,17 @@ function isShadowCloneSeal(hands: Point[][]) {
   const tipsNear = Math.hypot(tipA.x - tipB.x, tipA.y - tipB.y) < (scaleA + scaleB) * 1.65;
   return angle > 24 && tipsNear;
 }
+function palmOrientationAllowsRasengan(result: HandLandmarkerResult, handIndex: number): boolean {
+  const world = (result.worldLandmarks?.[handIndex] ?? []) as Point[];
+  if (world.length < 21) return false;
+  const wrist = world[0], index = world[5], pinky = world[17];
+  const ax = index.x - wrist.x, ay = index.y - wrist.y, az = index.z - wrist.z;
+  const bx = pinky.x - wrist.x, by = pinky.y - wrist.y, bz = pinky.z - wrist.z;
+  const normalY = az * bx - ax * bz;
+  const normalZ = ax * by - ay * bx;
+  const side = result.handedness?.[handIndex]?.[0]?.categoryName === 'Left' ? 1 : -1;
+  return normalZ * side > 0.00002 || normalY * side > 0.00002;
+}
 function readJutsu(result: HandLandmarkerResult | null): { jutsu: Jutsu; gesture: Gesture } {
   const hands=(result?.landmarks??[]) as Point[][], gestures=hands.map((hand)=>classify(hand));
   if(isShadowCloneSeal(hands)) return {jutsu:'clone',gesture:'clone-seal'};
@@ -150,8 +161,16 @@ function readJutsu(result: HandLandmarkerResult | null): { jutsu: Jutsu; gesture
   const hare=hands.some(hand=>hand.length>=21&&fingerExtended(hand,8,6,5)&&fingerExtended(hand,12,10,9)&&!fingerExtended(hand,16,14,13)&&!fingerExtended(hand,20,18,17));
   if(hare)return {jutsu:'none',gesture:'hare-seal'};
   if(near&&gestures.every(g=>g==='open'))return {jutsu:'none',gesture:'monkey-seal'};
-  if(hands.length>1&&gestures.filter(g=>g==='open').length>1)return {jutsu:'none',gesture:'two-open'};
-  if(gestures.includes('open'))return {jutsu:'rasengan',gesture:'open'};
+  const openHands = gestures.map((gesture, index) => gesture === 'open' ? index : -1).filter((index) => index >= 0);
+  if(openHands.length > 1) {
+    if(result && openHands.every((index) => palmOrientationAllowsRasengan(result, index))) return {jutsu:'lightning-burst',gesture:'two-open'};
+    return {jutsu:'none',gesture:'none'};
+  }
+  if(openHands.length === 1) {
+    const index = openHands[0];
+    if(result && palmOrientationAllowsRasengan(result, index)) return {jutsu:'rasengan',gesture:'open'};
+    return {jutsu:'none',gesture:'none'};
+  }
   if(gestures.includes('fist'))return {jutsu:'none',gesture:'fist'};
   return {jutsu:'none',gesture:'none'};
 }
@@ -184,7 +203,7 @@ function drawRasengan(
 ) {
   const x = p.x * w, y = p.y * h;
   const pulse = 1 + Math.sin(t * 5.2) * 0.035 + charge * 0.035;
-  const r = Math.min(w, h) * (0.024 + charge * 0.054) * pulse;
+  const r = Math.min(w, h) * (0.027 + charge * 0.073) * pulse;
   ctx.save();
   ctx.globalCompositeOperation = 'screen';
 
@@ -337,6 +356,25 @@ function drawChidori(
   }
   ctx.restore();
 }
+function drawLightningBurst(ctx: CanvasRenderingContext2D, p: {x:number;y:number}, w: number, h: number, t: number, charge = 0.72) {
+  const x=p.x*w, y=p.y*h, base=Math.min(w,h)*(0.075+charge*0.035), pulse=1+Math.sin(t*9)*0.08;
+  ctx.save(); ctx.globalCompositeOperation='screen'; ctx.lineCap='round'; ctx.lineJoin='round';
+  const glow=ctx.createRadialGradient(x,y,base*.08,x,y,base*2.5);
+  glow.addColorStop(0,'rgba(255,255,255,.96)'); glow.addColorStop(.2,'rgba(171,244,255,.82)'); glow.addColorStop(.55,'rgba(58,160,255,.32)'); glow.addColorStop(1,'rgba(45,115,255,0)');
+  ctx.fillStyle=glow;ctx.beginPath();ctx.arc(x,y,base*2.5*pulse,0,Math.PI*2);ctx.fill();
+  for(let ring=0;ring<3;ring++){
+    ctx.beginPath();ctx.ellipse(x,y,base*(.65+ring*.38)*pulse,base*(.35+ring*.24),t*(ring%2?-.9:1.1)+ring,0,Math.PI*2);
+    ctx.strokeStyle=ring===0?'rgba(255,255,255,.95)':'rgba(83,196,255,.78)';ctx.lineWidth=ring===0?3:1.8;ctx.shadowColor='#50caff';ctx.shadowBlur=14;ctx.stroke();
+  }
+  for(let bolt=0;bolt<22;bolt++){
+    const a=bolt*Math.PI*2/22+t*(bolt%2?1.7:-1.3),len=base*(.75+((Math.sin(t*11+bolt*2.8)+1)/2)*1.25);
+    ctx.beginPath();ctx.moveTo(x+Math.cos(a)*base*.16,y+Math.sin(a)*base*.16);
+    for(let step=1;step<=5;step++){const k=step/5,j=step===5?0:Math.sin(t*24+bolt+step*3)*base*.12;ctx.lineTo(x+Math.cos(a)*len*k-Math.sin(a)*j,y+Math.sin(a)*len*k+Math.cos(a)*j);}
+    ctx.strokeStyle=bolt%4===0?'rgba(255,255,255,.98)':'rgba(91,191,255,.92)';ctx.lineWidth=bolt%4===0?2.4:1.3;ctx.shadowBlur=10;ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawCloneEcho(ctx: CanvasRenderingContext2D, w: number, h: number, t: number) {
   ctx.save(); ctx.globalCompositeOperation='screen';
   for(let i=0;i<3;i++) {
@@ -417,7 +455,7 @@ function drawSegmentedClones(
     }
     ctx.save();
     ctx.globalAlpha = echo.alpha;
-    ctx.filter = `hue-rotate(${echo.hue}deg) saturate(1.9) brightness(1.18) drop-shadow(0 0 18px rgba(92,190,255,.95))`;
+    ctx.filter = 'drop-shadow(0 0 13px rgba(130,205,255,.62))';
     ctx.drawImage(
       sprite,
       w * echo.x + (w - w * echo.scale) / 2,
@@ -478,8 +516,9 @@ export default function App() {
       const noise=audio.createBufferSource(),filter=audio.createBiquadFilter(),ng=audio.createGain();noise.buffer=buffer;filter.type=next==='chidori'?'bandpass':'lowpass';filter.frequency.setValueAtTime(next==='chidori'?2400:next==='rasengan'?850:600,now);filter.frequency.exponentialRampToValueAtTime(next==='chidori'?1100:180,now+.68);filter.Q.value=next==='chidori'?1.6:.7;ng.gain.setValueAtTime(.0001,now);ng.gain.exponentialRampToValueAtTime(next==='chidori'?.58:.24,now+.045);ng.gain.exponentialRampToValueAtTime(.0001,now+.76);noise.connect(filter);filter.connect(ng);ng.connect(master);noise.start(now);noise.stop(now+.78);
       if(next==='chidori')for(let i=0;i<9;i++){const chirp=audio.createOscillator(),cg=audio.createGain(),st=now+i*.072;chirp.type='sine';chirp.frequency.setValueAtTime(1900+(i%3)*260,st);chirp.frequency.exponentialRampToValueAtTime(2900+(i%2)*320,st+.028);chirp.frequency.exponentialRampToValueAtTime(1450+(i%4)*180,st+.065);cg.gain.setValueAtTime(.0001,st);cg.gain.exponentialRampToValueAtTime(.24,st+.012);cg.gain.exponentialRampToValueAtTime(.0001,st+.068);chirp.connect(cg);cg.connect(master);chirp.start(st);chirp.stop(st+.07);}
       if(next==='rasengan'){const hum=audio.createOscillator(),hg=audio.createGain();hum.type='sine';hum.frequency.setValueAtTime(210,now);hum.frequency.exponentialRampToValueAtTime(82,now+.45);hg.gain.setValueAtTime(.0001,now);hg.gain.exponentialRampToValueAtTime(.18,now+.08);hg.gain.exponentialRampToValueAtTime(.0001,now+.46);hum.connect(hg);hg.connect(master);hum.start(now);hum.stop(now+.47);}
+      if(next==='lightning-burst'){for(let i=0;i<5;i++){const osc=audio.createOscillator(),g=audio.createGain(),st=now+i*.045;osc.type='sawtooth';osc.frequency.setValueAtTime(620+i*210,st);osc.frequency.exponentialRampToValueAtTime(130+i*35,st+.16);g.gain.setValueAtTime(.0001,st);g.gain.exponentialRampToValueAtTime(.16,st+.012);g.gain.exponentialRampToValueAtTime(.0001,st+.17);osc.connect(g);g.connect(master);osc.start(st);osc.stop(st+.18);}}
       // Browser Japanese voice callout; not the original copyrighted anime recording.
-      if('speechSynthesis'in window){const u=new SpeechSynthesisUtterance(next==='chidori'?'千鳥！':next==='rasengan'?'螺旋丸！':'影分身の術！');u.lang='ja-JP';u.rate=.88;u.pitch=1.12;u.volume=.72;const v=window.speechSynthesis.getVoices().find(x=>x.lang.toLowerCase().startsWith('ja'));if(v)u.voice=v;window.speechSynthesis.speak(u);}
+      if('speechSynthesis'in window){const phrase=next==='chidori'?'千鳥！':next==='rasengan'?'螺旋丸！':next==='lightning-burst'?'雷遁！':'影分身の術！';const u=new SpeechSynthesisUtterance(phrase);u.lang='ja-JP';u.rate=.88;u.pitch=1.12;u.volume=.72;const v=window.speechSynthesis.getVoices().find(x=>x.lang.toLowerCase().startsWith('ja'));if(v)u.voice=v;window.speechSynthesis.speak(u);}
     }catch{/* optional audio */}
   }, []);
 
@@ -525,7 +564,7 @@ export default function App() {
       const { tracker, vision } = await createHandTracker();
       trackerRef.current = tracker;
       setCameraState('ready');
-      setGestureLabel('Rasengan: open palm · Chidori: Start Chidori and follow Ox → Hare → Monkey');
+      setGestureLabel('Rasengan: show your palm · Chidori: Start Chidori, then Charge → Release · Two palms: Raiton Pulse');
       let segmenterLoading = false, segmenterFailed = false, personMaskIndex = 0;
       let lastSegmentationAt = 0, lastSegmentationVideoTime = -1;
       const cloneSprite = document.createElement('canvas');
@@ -589,7 +628,10 @@ export default function App() {
           });
           const detected = readJutsu(latest), count = rawHands.length;
           setHandCount(count);
-          if (comboModeRef.current) {
+          if (!comboModeRef.current && activeRef.current === 'chidori' && now < castUntilRef.current) {
+            candidate = 'none'; noPoseAt = 0;
+            setGestureLabel('Chidori released · lightning surrounds your hand!');
+          } else if (comboModeRef.current) {
             const expected = COMBO_STEPS[comboProgressRef.current];
             candidate = 'none'; noPoseAt = 0;
             if (expected && detected.gesture === expected.gesture) {
@@ -606,7 +648,7 @@ export default function App() {
                   comboModeRef.current = false;
                   setComboMode(false);
                   setComboFeedback('Chidori released! Lightning is gathering around your hand.');
-                  setGestureLabel('Chidori sequence complete · Ox → Hare → Monkey');
+                  setGestureLabel('Chidori sequence complete · Charge → Release');
                   castUntilRef.current = now + 2800;
                   switchJutsu('chidori');
                 } else {
@@ -630,7 +672,7 @@ export default function App() {
                 detected.gesture === 'clone-seal'
                   ? 'Shadow Clone plus-seal detected'
                   : detected.gesture === 'two-open'
-                    ? 'Two open hands detected'
+                    ? 'Raiton Pulse · two palms detected'
                     : detected.gesture === 'open'
                       ? 'Open palm detected'
                       : 'Fist detected',
@@ -674,6 +716,7 @@ export default function App() {
           const charge = Math.min(1, Math.max(0, (now - jutsuStartedAtRef.current) / 2600));
           if (activeRef.current === 'rasengan' && hands.length) drawRasengan(ctx,palm(hands[0]),w,h,now/1000,charge);
           if (activeRef.current === 'chidori' && hands.length) drawChidori(ctx,palm(hands[0]),move,w,h,now/1000,charge,hands[0]);
+          if (activeRef.current === 'lightning-burst' && hands.length > 1) drawLightningBurst(ctx,midpoint(palm(hands[0]),palm(hands[1])),w,h,now/1000,charge);
           if (activeRef.current === 'clone') {
             if (cloneSpriteReadyRef.current && cloneSpriteRef.current) drawSegmentedClones(ctx,cloneSpriteRef.current,w,h,now/1000);
             else drawCloneEcho(ctx,w,h,now/1000);
@@ -855,7 +898,7 @@ export default function App() {
               </button>
               <span>Hold each pose · 0.5 sec</span>
             </div>
-            <p className="combo-note">Guided sequence: Ox → Hare → Monkey. The webcam recognizes simplified hand-shape approximations; hold each pose clearly in frame.</p>
+            <p className="combo-note">Easy two-move sequence: make a fist to charge, then open your palm and thrust it forward to release Chidori. Hold each pose for half a second.</p>
           </div>
           <div className="detection-card">
             <div className="detection-heading"><div><span className="section-kicker">LIVE READOUT</span><h3>Detection status</h3></div><Activity size={17} /></div>
@@ -869,7 +912,7 @@ export default function App() {
         </aside>
       </section>
       <section className="bottom-grid">
-        <div className="bottom-card mission-card"><div className="bottom-icon"><Lightbulb size={18} /></div><div><div className="section-kicker">YOUR FIRST MISSION</div><h3>Land your first clean cast</h3><p>Move into frame and hold a single open palm steady to cast Rasengan. For Shadow Clone, keep both open hands visible while the browser loads body segmentation. Try the preview cards first if your camera is not available.</p></div><ChevronDown size={18} className="muted-chevron" /></div>
+        <div className="bottom-card mission-card"><div className="bottom-icon"><Lightbulb size={18} /></div><div><div className="section-kicker">YOUR FIRST MISSION</div><h3>Land your first clean cast</h3><p>Move into frame and hold a single open palm steady to cast Rasengan. For Shadow Clone, keep both open hands visible while the browser loads body segmentation. Try two open palms together to cast the new Raiton Pulse. Show your palm—not the back of your hand—for Rasengan.</p></div><ChevronDown size={18} className="muted-chevron" /></div>
         <div className="bottom-card privacy-card"><div className="bottom-icon green-icon"><ShieldCheck size={18} /></div><div><div className="section-kicker">PRIVACY BY DESIGN</div><h3>Your video stays on your device</h3><p>Hand landmarks are processed in the browser. The model is fetched from a public CDN the first time; camera footage is not sent to a server by this prototype.</p></div><Check size={18} className="privacy-check" /></div>
       </section>
       <section className="shinobi-strip" aria-label="Featured shinobi">
