@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Activity, Camera, Check, ChevronDown, CircleHelp, CirclePlay, Cpu, Expand, Eye,
+  Activity, Camera, Check, ChevronDown, CircleHelp, CirclePlay, Cpu, Expand, Eye, Flame,
   Hand, Info, Lightbulb, LoaderCircle, RotateCcw, ShieldCheck, Sparkles, Zap
 } from 'lucide-react';
 import { FaceLandmarker, FilesetResolver, HandLandmarker, ImageSegmenter, type FaceLandmarkerResult, type HandLandmarkerResult } from '@mediapipe/tasks-vision';
@@ -9,6 +9,7 @@ type Jutsu = 'none' | 'rasengan' | 'chidori' | 'clone' | 'lightning-burst' | 'fi
 type Gesture = 'none' | 'open' | 'fist' | 'two-open' | 'two-fist' | 'clone-seal' | 'ox-seal' | 'hare-seal' | 'monkey-seal';
 type Point = { x: number; y: number; z: number };
 type NinjaTool = 'none' | 'shuriken' | 'kunai';
+type SequenceKind = 'chidori' | 'fireball';
 type ThrownTool = { kind: Exclude<NinjaTool, 'none'>; x: number; y: number; vx: number; vy: number; born: number; spin: number };
 
 // Prefer assets shipped with this GitHub Pages build so the browser does not need to reach a third-party model/CDN.
@@ -91,6 +92,11 @@ const INFO: Record<Exclude<Jutsu, 'none'>, { name: string; color: string }> = {
 const COMBO_STEPS: Array<{ gesture: Gesture; title: string; instruction: string }> = [
   { gesture: 'ox-seal', title: 'Charge · Set your stance', instruction: 'Bring both closed fists close together in front of your upper chest — do not press them into your body' },
   { gesture: 'two-fist', title: 'Release · Lightning thrust', instruction: 'Keep both fists closed; drive one fist forward toward the camera while pulling the other back beside your shoulder' },
+];
+const FIREBALL_STEPS: Array<{ gesture: Gesture; title: string; instruction: string }> = [
+  { gesture: 'hare-seal', title: 'Weave · Gather chakra', instruction: 'Raise the index and middle fingers of one hand; curl the other fingers and hold the sign steady' },
+  { gesture: 'ox-seal', title: 'Focus · Compress chakra', instruction: 'Bring both closed fists close together in front of your chest' },
+  { gesture: 'two-fist', title: 'Release · Uchiha Fire', instruction: 'Separate both fists; fire streams from your mouth and forms a great fireball' },
 ];
 
 function dist(a: Point, b: Point) {
@@ -762,11 +768,13 @@ export default function App() {
   const [cloneStatus, setCloneStatus] = useState<'idle'|'loading'|'ready'|'error'>('idle');
   const [faceTrackingState, setFaceTrackingState] = useState<'loading'|'ready'|'unavailable'>('loading');
   const [sharinganActive, setSharinganActive] = useState(false);
+  const [sequenceType, setSequenceType] = useState<SequenceKind>('chidori');
   const [comboMode, setComboMode] = useState(false);
   const [comboProgress, setComboProgress] = useState(0);
   const [comboHoldProgress, setComboHoldProgress] = useState(0);
   const [comboFeedback, setComboFeedback] = useState('Start Chidori, bring both fists close together, then thrust one fist forward while pulling the other back.');
   const comboModeRef = useRef(false);
+  const sequenceTypeRef = useRef<SequenceKind>('chidori');
   const comboProgressRef = useRef(0);
   const comboCandidateRef = useRef<Gesture>('none');
   const comboCandidateAtRef = useRef(0);
@@ -943,59 +951,45 @@ export default function App() {
             candidate = 'none'; noPoseAt = 0;
             setGestureLabel('Chidori released · lightning surrounds your hand!');
           } else if (comboModeRef.current) {
-            let expected = COMBO_STEPS[comboProgressRef.current];
+            const steps = sequenceTypeRef.current === 'fireball' ? FIREBALL_STEPS : COMBO_STEPS;
+            let expected = steps[comboProgressRef.current], timedOut = false;
             candidate = 'none'; noPoseAt = 0;
-            // Reset abandoned sequences rather than leaving a stale step armed indefinitely.
             if (comboStepStartedAtRef.current && now - comboStepStartedAtRef.current > 6500) {
-              comboProgressRef.current = 0;
-              comboCandidateRef.current = 'none';
-              comboCandidateAtRef.current = 0;
-              comboStepStartedAtRef.current = now;
-              setComboProgress(0); setComboHoldProgress(0);
-              setComboFeedback('Sequence timed out. Start again with both fists close together.');
-              setGestureLabel('Chidori sequence timed out · restart from step 1');
-              expected = COMBO_STEPS[0];
+              comboProgressRef.current = 0; comboCandidateRef.current = 'none'; comboCandidateAtRef.current = 0;
+              comboStepStartedAtRef.current = now; setComboProgress(0); setComboHoldProgress(0);
+              setComboFeedback('Sequence timed out. Restart from the first hand sign.');
+              setGestureLabel('Technique sequence timed out · restart from step 1');
+              expected = steps[0]; timedOut = true;
             }
-            if (expected && detected.gesture === expected.gesture) {
+            if (!timedOut && expected && detected.gesture === expected.gesture) {
               if (comboCandidateRef.current !== expected.gesture) {
-                comboCandidateRef.current = expected.gesture;
-                comboCandidateAtRef.current = now;
-                setComboHoldProgress(0);
-                setComboFeedback(`Hold ${expected.title} steady…`);
+                comboCandidateRef.current = expected.gesture; comboCandidateAtRef.current = now;
+                setComboHoldProgress(0); setComboFeedback(`Hold ${expected.title} steady…`);
               }
               const heldFor = now - comboCandidateAtRef.current;
               if (now - comboProgressUiAtRef.current > 70) {
-                setComboHoldProgress(Math.min(100, heldFor / 500 * 100));
-                comboProgressUiAtRef.current = now;
+                setComboHoldProgress(Math.min(100, heldFor / 500 * 100)); comboProgressUiAtRef.current = now;
               }
               if (heldFor >= 500) {
                 const nextProgress = comboProgressRef.current + 1;
-                comboProgressRef.current = nextProgress;
-                setComboProgress(nextProgress);
-                comboCandidateRef.current = 'none';
-                comboCandidateAtRef.current = 0;
-                setComboHoldProgress(0);
+                comboProgressRef.current = nextProgress; setComboProgress(nextProgress);
+                comboCandidateRef.current = 'none'; comboCandidateAtRef.current = 0; setComboHoldProgress(0);
                 comboStepStartedAtRef.current = now;
-                if (nextProgress >= COMBO_STEPS.length) {
-                  comboModeRef.current = false;
-                  setComboMode(false);
-                  setComboFeedback('Chidori released! Lightning is gathering around your hand.');
-                  setGestureLabel('Chidori sequence complete · Charge → Release');
-                  castUntilRef.current = now + 2800;
-                  switchJutsu('chidori');
+                if (nextProgress >= steps.length) {
+                  const completedJutsu = sequenceTypeRef.current;
+                  comboModeRef.current = false; setComboMode(false);
+                  setComboFeedback(completedJutsu === 'fireball' ? 'Uchiha Fire released! Flames erupt from your mouth.' : 'Chidori released! Lightning gathers around your hand.');
+                  setGestureLabel(completedJutsu === 'fireball' ? 'Uchiha Fire sequence complete · Weave → Focus → Release' : 'Chidori sequence complete · Charge → Release');
+                  castUntilRef.current = now + 2800; switchJutsu(completedJutsu);
                 } else {
-                  setComboFeedback(`Step ${nextProgress} complete. Next: ${COMBO_STEPS[nextProgress].instruction}.`);
-                  setGestureLabel(`Combo practice · step ${nextProgress + 1} of ${COMBO_STEPS.length}`);
+                  setComboFeedback(`Step ${nextProgress} complete. Next: ${steps[nextProgress].instruction}.`);
+                  setGestureLabel(`Technique sequence · step ${nextProgress + 1} of ${steps.length}`);
                 }
               }
-            } else {
-              comboCandidateRef.current = 'none';
-              comboCandidateAtRef.current = 0;
-              setComboHoldProgress(0);
-              if (detected.gesture !== 'none' && expected) {
-                setComboFeedback(`Keep going — step ${comboProgressRef.current + 1}: ${expected.instruction}.`);
-              }
-              setGestureLabel(expected ? `Combo practice · step ${comboProgressRef.current + 1} of ${COMBO_STEPS.length}` : 'Finishing combo…');
+            } else if (!timedOut) {
+              comboCandidateRef.current = 'none'; comboCandidateAtRef.current = 0; setComboHoldProgress(0);
+              if (detected.gesture !== 'none' && expected) setComboFeedback(`Keep going — step ${comboProgressRef.current + 1}: ${expected.instruction}.`);
+              setGestureLabel(expected ? `Technique sequence · step ${comboProgressRef.current + 1} of ${steps.length}` : 'Finishing sequence…');
             }
           } else if (detected.jutsu !== 'none') {
             noPoseAt = 0;
@@ -1190,28 +1184,24 @@ export default function App() {
     }, 2200);
   };
   const activeInfo = activeJutsu === 'none' ? null : INFO[activeJutsu];
-  const toggleCombo = () => {
+  const displayedSequenceSteps = sequenceType === 'fireball' ? FIREBALL_STEPS : COMBO_STEPS;
+  const toggleCombo = (requestedType: SequenceKind = sequenceTypeRef.current) => {
     if (comboModeRef.current) {
-      comboModeRef.current = false;
-      setComboMode(false);
-      comboCandidateRef.current = 'none';
+      comboModeRef.current = false; setComboMode(false); comboCandidateRef.current = 'none';
       setComboFeedback('Sequence cancelled. Start again whenever you are ready.');
       return;
     }
     if (cameraState !== 'ready') {
-      setComboFeedback('Start the camera before beginning the live Chidori sequence.');
+      setComboFeedback('Start the camera before beginning a live technique sequence.');
       return;
     }
-    comboModeRef.current = true;
-    comboProgressRef.current = 0;
-    comboCandidateRef.current = 'none';
-    comboCandidateAtRef.current = 0;
+    sequenceTypeRef.current = requestedType; setSequenceType(requestedType);
+    comboModeRef.current = true; comboProgressRef.current = 0;
+    comboCandidateRef.current = 'none'; comboCandidateAtRef.current = 0;
     comboStepStartedAtRef.current = performance.now();
-    setComboProgress(0); setComboHoldProgress(0);
-    setComboMode(true);
-    switchJutsu('none');
-    setComboFeedback('Step 1: bring both closed fists together and hold.');
-    setGestureLabel('Chidori practice · step 1 of 2');
+    setComboProgress(0); setComboHoldProgress(0); setComboMode(true); switchJutsu('none');
+    setComboFeedback(requestedType === 'fireball' ? `Step 1: ${FIREBALL_STEPS[0].instruction}.` : `Step 1: ${COMBO_STEPS[0].instruction}.`);
+    setGestureLabel(requestedType === 'fireball' ? 'Uchiha Fire sequence · step 1 of 3' : 'Chidori sequence · step 1 of 2');
   };
 
   return (
@@ -1318,11 +1308,11 @@ export default function App() {
             </button>
           <div className="combo-card">
             <div className="combo-header">
-              <div><span className="section-kicker">03 / SEAL SEQUENCE</span><h3>Two-move Chidori</h3></div>
-              <span className="combo-count">{comboProgress}/{COMBO_STEPS.length}</span>
+              <div><span className="section-kicker">03 / TECHNIQUE SEQUENCES</span><h3>{sequenceType === 'fireball' ? 'Uchiha Fire · Three-step cast' : 'Chidori · Two-step cast'}</h3></div>
+              <span className="combo-count">{comboProgress}/{displayedSequenceSteps.length}</span>
             </div>
             <div className="combo-steps">
-              {COMBO_STEPS.map((step, index) => (
+              {displayedSequenceSteps.map((step, index) => (
                 <div className={'combo-step ' + (index < comboProgress ? 'complete' : index === comboProgress && comboMode ? 'current' : '')} key={step.title}>
                   <span className="combo-step-index">{index < comboProgress ? <Check size={13} /> : String(index + 1).padStart(2, '0')}</span>
                   <div><strong>{step.title}</strong><small>{step.instruction}</small></div>
@@ -1332,13 +1322,13 @@ export default function App() {
             <div className="combo-hold-meter" aria-label={`Pose hold progress ${Math.round(comboHoldProgress)} percent`}><span style={{ width: `${comboHoldProgress}%` }} /></div>
             <p className="combo-feedback">{comboFeedback}</p>
             <div className="combo-actions">
-              <button className={comboMode ? 'secondary-button combo-cancel' : 'primary-button combo-start'} onClick={toggleCombo} disabled={cameraState === 'loading'}>
-                {comboMode ? <RotateCcw size={15} /> : <Hand size={15} />}
-                {comboMode ? 'Cancel sequence' : comboProgress === COMBO_STEPS.length ? 'Practise again' : 'Start Chidori'}
-              </button>
-              <span>Hold each pose · 0.5 sec · 6.5 sec step timeout</span>
+              {comboMode ? <button className="secondary-button combo-cancel" onClick={() => toggleCombo()} disabled={cameraState === 'loading'}><RotateCcw size={15} /> Cancel sequence</button> : <>
+                <button className="primary-button combo-start" onClick={() => toggleCombo('chidori')} disabled={cameraState === 'loading'}><Hand size={15} /> Start Chidori</button>
+                <button className="secondary-button combo-fire-start" onClick={() => toggleCombo('fireball')} disabled={cameraState === 'loading'}><Flame size={15} /> Start Uchiha Fire</button>
+              </>}
+              <span>Hold each pose · 0.5 sec · 6.5 sec timeout</span>
             </div>
-            <p className="combo-note">No open palm needed: bring both closed fists close together in front of your upper chest, then thrust one fist toward the camera while pulling the other back by your shoulder. Hold each pose for half a second.</p>
+            <p className="combo-note">Chidori: bring both fists close, then thrust one forward. Uchiha Fire: form the hare sign, focus with both fists close, then separate them to release a mouth-origin flame stream and fireball.</p>
           </div>
           <div className="detection-card">
             <div className="detection-heading"><div><span className="section-kicker">LIVE READOUT</span><h3>Detection status</h3></div><Activity size={17} /></div>
