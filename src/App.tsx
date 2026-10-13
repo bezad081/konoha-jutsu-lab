@@ -920,7 +920,7 @@ export default function App() {
           <div className="brand-mark"><Sparkles size={21} /></div>
           <div><strong>KONOHA <span>JUTSU LAB</span></strong><small>CAMERA-TRACKED CHAKRA PROTOTYPE</small></div>
         </a>
-        <div className="topbar-right"><div className="topbar-portraits" aria-label="Featured shinobi"><img src="https://www.pngfind.com/pngs/m/57-574187_naruto-shippuden-naruto-official-art-hd-png-download.png" alt="Naruto Uzumaki anime art" title="Naruto Uzumaki" /><img src="https://freepngimg.com/thumb/naruto/32418-6-kakashi-photos.png" alt="Kakashi Hatake anime art" title="Kakashi Hatake" /></div><div className="build-chip"><span className="status-dot" /> PROTOTYPE / 0.5</div>
+        <div className="topbar-right"><div className="topbar-portraits" aria-label="Featured shinobi"><img src="https://wallpapers.com/images/hd/naruto-blue-sky-ready-for-battle-w7rfnmhxkzu441oh.jpg" alt="Naruto Uzumaki anime art" title="Naruto Uzumaki" /><img src="https://wallpapers.com/images/hd/sensei-kakashi-hatake-png-jja-oqkhqqgluqkoq0q6.png" alt="Kakashi Hatake anime art" title="Kakashi Hatake" /></div><div className="build-chip"><span className="status-dot" /> PROTOTYPE / 0.5</div>
           <button className="icon-button" onClick={() => setHelpOpen((v) => !v)} aria-label="Toggle instructions"><CircleHelp size={18} /></button>
         </div>
       </header>
@@ -1030,11 +1030,11 @@ export default function App() {
         <div className="shinobi-heading"><span className="section-kicker">HIDDEN LEAF ROSTER</span><span className="shinobi-note">CHAKRA · TEAM 7 · KONOHA</span></div>
         <div className="shinobi-cards">
           <a className="shinobi-card naruto-profile" href="https://naruto-official.com/en/anime/naruto2/list/01_923" target="_blank" rel="noreferrer">
-            <img src="https://www.pngfind.com/pngs/m/57-574187_naruto-shippuden-naruto-official-art-hd-png-download.png" alt="Naruto Uzumaki anime portrait" loading="lazy" />
+            <img src="https://wallpapers.com/images/hd/naruto-blue-sky-ready-for-battle-w7rfnmhxkzu441oh.jpg" alt="Naruto Uzumaki anime portrait" loading="lazy" />
             <span className="shinobi-glow" /><div className="shinobi-copy"><small>THE NINE-TAILS JINCHURIKI</small><strong>Naruto Uzumaki</strong><span>RASENGAN · SHADOW CLONE</span></div><span className="shinobi-symbol">うずまき</span>
           </a>
           <a className="shinobi-card kakashi-profile" href="https://naruto-official.com/en/news/01_1903" target="_blank" rel="noreferrer">
-            <img src="https://freepngimg.com/thumb/naruto/32418-6-kakashi-photos.png" alt="Kakashi Hatake anime portrait" loading="lazy" />
+            <img src="https://wallpapers.com/images/hd/sensei-kakashi-hatake-png-jja-oqkhqqgluqkoq0q6.png" alt="Kakashi Hatake anime portrait" loading="lazy" />
             <span className="shinobi-glow" /><div className="shinobi-copy"><small>THE COPY NINJA</small><strong>Kakashi Hatake</strong><span>CHIDORI · LIGHTNING BLADE</span></div><span className="shinobi-symbol">写輪眼</span>
           </a>
         </div>
