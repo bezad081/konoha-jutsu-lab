@@ -6,7 +6,7 @@ import {
 import { FilesetResolver, HandLandmarker, ImageSegmenter, type HandLandmarkerResult } from '@mediapipe/tasks-vision';
 
 type Jutsu = 'none' | 'rasengan' | 'chidori' | 'clone';
-type Gesture = 'none' | 'open' | 'fist' | 'two-open';
+type Gesture = 'none' | 'open' | 'fist' | 'two-open' | 'clone-seal';
 type Point = { x: number; y: number; z: number };
 
 // Prefer assets shipped with this GitHub Pages build so the browser does not need to reach a third-party model/CDN.
@@ -82,27 +82,71 @@ const INFO: Record<Exclude<Jutsu, 'none'>, { name: string; color: string }> = {
 };
 
 const COMBO_STEPS: Array<{ gesture: Gesture; title: string; instruction: string }> = [
-  { gesture: 'open', title: 'Open Palm', instruction: 'Show one open palm' },
-  { gesture: 'fist', title: 'Fist', instruction: 'Close one hand into a fist' },
-  { gesture: 'two-open', title: 'Double Palm', instruction: 'Show both palms together in frame' },
+  { gesture: 'open', title: 'Charge Chakra', instruction: 'Show one open palm' },
+  { gesture: 'fist', title: 'Lightning Stance', instruction: 'Close one hand into a fist' },
+  { gesture: 'clone-seal', title: 'Shadow Clone Seal', instruction: 'Bring both hands together and cross the fingers into a plus (+)' },
 ];
 
 function dist(a: Point, b: Point) {
   return Math.hypot(a.x - b.x, a.y - b.y, (a.z - b.z) * 0.5);
 }
+function fingerExtended(points: Point[], tip: number, pip: number, mcp: number) {
+  if (points.length < 21) return false;
+  const wrist = points[0];
+  return dist(points[tip], wrist) > dist(points[pip], wrist) * 1.1
+    && dist(points[tip], points[mcp]) > dist(points[pip], points[mcp]) * 1.06;
+}
 function classify(points: Point[]): Gesture {
   if (points.length < 21) return 'none';
-  const wrist = points[0];
-  const pairs: Array<[number, number]> = [[8,6],[12,10],[16,14],[20,18]];
-  const count = pairs.filter(([tip, joint]) => dist(points[tip], wrist) > dist(points[joint], wrist) * 1.12).length;
+  const extended = [
+    fingerExtended(points, 8, 6, 5),
+    fingerExtended(points, 12, 10, 9),
+    fingerExtended(points, 16, 14, 13),
+    fingerExtended(points, 20, 18, 17),
+  ];
+  const count = extended.filter(Boolean).length;
   if (count >= 3) return 'open';
   if (count <= 1) return 'fist';
   return 'none';
 }
+function midpoint(a: Point, b: Point) {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+}
+function isShadowCloneSeal(hands: Point[][]) {
+  if (hands.length !== 2 || hands.some((hand) => hand.length < 21)) return false;
+  const poses = hands.map((hand) => ({
+    index: fingerExtended(hand, 8, 6, 5),
+    middle: fingerExtended(hand, 12, 10, 9),
+    ring: fingerExtended(hand, 16, 14, 13),
+    pinky: fingerExtended(hand, 20, 18, 17),
+  }));
+  // The classic plus/cross seal uses index and middle fingers while the outer fingers stay curled.
+  if (poses.some((pose) => !pose.index || !pose.middle || pose.ring || pose.pinky)) return false;
+
+  const [a, b] = hands;
+  const palmA = palm(a), palmB = palm(b);
+  const scaleA = dist(a[0], a[9]), scaleB = dist(b[0], b[9]);
+  const palmsNear = Math.hypot(palmA.x - palmB.x, palmA.y - palmB.y) < (scaleA + scaleB) * 1.9;
+  if (!palmsNear) return false;
+
+  // Compare the index/middle finger axes. A visible cross/plus is less likely to be confused
+  // with simply holding both palms open side by side.
+  const baseA = midpoint(a[5], a[9]), tipA = midpoint(a[8], a[12]);
+  const baseB = midpoint(b[5], b[9]), tipB = midpoint(b[8], b[12]);
+  const ax = tipA.x - baseA.x, ay = tipA.y - baseA.y;
+  const bx = tipB.x - baseB.x, by = tipB.y - baseB.y;
+  const lengthA = Math.hypot(ax, ay), lengthB = Math.hypot(bx, by);
+  if (lengthA < 0.01 || lengthB < 0.01) return false;
+  const cosine = Math.min(1, Math.abs((ax * bx + ay * by) / (lengthA * lengthB)));
+  const angle = Math.acos(cosine) * 180 / Math.PI;
+  const tipsNear = Math.hypot(tipA.x - tipB.x, tipA.y - tipB.y) < (scaleA + scaleB) * 1.65;
+  return angle > 24 && tipsNear;
+}
 function readJutsu(result: HandLandmarkerResult | null): { jutsu: Jutsu; gesture: Gesture } {
-  const hands = result?.landmarks ?? [];
-  const gestures = hands.map((hand) => classify(hand as Point[]));
-  if (hands.length > 1 && gestures.filter((g) => g === 'open').length > 1) return { jutsu: 'clone', gesture: 'two-open' };
+  const hands = (result?.landmarks ?? []) as Point[][];
+  const gestures = hands.map((hand) => classify(hand));
+  if (isShadowCloneSeal(hands)) return { jutsu: 'clone', gesture: 'clone-seal' };
+  if (hands.length > 1 && gestures.filter((g) => g === 'open').length > 1) return { jutsu: 'none', gesture: 'two-open' };
   if (gestures.includes('open')) return { jutsu: 'rasengan', gesture: 'open' };
   if (gestures.includes('fist')) return { jutsu: 'chidori', gesture: 'fist' };
   return { jutsu: 'none', gesture: 'none' };
@@ -126,40 +170,152 @@ function drawLandmarks(ctx: CanvasRenderingContext2D, hands: Point[][], w: numbe
   }
   ctx.restore();
 }
-function drawRasengan(ctx: CanvasRenderingContext2D, p: {x:number;y:number}, w: number, h: number, t: number) {
-  const x = p.x * w, y = p.y * h, r = Math.min(w,h) * 0.085;
-  ctx.save(); ctx.globalCompositeOperation = 'screen';
-  const glow = ctx.createRadialGradient(x,y,r*0.08,x,y,r*1.7);
-  glow.addColorStop(0,'rgba(235,255,255,.98)'); glow.addColorStop(.22,'rgba(58,194,255,.8)');
-  glow.addColorStop(.65,'rgba(27,113,255,.3)'); glow.addColorStop(1,'rgba(22,98,255,0)');
-  ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(x,y,r*1.7,0,Math.PI*2); ctx.fill();
-  for (let i=0;i<5;i++) {
-    ctx.beginPath(); ctx.strokeStyle = i%2 ? 'rgba(100,190,255,.72)' : 'rgba(235,255,255,.9)';
-    ctx.lineWidth = Math.max(1.2,r*.04);
-    ctx.ellipse(x,y,r*(.35+i*.13),r*(.55+i*.08),t*(i%2 ? -1 : 1)+i,0,Math.PI*2); ctx.stroke();
+function drawRasengan(
+  ctx: CanvasRenderingContext2D,
+  p: {x:number;y:number},
+  w: number,
+  h: number,
+  t: number,
+  charge = 0.72,
+) {
+  const x = p.x * w, y = p.y * h;
+  const pulse = 1 + Math.sin(t * 5.2) * 0.035 + charge * 0.035;
+  const r = Math.min(w, h) * (0.064 + charge * 0.018) * pulse;
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+
+  // Soft spill light first, then a bright, dense chakra core.
+  const halo = ctx.createRadialGradient(x, y, r * 0.12, x, y, r * 2.15);
+  halo.addColorStop(0, 'rgba(245,255,255,.98)');
+  halo.addColorStop(0.16, 'rgba(105,225,255,.82)');
+  halo.addColorStop(0.47, 'rgba(37,146,255,.34)');
+  halo.addColorStop(1, 'rgba(20,105,255,0)');
+  ctx.fillStyle = halo;
+  ctx.beginPath(); ctx.arc(x, y, r * 2.15, 0, Math.PI * 2); ctx.fill();
+
+  const core = ctx.createRadialGradient(x - r * 0.22, y - r * 0.25, r * 0.03, x, y, r * 0.77);
+  core.addColorStop(0, '#ffffff');
+  core.addColorStop(0.22, '#d8fbff');
+  core.addColorStop(0.55, '#5bcfff');
+  core.addColorStop(0.83, '#197eff');
+  core.addColorStop(1, 'rgba(20,86,255,.08)');
+  ctx.shadowColor = '#38bfff'; ctx.shadowBlur = 30 + charge * 22;
+  ctx.fillStyle = core; ctx.beginPath(); ctx.arc(x, y, r * 0.78, 0, Math.PI * 2); ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Multiple counter-rotating, incomplete energy ribbons create the turbulent spinning look.
+  for (let ring = 0; ring < 7; ring++) {
+    const direction = ring % 2 ? -1 : 1;
+    const rotation = t * (1.25 + ring * 0.17) * direction + ring * 1.37;
+    ctx.beginPath();
+    ctx.ellipse(x, y, r * (0.43 + ring * 0.095), r * (0.25 + ring * 0.072), rotation, 0.22 + ring * 0.08, Math.PI * (1.18 + (ring % 3) * 0.2));
+    ctx.strokeStyle = ring % 3 === 0 ? 'rgba(247,255,255,.92)' : ring % 2 ? 'rgba(65,170,255,.72)' : 'rgba(113,224,255,.86)';
+    ctx.lineWidth = Math.max(1, r * (ring % 2 ? 0.026 : 0.04));
+    ctx.shadowColor = '#5bcfff'; ctx.shadowBlur = 8 + charge * 9; ctx.stroke();
   }
-  for (let i=0;i<18;i++) {
-    const a=t*2.5+i*Math.PI*2/18, rr=r*(.6+.25*Math.sin(t*2+i));
-    ctx.fillStyle = i%3 ? '#75dfff' : '#ffffff';
-    ctx.beginPath(); ctx.arc(x+Math.cos(a)*rr,y+Math.sin(a)*rr,Math.max(1.5,r*.03),0,Math.PI*2); ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Curled filaments spiral inward instead of making the effect look like static concentric circles.
+  for (let strand = 0; strand < 5; strand++) {
+    const phase = t * (1.9 + strand * 0.18) + strand * Math.PI * 0.4;
+    ctx.beginPath();
+    for (let i = 0; i <= 28; i++) {
+      const k = i / 28;
+      const a = phase + k * Math.PI * 2.2;
+      const rr = r * (0.12 + k * (0.62 + 0.04 * Math.sin(t * 3 + strand)));
+      const px = x + Math.cos(a) * rr;
+      const py = y + Math.sin(a) * rr * (0.8 + 0.15 * Math.sin(a * 2 + strand));
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.strokeStyle = strand % 2 ? 'rgba(255,255,255,.64)' : 'rgba(73,193,255,.78)';
+    ctx.lineWidth = Math.max(1, r * 0.022); ctx.stroke();
+  }
+
+  for (let i = 0; i < 34; i++) {
+    const a = t * (2.5 + (i % 4) * 0.3) + i * Math.PI * 2 / 34;
+    const rr = r * (0.22 + 0.63 * ((Math.sin(t * 2.1 + i * 2.17) + 1) / 2));
+    const size = Math.max(1, r * (i % 6 === 0 ? 0.045 : 0.021));
+    ctx.fillStyle = i % 4 === 0 ? '#ffffff' : i % 2 ? '#75e2ff' : '#368dff';
+    ctx.shadowColor = '#8beaff'; ctx.shadowBlur = i % 4 === 0 ? 12 : 5;
+    ctx.beginPath(); ctx.arc(x + Math.cos(a) * rr, y + Math.sin(a) * rr * 0.86, size, 0, Math.PI * 2); ctx.fill();
   }
   ctx.restore();
 }
-function drawChidori(ctx: CanvasRenderingContext2D, p: {x:number;y:number}, movement: {x:number;y:number}, w: number, h: number, t: number) {
-  const x=p.x*w, y=p.y*h, r=Math.min(w,h)*.095;
-  ctx.save(); ctx.globalCompositeOperation='screen'; ctx.shadowColor='#48bfff'; ctx.shadowBlur=24;
-  for(let b=0;b<11;b++) {
-    const a=b*Math.PI*2/11+t*.7, length=r*(.8+.45*((Math.sin(t*8+b*13)+1)/2));
-    ctx.beginPath(); ctx.moveTo(x+Math.cos(a)*r*.12,y+Math.sin(a)*r*.12);
-    for(let s=1;s<=5;s++) {
-      const k=s/5, jitter=s===5?0:Math.sin(t*15+b*4+s*7)*r*.22;
-      ctx.lineTo(x+Math.cos(a)*length*k+Math.cos(a+Math.PI/2)*jitter,y+Math.sin(a)*length*k+Math.sin(a+Math.PI/2)*jitter);
+function drawChidori(
+  ctx: CanvasRenderingContext2D,
+  p: {x:number;y:number},
+  movement: {x:number;y:number},
+  w: number,
+  h: number,
+  t: number,
+  charge = 0.72,
+) {
+  const x = p.x * w, y = p.y * h;
+  const pulse = 1 + Math.sin(t * 12.5) * 0.055;
+  const r = Math.min(w, h) * (0.073 + charge * 0.027) * pulse;
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+
+  // Charged electric haze and a white-hot center make the lightning read as one energy mass.
+  const haze = ctx.createRadialGradient(x, y, r * 0.04, x, y, r * 1.7);
+  haze.addColorStop(0, 'rgba(249,255,255,.96)');
+  haze.addColorStop(0.17, 'rgba(151,233,255,.86)');
+  haze.addColorStop(0.48, 'rgba(49,159,255,.38)');
+  haze.addColorStop(1, 'rgba(22,112,255,0)');
+  ctx.fillStyle = haze; ctx.beginPath(); ctx.arc(x, y, r * 1.7, 0, Math.PI * 2); ctx.fill();
+
+  // Fine jagged bolts branch out from a compact, bright core.
+  for (let bolt = 0; bolt < 17; bolt++) {
+    const a = bolt * Math.PI * 2 / 17 + Math.sin(t * 3.1 + bolt) * 0.12;
+    const length = r * (0.9 + 0.52 * ((Math.sin(t * 10 + bolt * 7.7) + 1) / 2));
+    ctx.beginPath();
+    ctx.moveTo(x + Math.cos(a) * r * 0.15, y + Math.sin(a) * r * 0.15);
+    let lastX = x, lastY = y;
+    for (let step = 1; step <= 7; step++) {
+      const k = step / 7;
+      const jitter = step === 7 ? 0 : Math.sin(t * 22 + bolt * 4.3 + step * 8.1) * r * (0.1 + 0.08 * charge);
+      const nx = x + Math.cos(a) * length * k + Math.cos(a + Math.PI / 2) * jitter;
+      const ny = y + Math.sin(a) * length * k + Math.sin(a + Math.PI / 2) * jitter;
+      ctx.lineTo(nx, ny);
+      lastX = nx; lastY = ny;
+      if (step === 4 && bolt % 3 === 0) {
+        ctx.moveTo(nx, ny);
+        ctx.lineTo(nx + Math.cos(a + 0.8) * r * 0.22, ny + Math.sin(a + 0.8) * r * 0.22);
+        ctx.moveTo(nx, ny);
+      }
     }
-    ctx.strokeStyle=b%2?'rgba(64,176,255,.9)':'rgba(230,250,255,.98)'; ctx.lineWidth=b%3===0?2.6:1.4; ctx.stroke();
+    ctx.strokeStyle = bolt % 4 === 0 ? 'rgba(255,255,255,.98)' : bolt % 2 ? 'rgba(80,182,255,.92)' : 'rgba(141,228,255,.94)';
+    ctx.lineWidth = bolt % 4 === 0 ? 2.3 + charge : 1 + charge * 0.7;
+    ctx.shadowColor = '#49beff'; ctx.shadowBlur = 8 + charge * 13; ctx.stroke();
+    // Tiny hot point sparks ride the tips of longer bolts.
+    if (bolt % 3 === 0) {
+      ctx.fillStyle = '#e9fdff'; ctx.shadowBlur = 10;
+      ctx.beginPath(); ctx.arc(lastX, lastY, 1.2 + charge, 0, Math.PI * 2); ctx.fill();
+    }
   }
-  const mag=Math.hypot(movement.x,movement.y)||1, dx=movement.x/mag, dy=movement.y/mag;
-  ctx.beginPath(); ctx.moveTo(x+dx*r*.2,y+dy*r*.2); ctx.lineTo(x+dx*r*2.8,y+dy*r*2.8);
-  ctx.strokeStyle='rgba(88,197,255,.62)'; ctx.lineWidth=r*.22; ctx.stroke(); ctx.restore();
+
+  // The hand's recent motion leaves a short, directional lightning tail.
+  const speed = Math.hypot(movement.x, movement.y);
+  if (speed > 0.0015) {
+    const dx = movement.x / speed, dy = movement.y / speed;
+    const tail = r * (1.35 + Math.min(1, speed * 24) * 1.7);
+    for (let i = 0; i < 4; i++) {
+      const offset = (i - 1.5) * r * 0.1;
+      ctx.beginPath();
+      ctx.moveTo(x - dx * r * 0.15 + -dy * offset, y - dy * r * 0.15 + dx * offset);
+      ctx.lineTo(x - dx * tail * 0.46 + -dy * offset * 1.4, y - dy * tail * 0.46 + dx * offset * 1.4);
+      ctx.lineTo(x - dx * tail * (0.7 + i * 0.08) + -dy * offset * 0.4, y - dy * tail * (0.7 + i * 0.08) + dx * offset * 0.4);
+      ctx.strokeStyle = i % 2 ? 'rgba(65,166,255,.48)' : 'rgba(197,246,255,.8)';
+      ctx.lineWidth = i % 2 ? 1.6 : 2.4; ctx.shadowBlur = 13; ctx.stroke();
+    }
+  }
+  for (let i = 0; i < 12; i++) {
+    const a = t * 4.2 + i * Math.PI * 2 / 12;
+    const rr = r * (0.18 + 0.88 * ((Math.sin(t * 8 + i * 1.9) + 1) / 2));
+    ctx.fillStyle = i % 3 ? '#71dcff' : '#ffffff'; ctx.shadowBlur = 7;
+    ctx.beginPath(); ctx.arc(x + Math.cos(a) * rr, y + Math.sin(a) * rr, 1 + (i % 3) * 0.6, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
 }
 function drawCloneEcho(ctx: CanvasRenderingContext2D, w: number, h: number, t: number) {
   ctx.save(); ctx.globalCompositeOperation='screen';
@@ -215,7 +371,30 @@ function drawSegmentedClones(
     { x: -0.16 + Math.sin(t * 1.4) * 0.008, y: 0.018, scale: 0.91, alpha: 0.37, hue: 135 },
     { x: 0.16 + Math.sin(t * 1.7 + 1) * 0.008, y: -0.008, scale: 0.88, alpha: 0.31, hue: 205 },
   ];
-  for (const echo of echoes) {
+  for (const [index, echo] of echoes.entries()) {
+    const cloneX = w * (0.5 + echo.x);
+    const cloneY = h * (0.72 + echo.y);
+    const smokePulse = Math.pow(Math.max(0, Math.sin(t * 3.4 + index * 2.15)), 2);
+    if (smokePulse > 0.02) {
+      ctx.save();
+      ctx.globalAlpha = smokePulse * 0.19;
+      ctx.filter = 'blur(7px)';
+      ctx.fillStyle = '#dff7ff';
+      for (let puff = 0; puff < 7; puff++) {
+        const angle = puff * Math.PI * 2 / 7 + t * 0.7;
+        const drift = h * (0.012 + smokePulse * 0.018);
+        ctx.beginPath();
+        ctx.ellipse(
+          cloneX + Math.cos(angle) * (w * 0.018 + drift),
+          cloneY - smokePulse * h * 0.025 + Math.sin(angle) * drift,
+          w * (0.012 + smokePulse * 0.009),
+          h * (0.014 + smokePulse * 0.01),
+          angle * 0.4, 0, Math.PI * 2,
+        );
+        ctx.fill();
+      }
+      ctx.restore();
+    }
     ctx.save();
     ctx.globalAlpha = echo.alpha;
     ctx.filter = `hue-rotate(${echo.hue}deg) saturate(1.75) brightness(1.3) drop-shadow(0 0 12px rgba(92,190,255,.85))`;
@@ -449,8 +628,9 @@ export default function App() {
           ctx.clearRect(0,0,w,h);
           const hands = (latest?.landmarks ?? []) as Point[][];
           if (landmarksRef.current) drawLandmarks(ctx,hands,w,h);
-          if (activeRef.current === 'rasengan' && hands.length) drawRasengan(ctx,palm(hands[0]),w,h,now/1000);
-          if (activeRef.current === 'chidori' && hands.length) drawChidori(ctx,palm(hands[0]),move,w,h,now/1000);
+          const charge = Math.min(1, 0.48 + (now - candidateAt) / 2400);
+          if (activeRef.current === 'rasengan' && hands.length) drawRasengan(ctx,palm(hands[0]),w,h,now/1000,charge);
+          if (activeRef.current === 'chidori' && hands.length) drawChidori(ctx,palm(hands[0]),move,w,h,now/1000,charge);
           if (activeRef.current === 'clone') {
             if (cloneSpriteReadyRef.current && cloneSpriteRef.current) drawSegmentedClones(ctx,cloneSpriteRef.current,w,h,now/1000);
             else drawCloneEcho(ctx,w,h,now/1000);
@@ -566,7 +746,7 @@ export default function App() {
           <div className="stat-item"><span className="stat-icon green"><ShieldCheck size={17} /></span><div><b>No upload</b><small>video stays local</small></div></div>
         </div>
       </section>
-      {helpOpen && <section className="help-panel"><Info size={18} /><div><strong>Quick start · How to cast</strong><p><b>1.</b> Press Start camera and allow permission. Keep your hands well lit and fully inside the frame. <b>2. Rasengan:</b> show one open palm toward the camera and hold it steady. <b>3. Chidori:</b> close one hand into a clear fist and hold. <b>4. Shadow Clone:</b> show both open palms together in frame; wait a moment for the cutout model. <b>5. Training:</b> press Start combo, then hold open palm → fist → both open palms, about half a second each. The cards below are visual previews only, not casts. Video is processed in your browser.</p></div><button className="text-button" onClick={() => setHelpOpen(false)}>Got it</button></section>}
+      {helpOpen && <section className="help-panel"><Info size={18} /><div><strong>Quick start · How to cast</strong><p><b>1.</b> Press Start camera and allow permission. Keep your hands well lit and fully inside the frame. <b>2. Rasengan:</b> show one open palm toward the camera and hold it steady. <b>3. Chidori:</b> close one hand into a clear fist and hold. <b>4. Shadow Clone:</b> bring both hands together and cross the index/middle fingers into a visible plus (+) shape; keep ring and little fingers curled. Hold the seal still while the clones appear. <b>5. Training:</b> press Start combo, then hold open palm → fist → both open palms, about half a second each. The cards below are visual previews only, not casts. Video is processed in your browser.</p></div><button className="text-button" onClick={() => setHelpOpen(false)}>Got it</button></section>}
       <section className="workspace">
         <div className="camera-column">
           <div className="panel-heading"><div><span className="section-kicker">01 / LIVE INPUT</span><h2>Chakra viewport</h2></div>
@@ -608,7 +788,7 @@ export default function App() {
             </button>
             <button className={'jutsu-card violet-card ' + (activeJutsu === 'clone' ? 'is-active' : '')} onClick={() => preview('clone')}>
               <div className="jutsu-art clone-art"><span className="clone-figure figure-one" /><span className="clone-figure figure-two" /><span className="clone-figure figure-three" /><Sparkles className="clone-star" size={17} /></div>
-              <div className="jutsu-copy"><div className="jutsu-overline">NINJUTSU / DECOY</div><h3>Shadow Clone</h3><p>Show both open palms in frame · wait for shadow cutouts</p><div className="jutsu-foot"><span className="difficulty advanced">IN DEVELOPMENT</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">03</span>
+              <div className="jutsu-copy"><div className="jutsu-overline">NINJUTSU / DECOY</div><h3>Shadow Clone</h3><p>Both hands · cross index/middle fingers into a + seal</p><div className="jutsu-foot"><span className="difficulty advanced">IN DEVELOPMENT</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">03</span>
             </button>
           </div>
           <div className="combo-card">
