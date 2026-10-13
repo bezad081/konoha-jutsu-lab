@@ -21,8 +21,8 @@ const MODEL_URLS = [
 const SEGMENTER_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter_landscape/float16/latest/selfie_segmenter_landscape.tflite';
 const WASM_URLS = [
   LOCAL_WASM_URL,
-  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm',
-  'https://unpkg.com/@mediapipe/tasks-vision@0.10.22/wasm',
+  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm',
+  'https://unpkg.com/@mediapipe/tasks-vision@0.10.21/wasm',
 ];
 
 function describeFailure(cause: unknown): string {
