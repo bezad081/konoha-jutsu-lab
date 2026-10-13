@@ -7,10 +7,10 @@ A React + TypeScript + Vite prototype for webcam-based hand tracking and Naruto-
 - Live webcam preview, mirrored like a selfie camera.
 - MediaPipe Hand Landmarker inference in the browser, with GPU and CPU fallback.
 - Hand landmark overlay, low-pass visual landmark smoothing, and stable-pose gating to reduce jitter and accidental casts.
-- Guided three-pose combo practice (open palm → fist → crossed-finger plus seal), with timed holds, step-by-step feedback, cancel/restart controls, and a Shadow Clone finisher.
-- Open palm → Rasengan effect with a bright core, counter-rotating chakra ribbons, spiral filaments, orbiting particles, and charge scaling.
-- Fist → Chidori effect with a white-hot electric core, branching jagged bolts, moving sparks, and a short trail that follows hand motion.
-- Shadow Clone seal heuristic: two hands close together, index/middle fingers extended in a crossed/plus-like arrangement, outer fingers curled; selfie segmentation creates tinted, offset cutout echoes with procedural smoke pulses.
+- Guided Chidori hand-seal sequence (Ox → Hare → Monkey) with timed holds and step-by-step feedback; webcam poses are simplified geometric approximations of the anime seals.
+- Open palm → Rasengan effect that grows from a compact palm-sized orb over roughly 2.6 seconds, with counter-rotating chakra ribbons, spiral filaments and orbiting particles.
+- Chidori is released after the three guided seals and produces a white-hot electric core, branching jagged bolts, moving sparks, and a short trail.
+- Shadow Clone seal heuristic: two hands close together, index/middle fingers extended in a crossed/plus-like arrangement, outer fingers curled; selfie segmentation creates more visible tinted, offset cutout copies of the live subject with procedural smoke pulses.
 - Preview controls when camera access is unavailable.
 - Responsive UI, camera permission errors, camera cleanup, and optional generated sound.
 
@@ -59,3 +59,10 @@ A deployment workflow is included at `.github/workflows/deploy.yml`. After the p
 
 - The cross-seal interaction is a geometric prototype inspired by the custom hand-sign training workflow in [FavorPan/naruto](https://github.com/FavorPan/naruto). That project records positive and negative gesture samples and trains a small browser model; this app does not copy its model or assets. A similar in-app trainer is the next step if the geometric seal detector needs more tolerance.
 - The effects use procedural Canvas drawing rather than reusing copyrighted anime footage. The charge ramp and motion-responsive sparks borrow general interaction ideas from open-source hand-controlled particle demos such as [Wlarskog/gesture-particles](https://github.com/Wlarskog/gesture-particles), while keeping this project lightweight and 2D for now.
+
+
+## Character image credits
+
+- Naruto Uzumaki cosplay photo: Z, [Cosplay - AWA15 - Naruto Uzumaki](https://commons.wikimedia.org/wiki/File:Cosplay_-_AWA15_-_Naruto_Uzumaki_(3982533553).jpg), CC BY 2.0.
+- Kakashi Hatake cosplay photo: [Kakashi Hatake Cosplay](https://commons.wikimedia.org/wiki/File:Kakashi_Hatake_Cosplay.jpg), CC0 1.0.
+- The images are external Wikimedia Commons assets, not official anime key art. Naruto character names and franchise references belong to their respective rights holders.
