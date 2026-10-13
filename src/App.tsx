@@ -6,7 +6,7 @@ import {
 import { FilesetResolver, HandLandmarker, ImageSegmenter, type HandLandmarkerResult } from '@mediapipe/tasks-vision';
 
 type Jutsu = 'none' | 'rasengan' | 'chidori' | 'clone' | 'lightning-burst';
-type Gesture = 'none' | 'open' | 'fist' | 'two-open' | 'clone-seal' | 'chidori-thrust' | 'ox-seal' | 'hare-seal' | 'monkey-seal';
+type Gesture = 'none' | 'open' | 'fist' | 'two-open' | 'clone-seal' | 'ox-seal' | 'hare-seal' | 'monkey-seal';
 type Point = { x: number; y: number; z: number };
 
 // Prefer assets shipped with this GitHub Pages build so the browser does not need to reach a third-party model/CDN.
@@ -715,7 +715,7 @@ export default function App() {
           const charge = Math.min(1, Math.max(0, (now - jutsuStartedAtRef.current) / 2600));
           if (activeRef.current === 'rasengan' && hands.length) drawRasengan(ctx,palm(hands[0]),w,h,now/1000,charge);
           if (activeRef.current === 'chidori' && hands.length) drawChidori(ctx,palm(hands[0]),move,w,h,now/1000,charge,hands[0]);
-          if (activeRef.current === 'lightning-burst' && hands.length > 1) drawLightningBurst(ctx,midpoint(palm(hands[0]),palm(hands[1])),w,h,now/1000,charge);
+          if (activeRef.current === 'lightning-burst' && hands.length > 1) drawLightningBurst(ctx,{x:(palm(hands[0]).x+palm(hands[1]).x)/2,y:(palm(hands[0]).y+palm(hands[1]).y)/2},w,h,now/1000,charge);
           if (activeRef.current === 'clone') {
             if (cloneSpriteReadyRef.current && cloneSpriteRef.current) drawSegmentedClones(ctx,cloneSpriteRef.current,w,h,now/1000);
             else drawCloneEcho(ctx,w,h,now/1000);
