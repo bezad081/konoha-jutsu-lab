@@ -6,7 +6,7 @@ A React + TypeScript + Vite prototype for webcam-based hand tracking and Naruto-
 
 - Live webcam preview, mirrored like a selfie camera.
 - MediaPipe Hand Landmarker inference in the browser, with GPU and CPU fallback.
-- Hand landmark overlay and stable-pose gating to reduce accidental casts.
+- Hand landmark overlay, low-pass visual landmark smoothing, and stable-pose gating to reduce jitter and accidental casts.
 - Guided three-pose combo practice (open palm → fist → crossed-finger plus seal), with timed holds, step-by-step feedback, cancel/restart controls, and a Shadow Clone finisher.
 - Open palm → Rasengan effect with a bright core, counter-rotating chakra ribbons, spiral filaments, orbiting particles, and charge scaling.
 - Fist → Chidori effect with a white-hot electric core, branching jagged bolts, moving sparks, and a short trail that follows hand motion.
@@ -54,3 +54,8 @@ The production build downloads and checksum-verifies the MediaPipe hand-landmark
 ## GitHub Pages deployment
 
 A deployment workflow is included at `.github/workflows/deploy.yml`. After the project is pushed to `main`, open **Settings → Pages** and set source to **GitHub Actions** if required. The workflow builds the app and deploys `dist/` on pushes to `main` or a manual trigger from Actions.
+
+## Technique inspirations and boundaries
+
+- The cross-seal interaction is a geometric prototype inspired by the custom hand-sign training workflow in [FavorPan/naruto](https://github.com/FavorPan/naruto). That project records positive and negative gesture samples and trains a small browser model; this app does not copy its model or assets. A similar in-app trainer is the next step if the geometric seal detector needs more tolerance.
+- The effects use procedural Canvas drawing rather than reusing copyrighted anime footage. The charge ramp and motion-responsive sparks borrow general interaction ideas from open-source hand-controlled particle demos such as [Wlarskog/gesture-particles](https://github.com/Wlarskog/gesture-particles), while keeping this project lightweight and 2D for now.
