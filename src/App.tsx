@@ -9,9 +9,50 @@ type Jutsu = 'none' | 'rasengan' | 'chidori' | 'clone';
 type Gesture = 'none' | 'open' | 'fist' | 'two-open';
 type Point = { x: number; y: number; z: number };
 
-const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
+// Prefer a GitHub Releases mirror because Google Storage can be unreachable in some regions.
+const MODEL_URLS = [
+  'https://github.com/sanderdesnaijer/mediapipe-model-mirrors/releases/download/v1/hand_landmarker.task',
+  'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+];
 const SEGMENTER_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter_landscape/float16/latest/selfie_segmenter_landscape.tflite';
-const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm';
+// Keep the MediaPipe runtime version pinned; try a second CDN if the first is blocked.
+const WASM_URLS = [
+  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm',
+  'https://unpkg.com/@mediapipe/tasks-vision@0.10.22/wasm',
+];
+
+async function createHandTracker() {
+  const failures: string[] = [];
+  for (const wasmUrl of WASM_URLS) {
+    try {
+      const vision = await FilesetResolver.forVisionTasks(wasmUrl);
+      for (const modelAssetPath of MODEL_URLS) {
+        for (const delegate of ['GPU', 'CPU'] as const) {
+          try {
+            return await HandLandmarker.createFromOptions(vision, {
+              baseOptions: { modelAssetPath, delegate },
+              runningMode: 'VIDEO',
+              numHands: 2,
+              minHandDetectionConfidence: 0.55,
+              minHandPresenceConfidence: 0.5,
+              minTrackingConfidence: 0.5,
+            });
+          } catch (cause) {
+            const reason = cause instanceof Error ? cause.message : String(cause);
+            failures.push(`${delegate} / ${modelAssetPath}: ${reason}`);
+          }
+        }
+      }
+    } catch (cause) {
+      const reason = cause instanceof Error ? cause.message : String(cause);
+      failures.push(`WASM ${wasmUrl}: ${reason}`);
+    }
+  }
+  const lastFailure = failures[failures.length - 1] ?? 'No model source could be initialized.';
+  throw new Error(
+    `Hand tracking could not initialize. Tried alternate WASM CDNs, model mirrors, and GPU/CPU delegates. Last error: ${lastFailure}`,
+  );
+}
 const LINKS: Array<[number, number]> = [
   [0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],
   [9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]
@@ -264,20 +305,11 @@ export default function App() {
       });
       await video.play();
       if (stageRef.current && video.videoWidth && video.videoHeight) stageRef.current.style.aspectRatio = video.videoWidth + ' / ' + video.videoHeight;
-      const vision = await FilesetResolver.forVisionTasks(WASM_URL);
-      let tracker: HandLandmarker;
-      try {
-        tracker = await HandLandmarker.createFromOptions(vision, {
-          baseOptions: { modelAssetPath: MODEL_URL, delegate: 'GPU' }, runningMode: 'VIDEO', numHands: 2,
-          minHandDetectionConfidence: .55, minHandPresenceConfidence: .5, minTrackingConfidence: .5
-        });
-      } catch {
-        tracker = await HandLandmarker.createFromOptions(vision, {
-          baseOptions: { modelAssetPath: MODEL_URL, delegate: 'CPU' }, runningMode: 'VIDEO', numHands: 2,
-          minHandDetectionConfidence: .55, minHandPresenceConfidence: .5, minTrackingConfidence: .5
-        });
-      }
-      trackerRef.current = tracker; setCameraState('ready'); setGestureLabel('Show an open palm or make a fist');
+      setGestureLabel('Camera is on · loading hand tracking from available mirrors…');
+      const tracker = await createHandTracker();
+      trackerRef.current = tracker;
+      setCameraState('ready');
+      setGestureLabel('Show an open palm or make a fist');
       let segmenterLoading = false, segmenterFailed = false, personMaskIndex = 0;
       let lastSegmentationAt = 0, lastSegmentationVideoTime = -1;
       const cloneSprite = document.createElement('canvas');
@@ -412,11 +444,18 @@ export default function App() {
       };
       rafRef.current = requestAnimationFrame(frame);
     } catch (cause) {
-      stopCamera(); setCameraState('error');
+      stopCamera();
+      setCameraState('error');
       const message = cause instanceof Error ? cause.message : String(cause);
-      setError(message.includes('NotAllowedError') ? 'Camera permission was blocked. Allow camera access in browser settings, then try again.' :
-        message.includes('NotFoundError') ? 'No camera was found. Connect a webcam and try again.' :
-        'Could not start the camera or load the hand model. Check your connection and camera permission. Details: ' + message);
+      setError(
+        message.includes('NotAllowedError')
+          ? 'Camera permission was blocked. Allow camera access in browser settings, then try again.'
+          : message.includes('NotFoundError')
+            ? 'No camera was found. Connect a webcam and try again.'
+            : message.startsWith('Hand tracking could not initialize')
+              ? 'The camera opened, but hand tracking could not download or initialize. The app tried alternate model mirrors, CDN hosts, and GPU/CPU modes. Check that GitHub, jsDelivr, and unpkg are reachable, then reload. Details: ' + message
+              : 'Could not start the camera. Check browser permission and camera availability. Details: ' + message,
+      );
     }
   }, [stopCamera, switchJutsu]);
 
@@ -516,7 +555,7 @@ export default function App() {
               <canvas ref={canvasRef} className="effects-canvas" />
               {cameraState !== 'ready' && <div className="camera-placeholder">
                 {cameraState === 'loading' ? <LoaderCircle className="spin" size={38} /> : cameraState === 'error' ? <Camera size={35} /> : <div className="camera-orb"><Camera size={28} /></div>}
-                <strong>{cameraState === 'loading' ? 'Warming up the chakra flow' : cameraState === 'error' ? 'Camera not ready' : 'Your training space awaits'}</strong>
+                <strong>{cameraState === 'loading' ? 'Warming up the chakra flow' : cameraState === 'error' ? (error.includes('hand tracking') ? 'Hand tracking unavailable' : 'Camera not ready') : 'Your training space awaits'}</strong>
                 <span>{cameraState === 'loading' ? 'Requesting camera and loading hand tracking…' : cameraState === 'error' ? error : 'Start the camera to see your hands and effects live.'}</span>
               </div>}
             </div>
