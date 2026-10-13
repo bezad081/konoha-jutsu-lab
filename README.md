@@ -7,10 +7,13 @@ A React + TypeScript + Vite prototype for webcam-based hand tracking and Naruto-
 - Live webcam preview, mirrored like a selfie camera.
 - MediaPipe Hand Landmarker inference in the browser, with GPU and CPU fallback.
 - Hand landmark overlay, low-pass visual landmark smoothing, and stable-pose gating to reduce jitter and accidental casts.
-- Guided Chidori hand-seal sequence (Ox → Hare → Monkey) with timed holds and step-by-step feedback; webcam poses are simplified geometric approximations of the anime seals.
+- Guided two-pose Chidori sequence: bring two closed fists together, then separate them to shoulder width while keeping them closed. This deliberately avoids the open-palm Rasengan gesture.
 - Open palm → Rasengan effect that grows from a compact palm-sized orb over roughly 2.6 seconds, with counter-rotating chakra ribbons, spiral filaments and orbiting particles.
-- Chidori is released after the three guided seals and produces a white-hot electric core, branching jagged bolts, moving sparks, and a short trail.
-- Shadow Clone seal heuristic: two hands close together, index/middle fingers extended in a crossed/plus-like arrangement, outer fingers curled; selfie segmentation creates more visible tinted, offset cutout copies of the live subject with procedural smoke pulses.
+- Chidori produces a white-hot electric core, branching jagged bolts, moving sparks, and a short trail. Its short synthesized sound layers bird-like chirps with electric crackle; no spoken callout is used.
+- Shadow Clone seal heuristic: two hands close together, index/middle fingers extended in a crossed/plus-like arrangement, outer fingers curled; selfie segmentation creates natural-color cutout copies of the live subject that remain for about six seconds after the seal is released.
+- Fire Style: Fireball Jutsu: two separated closed fists trigger a swirling orange fireball with animated chakra rings and sparks.
+- Raiton Pulse: two open palms trigger a blue lightning burst.
+- The sound toggle plays a sample when enabled, making it easy to check the audio before casting.
 - Preview controls when camera access is unavailable.
 - Responsive UI, camera permission errors, camera cleanup, and optional generated sound.
 
