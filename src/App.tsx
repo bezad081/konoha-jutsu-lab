@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { FilesetResolver, HandLandmarker, ImageSegmenter, type HandLandmarkerResult } from '@mediapipe/tasks-vision';
 
-type Jutsu = 'none' | 'rasengan' | 'chidori' | 'clone' | 'lightning-burst' | 'fireball';
+type Jutsu = 'none' | 'rasengan' | 'chidori' | 'clone' | 'lightning-burst' | 'fireball' | 'amaterasu';
 type Gesture = 'none' | 'open' | 'fist' | 'two-open' | 'two-fist' | 'clone-seal' | 'ox-seal' | 'hare-seal' | 'monkey-seal';
 type Point = { x: number; y: number; z: number };
 
@@ -80,12 +80,13 @@ const INFO: Record<Exclude<Jutsu, 'none'>, { name: string; color: string }> = {
   chidori: { name: 'Chidori', color: 'cyan' },
   clone: { name: 'Shadow Clone', color: 'violet' },
   'lightning-burst': { name: 'Raiton Pulse', color: 'violet' },
-  fireball: { name: 'Fire Style: Fireball Jutsu', color: 'orange' }
+  fireball: { name: 'Fire Style: Fireball Jutsu', color: 'orange' },
+  amaterasu: { name: 'Amaterasu · Black Flames', color: 'black' }
 };
 
 const COMBO_STEPS: Array<{ gesture: Gesture; title: string; instruction: string }> = [
-  { gesture: 'ox-seal', title: 'Charge · Bring fists together', instruction: 'Bring both closed fists together in front of your chest' },
-  { gesture: 'two-fist', title: 'Release · Split the charge', instruction: 'Separate both closed fists to shoulder width and hold them apart' },
+  { gesture: 'ox-seal', title: 'Charge · Set your stance', instruction: 'Bring both closed fists close together in front of your upper chest — do not press them into your body' },
+  { gesture: 'two-fist', title: 'Release · Lightning thrust', instruction: 'Keep both fists closed; drive one fist forward toward the camera while pulling the other back beside your shoulder' },
 ];
 
 function dist(a: Point, b: Point) {
@@ -198,6 +199,7 @@ function readJutsu(result: HandLandmarkerResult | null): { jutsu: Jutsu; gesture
   const near=hands.length===2&&hands.every(hand=>hand.length>=21)&&Math.hypot(palm(hands[0]).x-palm(hands[1]).x,palm(hands[0]).y-palm(hands[1]).y)<(dist(hands[0][0],hands[0][9])+dist(hands[1][0],hands[1][9]))*1.25;
   if(near&&gestures.every(g=>g==='fist'))return {jutsu:'none',gesture:'ox-seal'};
   if(hands.length===2&&gestures.every(g=>g==='fist'))return {jutsu:'fireball',gesture:'two-fist'};
+  if(hands.length===1&&gestures[0]==='fist')return {jutsu:'amaterasu',gesture:'fist'};
   const hare=hands.some(hand=>hand.length>=21&&fingerExtended(hand,8,6,5)&&fingerExtended(hand,12,10,9)&&!fingerExtended(hand,16,14,13)&&!fingerExtended(hand,20,18,17));
   if(hare)return {jutsu:'none',gesture:'hare-seal'};
   const openHands = gestures.map((gesture, index) => gesture === 'open' ? index : -1).filter((index) => index >= 0);
@@ -473,6 +475,24 @@ function updateCloneSprite(
   ctx.putImageData(pixels, 0, 0);
 }
 
+function drawAmaterasu(ctx: CanvasRenderingContext2D, p: {x:number;y:number}, w:number, h:number, t:number, charge=0.8) {
+  const x=p.x*w,y=p.y*h,base=Math.min(w,h)*(.06+charge*.025);
+  ctx.save();ctx.globalCompositeOperation='screen';ctx.lineCap='round';ctx.lineJoin='round';
+  const aura=ctx.createRadialGradient(x,y,base*.05,x,y,base*2.2);
+  aura.addColorStop(0,'rgba(255,255,255,.8)');aura.addColorStop(.18,'rgba(100,58,150,.58)');aura.addColorStop(.52,'rgba(38,14,58,.42)');aura.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=aura;ctx.beginPath();ctx.arc(x,y,base*2.2,0,Math.PI*2);ctx.fill();
+  for(let i=0;i<13;i++){
+    const a=i*Math.PI*2/13+t*(i%2?-.55:.7),flicker=.72+.28*Math.sin(t*8+i*2.4);
+    const inner=base*(.34+(i%3)*.08),outer=base*(1.05+(i%4)*.19)*flicker;
+    const sx=x+Math.cos(a)*inner,sy=y+Math.sin(a)*inner;
+    const ex=x+Math.cos(a+.12*Math.sin(t*6+i))*outer,ey=y+Math.sin(a+.12*Math.cos(t*5+i))*outer;
+    ctx.beginPath();ctx.moveTo(sx,sy);ctx.quadraticCurveTo(x+Math.cos(a+.28)*outer*.55,y+Math.sin(a+.28)*outer*.55,ex,ey);
+    ctx.strokeStyle=i%3===0?'rgba(155,110,255,.96)':'rgba(8,5,16,.98)';ctx.lineWidth=Math.max(3,base*(i%3===0?.12:.2));ctx.shadowColor='#6c38a8';ctx.shadowBlur=10+charge*12;ctx.stroke();
+    ctx.beginPath();ctx.arc(ex,ey,Math.max(1.5,base*.035),0,Math.PI*2);ctx.fillStyle=i%3===0?'#bba0ff':'#08050e';ctx.fill();
+  }
+  ctx.restore();
+}
+
 function drawSegmentedClones(
   ctx: CanvasRenderingContext2D,
   sprite: HTMLCanvasElement,
@@ -541,6 +561,7 @@ export default function App() {
   const audioRef = useRef<AudioContext | null>(null);
   const jutsuStartedAtRef = useRef(0);
   const castUntilRef = useRef(0);
+  const cloneVisualUntilRef = useRef(0);
   const soundRef = useRef(false);
   const landmarksRef = useRef(true);
   const [cameraState, setCameraState] = useState<'idle'|'loading'|'ready'|'camera-only'|'error'>('idle');
@@ -555,7 +576,7 @@ export default function App() {
   const [cloneStatus, setCloneStatus] = useState<'idle'|'loading'|'ready'|'error'>('idle');
   const [comboMode, setComboMode] = useState(false);
   const [comboProgress, setComboProgress] = useState(0);
-  const [comboFeedback, setComboFeedback] = useState('Start the camera, make a fist, then thrust an open palm to release Chidori.');
+  const [comboFeedback, setComboFeedback] = useState('Start Chidori, bring both fists close together, then thrust one fist forward while pulling the other back.');
   const comboModeRef = useRef(false);
   const comboProgressRef = useRef(0);
   const comboCandidateRef = useRef<Gesture>('none');
@@ -613,7 +634,7 @@ export default function App() {
       const { tracker, vision } = await createHandTracker();
       trackerRef.current = tracker;
       setCameraState('ready');
-      setGestureLabel('Rasengan: show your palm · Chidori: Start Chidori, then Charge → Release · Two palms: Raiton Pulse');
+      setGestureLabel('Rasengan: open palm · Chidori: two closed-fist moves · Fireball: two fists apart · Amaterasu: one fist');
       let segmenterLoading = false, segmenterFailed = false, personMaskIndex = 0;
       let lastSegmentationAt = 0, lastSegmentationVideoTime = -1;
       const cloneSprite = document.createElement('canvas');
@@ -677,7 +698,23 @@ export default function App() {
           });
           const detected = readJutsu(latest), count = rawHands.length;
           setHandCount(count);
-          if (!comboModeRef.current && activeRef.current === 'chidori' && now < castUntilRef.current) {
+          if (!comboModeRef.current && activeRef.current !== 'none') {
+            // Lock the current technique while either hand remains in frame. Intermediate poses cannot trigger a different jutsu.
+            candidate = 'none';
+            if (count > 0) {
+              noPoseAt = 0;
+              if (activeRef.current === 'clone' && detected.gesture === 'clone-seal') cloneVisualUntilRef.current = now + 6000;
+              setGestureLabel(`${INFO[activeRef.current].name} active · move both hands out of frame to switch techniques`);
+            } else {
+              if (!noPoseAt) noPoseAt = now;
+              const cloneStillVisible = activeRef.current === 'clone' && now < cloneVisualUntilRef.current;
+              if (cloneStillVisible) setGestureLabel('Shadow Clone · afterimages linger for six seconds');
+              else if (now > castUntilRef.current && now - noPoseAt > 650) {
+                switchJutsu('none'); castUntilRef.current = 0; noPoseAt = 0;
+                setGestureLabel('Hands out of frame · ready for the next jutsu');
+              }
+            }
+          } else if (!comboModeRef.current && activeRef.current === 'chidori' && now < castUntilRef.current) {
             candidate = 'none'; noPoseAt = 0;
             setGestureLabel('Chidori released · lightning surrounds your hand!');
           } else if (comboModeRef.current) {
@@ -716,7 +753,7 @@ export default function App() {
             noPoseAt = 0;
             if (candidate !== detected.jutsu) { candidate = detected.jutsu; candidateAt = now; }
             if (now - candidateAt > 420) {
-              if (detected.gesture === 'clone-seal') castUntilRef.current = now + 6000;
+              if (detected.gesture === 'clone-seal') { castUntilRef.current = now + 6000; cloneVisualUntilRef.current = now + 6000; }
               switchJutsu(detected.jutsu);
               setGestureLabel(
                 detected.gesture === 'clone-seal'
@@ -768,10 +805,14 @@ export default function App() {
           if (activeRef.current === 'chidori' && hands.length) drawChidori(ctx,palm(hands[0]),move,w,h,now/1000,charge,hands[0]);
           if (activeRef.current === 'lightning-burst' && hands.length > 1) drawLightningBurst(ctx,{x:(palm(hands[0]).x+palm(hands[1]).x)/2,y:(palm(hands[0]).y+palm(hands[1]).y)/2},w,h,now/1000,charge);
           if (activeRef.current === 'fireball') drawFireball(ctx,hands.length > 1 ? {x:(palm(hands[0]).x+palm(hands[1]).x)/2,y:(palm(hands[0]).y+palm(hands[1]).y)/2} : {x:.5,y:.5},w,h,now/1000,charge);
-          if (activeRef.current === 'clone') {
+          if (activeRef.current === 'clone' && now < cloneVisualUntilRef.current) {
+            const cloneFade = Math.min(1, Math.max(0, (cloneVisualUntilRef.current - now) / 550));
+            ctx.save(); ctx.globalAlpha = cloneFade;
             if (cloneSpriteReadyRef.current && cloneSpriteRef.current) drawSegmentedClones(ctx,cloneSpriteRef.current,w,h,now/1000);
             else drawCloneEcho(ctx,w,h,now/1000);
+            ctx.restore();
           }
+          if (activeRef.current === 'amaterasu' && hands.length) drawAmaterasu(ctx,palm(hands[0]),w,h,now/1000,charge);
         }
         frames++;
         if (now - fpsAt >= 1000) { setFps(Math.round(frames*1000/(now-fpsAt))); fpsAt=now; frames=0; }
@@ -868,7 +909,7 @@ export default function App() {
           <div className="brand-mark"><Sparkles size={21} /></div>
           <div><strong>KONOHA <span>JUTSU LAB</span></strong><small>CAMERA-TRACKED CHAKRA PROTOTYPE</small></div>
         </a>
-        <div className="topbar-right"><div className="topbar-portraits" aria-label="Featured shinobi"><img src="https://commons.wikimedia.org/wiki/Special:FilePath/Cosplay%20-%20AWA15%20-%20Naruto%20Uzumaki%20(3982533553).jpg" alt="Naruto cosplay" title="Naruto Uzumaki" /><img src="https://commons.wikimedia.org/wiki/Special:FilePath/Kakashi%20Hatake%20cosplay.jpg" alt="Kakashi cosplay" title="Kakashi Hatake" /></div><div className="build-chip"><span className="status-dot" /> PROTOTYPE / 0.4</div>
+        <div className="topbar-right"><div className="topbar-portraits" aria-label="Featured shinobi"><img src="https://www.pngfind.com/pngs/m/57-574187_naruto-shippuden-naruto-official-art-hd-png-download.png" alt="Naruto Uzumaki anime art" title="Naruto Uzumaki" /><img src="https://freepngimg.com/thumb/naruto/32418-6-kakashi-photos.png" alt="Kakashi Hatake anime art" title="Kakashi Hatake" /></div><div className="build-chip"><span className="status-dot" /> PROTOTYPE / 0.4</div>
           <button className="icon-button" onClick={() => setHelpOpen((v) => !v)} aria-label="Toggle instructions"><CircleHelp size={18} /></button>
         </div>
       </header>
@@ -883,7 +924,7 @@ export default function App() {
           <div className="stat-item"><span className="stat-icon green"><ShieldCheck size={17} /></span><div><b>No upload</b><small>video stays local</small></div></div>
         </div>
       </section>
-      {helpOpen && <section className="help-panel"><Info size={18} /><div><strong>Quick start · How to cast</strong><p><b>1.</b> Start the camera and allow permission. <b>2. Rasengan:</b> show one open palm; the orb grows from palm-sized over about 2–3 seconds. <b>3. Chidori:</b> press Start Chidori, touch both closed fists together, then separate them to shoulder width. Keep both fists closed; no open palm is needed. A bird-like electric chirp and Japanese voice callout play when sound is enabled. <b>4. Shadow Clone:</b> cross the index/middle fingers of both hands into a plus (+) shape; two brighter copies of your silhouette should split out to either side. Video is processed in your browser.</p></div><button className="text-button" onClick={() => setHelpOpen(false)}>Got it</button></section>}
+      {helpOpen && <section className="help-panel"><Info size={18} /><div><strong>Quick start · How to cast</strong><p><b>1.</b> Start the camera and allow permission. <b>2. Rasengan:</b> show one open palm; the orb grows from palm-sized over about 2–3 seconds. <b>3. Chidori:</b> press Start Chidori, touch both closed fists together, then separate them to shoulder width. Keep both fists closed; no open palm is needed. A short bird-like electric chirp plays when sound is enabled. <b>4. Shadow Clone:</b> cross the index/middle fingers of both hands into a plus (+) shape; two brighter copies of your silhouette should split out to either side. Video is processed in your browser.</p></div><button className="text-button" onClick={() => setHelpOpen(false)}>Got it</button></section>}
       <section className="workspace">
         <div className="camera-column">
           <div className="panel-heading"><div><span className="section-kicker">01 / LIVE INPUT</span><h2>Chakra viewport</h2></div>
@@ -907,13 +948,13 @@ export default function App() {
             {cameraState === 'ready' || cameraState === 'camera-only' ? <button className="primary-button stop-button" onClick={stopCamera}><span className="stop-square" /> Stop camera</button> :
               <button className="primary-button" onClick={startCamera} disabled={cameraState === 'loading'}>{cameraState === 'loading' ? <LoaderCircle className="spin" size={17} /> : <Camera size={17} />}{cameraState === 'loading' ? 'Starting camera…' : 'Start camera'}</button>}
             <button className={'secondary-button ' + (showLandmarks ? 'selected' : '')} onClick={() => setShowLandmarks((v) => !v)}><Hand size={16} /> Landmark overlay <span className="toggle-pill">{showLandmarks ? 'ON' : 'OFF'}</span></button>
-            <button className={'secondary-button ' + (soundEnabled ? 'selected' : '')} onClick={() => { const next = !soundEnabled; setSoundEnabled(next); if (next) { try { const audio = audioRef.current ?? new window.AudioContext(); audioRef.current = audio; void audio.resume().then(() => playJutsuCue(audio, 'chidori')); } catch { /* optional audio */ } } }} title="Turn on jutsu sound; tap again to test it"><Zap size={16} /> Jutsu sound · test <span className="toggle-pill">{soundEnabled ? 'ON' : 'OFF'}</span></button>
+            <button className={'secondary-button ' + (soundEnabled ? 'selected' : '')} onClick={() => { const next = !soundEnabled; setSoundEnabled(next); if (next) { try { const audio = audioRef.current ?? new window.AudioContext(); audioRef.current = audio; void audio.resume().then(() => playJutsuCue(audio, 'chidori')); } catch { /* optional audio */ } } }} title="Tap to turn on and hear a sample; tap again to turn off"><Zap size={16} /> Jutsu sound · test <span className="toggle-pill">{soundEnabled ? 'ON' : 'OFF'}</span></button>
             <button className="reset-button" onClick={() => { switchJutsu('none'); setGestureLabel('Effects cleared'); }} title="Clear current effect"><RotateCcw size={16} /></button>
           </div>
           {(cameraState === 'error' || cameraState === 'camera-only') && <p className="error-hint"><Info size={14} /> {cameraState === 'camera-only' ? 'The camera preview is being kept active. Hand tracking is unavailable until the model/runtime loads; use the GitHub Actions link to check that the newest build was deployed.' : 'Camera access requires browser permission and a secure context (localhost or HTTPS).'}</p>}
         </div>
         <aside className="right-column">
-          <div className="panel-heading"><div><span className="section-kicker">02 / TECHNIQUE SELECTOR</span><h2>Choose your jutsu</h2></div><span className="mini-count">04</span></div>
+          <div className="panel-heading"><div><span className="section-kicker">02 / TECHNIQUE SELECTOR</span><h2>Choose your jutsu</h2></div><span className="mini-count">05</span></div>
           <div className="jutsu-list">
             <button className={'jutsu-card blue-card ' + (activeJutsu === 'rasengan' ? 'is-active' : '')} onClick={() => preview('rasengan')}>
               <div className="jutsu-art rasengan-art"><span className="orb-core" /><span className="orb-ring ring-one" /><span className="orb-ring ring-two" /><span className="orb-spark s1" /><span className="orb-spark s2" /></div>
@@ -921,7 +962,7 @@ export default function App() {
             </button>
             <button className={'jutsu-card cyan-card ' + (activeJutsu === 'chidori' ? 'is-active' : '')} onClick={() => preview('chidori')}>
               <div className="jutsu-art lightning-art"><Zap className="lightning-symbol" size={44} /><i className="bolt b1" /><i className="bolt b2" /><i className="bolt b3" /></div>
-              <div className="jutsu-copy"><div className="jutsu-overline">LIGHTNING STYLE</div><h3>Chidori</h3><p>Two closed-fist poses · electric chakra coats the full hand without using an open palm</p><div className="jutsu-foot"><span className="difficulty medium">INTERMEDIATE</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">02</span>
+              <div className="jutsu-copy"><div className="jutsu-overline">LIGHTNING STYLE</div><h3>Chidori</h3><p>Two anime-style closed-fist moves · thrust one fist forward and pull the other back</p><div className="jutsu-foot"><span className="difficulty medium">INTERMEDIATE</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">02</span>
             </button>
             <button className={'jutsu-card violet-card ' + (activeJutsu === 'clone' ? 'is-active' : '')} onClick={() => preview('clone')}>
               <div className="jutsu-art clone-art"><span className="clone-figure figure-one" /><span className="clone-figure figure-two" /><span className="clone-figure figure-three" /><Sparkles className="clone-star" size={17} /></div>
@@ -929,7 +970,11 @@ export default function App() {
             </button>
             <button className={'jutsu-card fire-card ' + (activeJutsu === 'fireball' ? 'is-active' : '')} onClick={() => preview('fireball')}>
               <div className="jutsu-art fireball-art"><span className="fire-core" /><i className="fire-tongue f1" /><i className="fire-tongue f2" /><i className="fire-tongue f3" /></div>
-              <div className="jutsu-copy"><div className="jutsu-overline">FIRE STYLE · KATON</div><h3>Fireball Jutsu</h3><p>Show two closed fists apart to summon a swirling orange fireball.</p><div className="jutsu-foot"><span className="difficulty medium">NEW TECHNIQUE</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">04</span>
+              <div className="jutsu-copy"><div className="jutsu-overline">FIRE STYLE · KATON</div><h3>Fireball Jutsu</h3><p>Hold two closed fists apart to summon a swirling orange fireball. The active jutsu stays locked until both hands leave the frame.</p><div className="jutsu-foot"><span className="difficulty medium">NEW TECHNIQUE</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">04</span>
+            </button>
+            <button className={'jutsu-card amaterasu-card ' + (activeJutsu === 'amaterasu' ? 'is-active' : '')} onClick={() => preview('amaterasu')}>
+              <div className="jutsu-art amaterasu-art"><span className="black-flame flame-a" /><span className="black-flame flame-b" /><span className="black-flame flame-c" /><span className="amaterasu-core" /></div>
+              <div className="jutsu-copy"><div className="jutsu-overline">MANGEKYŌ SHARINGAN</div><h3>Amaterasu</h3><p>Raise one closed fist to summon writhing black flames edged with violet chakra.</p><div className="jutsu-foot"><span className="difficulty advanced">ADVANCED</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">05</span>
             </button>
           </div>
           <div className="combo-card">
@@ -953,7 +998,7 @@ export default function App() {
               </button>
               <span>Hold each pose · 0.5 sec</span>
             </div>
-            <p className="combo-note">No open palm needed: first touch both closed fists together, then separate them to shoulder width while keeping both fists closed. Hold each pose for half a second.</p>
+            <p className="combo-note">No open palm needed: bring both closed fists close together in front of your upper chest, then thrust one fist toward the camera while pulling the other back by your shoulder. Hold each pose for half a second.</p>
           </div>
           <div className="detection-card">
             <div className="detection-heading"><div><span className="section-kicker">LIVE READOUT</span><h3>Detection status</h3></div><Activity size={17} /></div>
@@ -974,11 +1019,11 @@ export default function App() {
         <div className="shinobi-heading"><span className="section-kicker">HIDDEN LEAF ROSTER</span><span className="shinobi-note">CHAKRA · TEAM 7 · KONOHA</span></div>
         <div className="shinobi-cards">
           <a className="shinobi-card naruto-profile" href="https://naruto-official.com/en/anime/naruto2/list/01_923" target="_blank" rel="noreferrer">
-            <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Cosplay%20-%20AWA15%20-%20Naruto%20Uzumaki%20(3982533553).jpg" alt="Naruto Uzumaki cosplay portrait" loading="lazy" />
+            <img src="https://www.pngfind.com/pngs/m/57-574187_naruto-shippuden-naruto-official-art-hd-png-download.png" alt="Naruto Uzumaki anime portrait" loading="lazy" />
             <span className="shinobi-glow" /><div className="shinobi-copy"><small>THE NINE-TAILS JINCHURIKI</small><strong>Naruto Uzumaki</strong><span>RASENGAN · SHADOW CLONE</span></div><span className="shinobi-symbol">うずまき</span>
           </a>
           <a className="shinobi-card kakashi-profile" href="https://naruto-official.com/en/news/01_1903" target="_blank" rel="noreferrer">
-            <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Kakashi%20Hatake%20cosplay.jpg" alt="Kakashi Hatake cosplay portrait" loading="lazy" />
+            <img src="https://freepngimg.com/thumb/naruto/32418-6-kakashi-photos.png" alt="Kakashi Hatake anime portrait" loading="lazy" />
             <span className="shinobi-glow" /><div className="shinobi-copy"><small>THE COPY NINJA</small><strong>Kakashi Hatake</strong><span>CHIDORI · LIGHTNING BLADE</span></div><span className="shinobi-symbol">写輪眼</span>
           </a>
         </div>
