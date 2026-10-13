@@ -418,6 +418,7 @@ export default function App() {
   const segmenterRef = useRef<ImageSegmenter | null>(null);
   const cloneSpriteRef = useRef<HTMLCanvasElement | null>(null);
   const cloneSpriteReadyRef = useRef(false);
+  const smoothedLandmarksRef = useRef<Point[][]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number | null>(null);
   const timeoutRef = useRef<number | null>(null);
@@ -473,6 +474,7 @@ export default function App() {
     trackerRef.current?.close(); trackerRef.current = null;
     segmenterRef.current?.close(); segmenterRef.current = null;
     cloneSpriteRef.current = null; cloneSpriteReadyRef.current = false;
+    smoothedLandmarksRef.current = [];
     setCloneStatus('idle');
     comboModeRef.current = false; setComboMode(false); comboCandidateRef.current = 'none';
     if (videoRef.current) videoRef.current.srcObject = null;
@@ -553,7 +555,20 @@ export default function App() {
         const now = performance.now();
         if (v.currentTime !== lastVideoTime) {
           lastVideoTime = v.currentTime; latest = model.detectForVideo(v, now);
-          const detected = readJutsu(latest), count = latest.landmarks?.length ?? 0;
+          const rawHands = (latest.landmarks ?? []) as Point[][];
+          const previousHands = smoothedLandmarksRef.current;
+          // A light exponential low-pass filter damps landmark jitter without changing gesture classification.
+          smoothedLandmarksRef.current = rawHands.map((hand, handIndex) => {
+            const previous = previousHands[handIndex];
+            if (!previous || previous.length !== hand.length) return hand.map((point) => ({ ...point }));
+            const alpha = 0.46;
+            return hand.map((point, pointIndex) => ({
+              x: previous[pointIndex].x + (point.x - previous[pointIndex].x) * alpha,
+              y: previous[pointIndex].y + (point.y - previous[pointIndex].y) * alpha,
+              z: previous[pointIndex].z + (point.z - previous[pointIndex].z) * alpha,
+            }));
+          });
+          const detected = readJutsu(latest), count = rawHands.length;
           setHandCount(count);
           if (comboModeRef.current) {
             const expected = COMBO_STEPS[comboProgressRef.current];
@@ -626,7 +641,7 @@ export default function App() {
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.clearRect(0,0,w,h);
-          const hands = (latest?.landmarks ?? []) as Point[][];
+          const hands = smoothedLandmarksRef.current;
           if (landmarksRef.current) drawLandmarks(ctx,hands,w,h);
           const charge = Math.min(1, 0.48 + (now - candidateAt) / 2400);
           if (activeRef.current === 'rasengan' && hands.length) drawRasengan(ctx,palm(hands[0]),w,h,now/1000,charge);
