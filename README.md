@@ -7,10 +7,10 @@ A React + TypeScript + Vite prototype for webcam-based hand tracking and Naruto-
 - Live webcam preview, mirrored like a selfie camera.
 - MediaPipe Hand Landmarker inference in the browser, with GPU and CPU fallback.
 - Hand landmark overlay and stable-pose gating to reduce accidental casts.
-- Guided three-pose combo practice (open palm → fist → two open palms), with timed holds, step-by-step feedback, cancel/restart controls, and a Shadow Clone finisher.
-- Open palm → Rasengan-style orb effect.
-- Fist → Chidori-style lightning effect.
-- Two open palms → lazily loaded MediaPipe selfie segmentation creates two tinted, offset cutout echoes of the live camera image for Shadow Clone.
+- Guided three-pose combo practice (open palm → fist → crossed-finger plus seal), with timed holds, step-by-step feedback, cancel/restart controls, and a Shadow Clone finisher.
+- Open palm → Rasengan effect with a bright core, counter-rotating chakra ribbons, spiral filaments, orbiting particles, and charge scaling.
+- Fist → Chidori effect with a white-hot electric core, branching jagged bolts, moving sparks, and a short trail that follows hand motion.
+- Shadow Clone seal heuristic: two hands close together, index/middle fingers extended in a crossed/plus-like arrangement, outer fingers curled; selfie segmentation creates tinted, offset cutout echoes with procedural smoke pulses.
 - Preview controls when camera access is unavailable.
 - Responsive UI, camera permission errors, camera cleanup, and optional generated sound.
 
@@ -34,12 +34,12 @@ npm run preview
 
 ## Runtime and privacy
 
-The browser downloads the MediaPipe WASM runtime and hand-landmark model from public Google/jsDelivr URLs on first use. Video frames and detected hand landmarks are processed in the browser in this prototype; they are not uploaded to an application backend.
+The production build downloads and checksum-verifies the MediaPipe hand-landmark model, then ships it along with the MediaPipe WASM runtime from the same site origin. Video frames and detected hand landmarks are processed in the browser in this prototype; they are not uploaded to an application backend. The optional selfie-segmentation model for Shadow Clone is still fetched from Google Storage on first use.
 
 ## Known limits / next milestones
 
-1. The current guided combo validates an ordered sequence of broad poses (open palm → fist → two open palms); it is a prototype training chain, not yet a recognizer for the canonical Naruto hand-seal vocabulary.
-2. Rasengan and Chidori are 2D Canvas effects attached to a detected hand; they are not production-grade 3D assets.
+1. Shadow Clone uses a geometric crossed-finger plus-seal heuristic rather than a custom-trained gesture model. Hand orientation, camera angle, and lighting can affect recognition; a browser-based training workflow with positive and negative samples would improve reliability.
+2. Rasengan and Chidori are procedural 2D Canvas effects attached to a detected hand; they are richer and motion-responsive, but not production-grade 3D assets.
 3. Shadow Clone now uses selfie segmentation to draw live cutout echoes. Hair, sleeves, motion blur and background edges can still produce artifacts; this is a prototype effect, not a studio-quality rotoscope.
 4. Add per-user calibration, confidence smoothing, pose capture/testing, and device performance profiling.
 5. Before public or commercial release, audit dependencies and use original or properly licensed visual/audio assets. Naruto-related branding and character assets may have separate rights.
