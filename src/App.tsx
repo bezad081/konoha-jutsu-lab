@@ -84,7 +84,7 @@ const INFO: Record<Exclude<Jutsu, 'none'>, { name: string; color: string }> = {
 
 const COMBO_STEPS: Array<{ gesture: Gesture; title: string; instruction: string }> = [
   { gesture: 'fist', title: 'Charge · Gather chakra', instruction: 'Make one clear fist and hold it near your chest' },
-  { gesture: 'chidori-thrust', title: 'Release · Lightning thrust', instruction: 'Open your palm toward the camera and push your hand forward' },
+  { gesture: 'open', title: 'Release · Lightning thrust', instruction: 'Open your palm toward the camera and push your hand forward' },
 ];
 
 function dist(a: Point, b: Point) {
@@ -160,7 +160,6 @@ function readJutsu(result: HandLandmarkerResult | null): { jutsu: Jutsu; gesture
   if(near&&gestures.every(g=>g==='fist'))return {jutsu:'none',gesture:'ox-seal'};
   const hare=hands.some(hand=>hand.length>=21&&fingerExtended(hand,8,6,5)&&fingerExtended(hand,12,10,9)&&!fingerExtended(hand,16,14,13)&&!fingerExtended(hand,20,18,17));
   if(hare)return {jutsu:'none',gesture:'hare-seal'};
-  if(near&&gestures.every(g=>g==='open'))return {jutsu:'none',gesture:'monkey-seal'};
   const openHands = gestures.map((gesture, index) => gesture === 'open' ? index : -1).filter((index) => index >= 0);
   if(openHands.length > 1) {
     if(result && openHands.every((index) => palmOrientationAllowsRasengan(result, index))) return {jutsu:'lightning-burst',gesture:'two-open'};
@@ -498,7 +497,7 @@ export default function App() {
   const [cloneStatus, setCloneStatus] = useState<'idle'|'loading'|'ready'|'error'>('idle');
   const [comboMode, setComboMode] = useState(false);
   const [comboProgress, setComboProgress] = useState(0);
-  const [comboFeedback, setComboFeedback] = useState('Start the camera, then practise the three-pose chain.');
+  const [comboFeedback, setComboFeedback] = useState('Start the camera, make a fist, then thrust an open palm to release Chidori.');
   const comboModeRef = useRef(false);
   const comboProgressRef = useRef(0);
   const comboCandidateRef = useRef<Gesture>('none');
@@ -680,7 +679,7 @@ export default function App() {
             } else setGestureLabel('Hold the pose steady…');
           } else {
             candidate = 'none'; candidateAt = now; if (!noPoseAt) noPoseAt = now;
-            setGestureLabel(count ? 'Pose detected · try a clear open palm or the guided Chidori seals' : 'Move your hands into the frame');
+            setGestureLabel(count ? 'Pose detected · show your palm to cast Rasengan, or start the two-move Chidori sequence' : 'Move your hands into the frame');
             if (now > castUntilRef.current && now - noPoseAt > 700) switchJutsu('none');
           }
           const first = latest.landmarks?.[0] as Point[] | undefined;
@@ -832,7 +831,7 @@ export default function App() {
           <div className="stat-item"><span className="stat-icon green"><ShieldCheck size={17} /></span><div><b>No upload</b><small>video stays local</small></div></div>
         </div>
       </section>
-      {helpOpen && <section className="help-panel"><Info size={18} /><div><strong>Quick start · How to cast</strong><p><b>1.</b> Start the camera and allow permission. <b>2. Rasengan:</b> show one open palm; the orb grows from palm-sized over about 2–3 seconds. <b>3. Chidori:</b> press Start Chidori and perform Ox → Hare → Monkey, holding each pose for half a second. A bird-like electric chirp and Japanese voice callout play when sound is enabled. <b>4. Shadow Clone:</b> cross the index/middle fingers of both hands into a plus (+) shape; two brighter copies of your silhouette should split out to either side. Video is processed in your browser.</p></div><button className="text-button" onClick={() => setHelpOpen(false)}>Got it</button></section>}
+      {helpOpen && <section className="help-panel"><Info size={18} /><div><strong>Quick start · How to cast</strong><p><b>1.</b> Start the camera and allow permission. <b>2. Rasengan:</b> show one open palm; the orb grows from palm-sized over about 2–3 seconds. <b>3. Chidori:</b> press Start Chidori, make a fist to charge, then open your palm and thrust forward to release the lightning. A bird-like electric chirp and Japanese voice callout play when sound is enabled. <b>4. Shadow Clone:</b> cross the index/middle fingers of both hands into a plus (+) shape; two brighter copies of your silhouette should split out to either side. Video is processed in your browser.</p></div><button className="text-button" onClick={() => setHelpOpen(false)}>Got it</button></section>}
       <section className="workspace">
         <div className="camera-column">
           <div className="panel-heading"><div><span className="section-kicker">01 / LIVE INPUT</span><h2>Chakra viewport</h2></div>
