@@ -868,7 +868,7 @@ export default function App() {
           <div className="brand-mark"><Sparkles size={21} /></div>
           <div><strong>KONOHA <span>JUTSU LAB</span></strong><small>CAMERA-TRACKED CHAKRA PROTOTYPE</small></div>
         </a>
-        <div className="topbar-right"><div className="build-chip"><span className="status-dot" /> PROTOTYPE / 0.3</div>
+        <div className="topbar-right"><div className="topbar-portraits" aria-label="Featured shinobi"><img src="https://commons.wikimedia.org/wiki/Special:FilePath/Cosplay%20-%20AWA15%20-%20Naruto%20Uzumaki%20(3982533553).jpg" alt="Naruto cosplay" title="Naruto Uzumaki" /><img src="https://commons.wikimedia.org/wiki/Special:FilePath/Kakashi%20Hatake%20cosplay.jpg" alt="Kakashi cosplay" title="Kakashi Hatake" /></div><div className="build-chip"><span className="status-dot" /> PROTOTYPE / 0.4</div>
           <button className="icon-button" onClick={() => setHelpOpen((v) => !v)} aria-label="Toggle instructions"><CircleHelp size={18} /></button>
         </div>
       </header>
