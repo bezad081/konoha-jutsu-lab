@@ -77,3 +77,14 @@ body{background:radial-gradient(ellipse at 9% 4%,rgba(255,145,48,.12),transparen
 @keyframes firePulse{from{transform:scale(.86)}to{transform:scale(1.14)}}
 @keyframes fireFlicker{from{scale:.78 .84;opacity:.7}to{scale:1.12 1.18;opacity:1}}
 @media(max-width:560px){.topbar-portraits{display:none}.combo-steps{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Live chakra meter: a compact anime-style HUD that grows with the active cast. */
+.chakra-charge-hud{position:absolute;z-index:8;top:49px;right:15px;width:min(210px,42%);padding:11px 12px 10px;border:1px solid rgba(112,213,255,.28);border-radius:9px;background:linear-gradient(135deg,rgba(7,18,36,.88),rgba(18,27,54,.74));box-shadow:0 8px 30px rgba(0,0,0,.28),inset 0 0 22px rgba(65,160,255,.07);backdrop-filter:blur(8px);pointer-events:none;animation:chargeHudIn .25s ease-out}
+.charge-hud-top{display:flex;align-items:center;justify-content:space-between;gap:8px;color:#9edfff;font:9px 'DM Mono',monospace;letter-spacing:.08em}
+.charge-hud-top span{display:flex;align-items:center;gap:5px}
+.charge-hud-top strong{font-size:13px;color:#f2fcff;letter-spacing:0}
+.charge-hud-track{height:5px;margin:9px 0 7px;overflow:hidden;border-radius:5px;background:rgba(133,173,217,.17);box-shadow:inset 0 1px 2px rgba(0,0,0,.4)}
+.charge-hud-track span{display:block;height:100%;border-radius:5px;background:linear-gradient(90deg,#397cf7 0%,#5ce1ff 62%,#f0ffff 100%);box-shadow:0 0 12px rgba(78,199,255,.78);transition:width .09s linear}
+.chakra-charge-hud small{font:8px 'DM Mono',monospace;letter-spacing:.09em;color:#7c9bbd}
+@keyframes chargeHudIn{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:700px){.chakra-charge-hud{top:43px;right:8px;width:155px;padding:8px 9px}.charge-hud-top{font-size:7px}.charge-hud-top strong{font-size:11px}.chakra-charge-hud small{font-size:7px}}
