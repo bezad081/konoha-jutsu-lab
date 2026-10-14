@@ -150,13 +150,14 @@ function isShadowCloneSeal(hands: Point[][]) {
     ring: fingerExtended(hand, 16, 14, 13),
     pinky: fingerExtended(hand, 20, 18, 17),
   }));
-  // The classic plus/cross seal uses index and middle fingers while the outer fingers stay curled.
-  if (poses.some((pose) => !pose.index || !pose.middle || pose.ring || pose.pinky)) return false;
+  // Make the seal tolerant of small landmark errors: both index/middle pairs
+  // should be extended, but the ring/pinky fingers need not be perfectly curled.
+  if (poses.some((pose) => !pose.index || !pose.middle || (pose.ring && pose.pinky))) return false;
 
   const [a, b] = hands;
   const palmA = palm(a), palmB = palm(b);
   const scaleA = dist(a[0], a[9]), scaleB = dist(b[0], b[9]);
-  const palmsNear = Math.hypot(palmA.x - palmB.x, palmA.y - palmB.y) < (scaleA + scaleB) * 1.9;
+  const palmsNear = Math.hypot(palmA.x - palmB.x, palmA.y - palmB.y) < (scaleA + scaleB) * 2.25;
   if (!palmsNear) return false;
 
   // Compare the index/middle finger axes. A visible cross/plus is less likely to be confused
@@ -169,8 +170,8 @@ function isShadowCloneSeal(hands: Point[][]) {
   if (lengthA < 0.01 || lengthB < 0.01) return false;
   const cosine = Math.min(1, Math.abs((ax * bx + ay * by) / (lengthA * lengthB)));
   const angle = Math.acos(cosine) * 180 / Math.PI;
-  const tipsNear = Math.hypot(tipA.x - tipB.x, tipA.y - tipB.y) < (scaleA + scaleB) * 1.65;
-  return angle > 24 && tipsNear;
+  const tipsNear = Math.hypot(tipA.x - tipB.x, tipA.y - tipB.y) < (scaleA + scaleB) * 1.9;
+  return angle > 12 && tipsNear;
 }
 function playJutsuCue(audio: AudioContext, jutsu: Exclude<Jutsu, 'none'>) {
   const now = audio.currentTime;
@@ -325,6 +326,7 @@ export default function App() {
   const jutsuStartedAtRef = useRef(0);
   const castUntilRef = useRef(0);
   const cloneVisualUntilRef = useRef(0);
+  const cloneStatusRef = useRef<'idle'|'loading'|'ready'|'error'>('idle');
   const soundRef = useRef(false);
   const previewUntilRef = useRef(0);
   const landmarksRef = useRef(true);
@@ -340,6 +342,7 @@ export default function App() {
   const [fps, setFps] = useState(0);
   const [trackingEngine, setTrackingEngine] = useState<'idle'|'starting'|'worker-gpu'|'worker-cpu'|'main-thread'|'unavailable'>('idle');
   const [cloneStatus, setCloneStatus] = useState<'idle'|'loading'|'ready'|'error'>('idle');
+  useEffect(() => { cloneStatusRef.current = cloneStatus; }, [cloneStatus]);
   useEffect(() => { soundRef.current=soundEnabled; if(soundEnabled)try{const a=audioRef.current??new window.AudioContext();audioRef.current=a;void a.resume();}catch{/* optional */} }, [soundEnabled]);
   useEffect(() => { landmarksRef.current = showLandmarks; }, [showLandmarks]);
   useEffect(() => {
@@ -545,6 +548,7 @@ export default function App() {
                     const visibleUntil = performance.now() + 6000;
                     cloneVisualUntilRef.current = visibleUntil;
                     castUntilRef.current = visibleUntil;
+                    if (previewUntilRef.current > 0) previewUntilRef.current = visibleUntil;
                   }
                 }
               } catch (cause) {
@@ -556,6 +560,9 @@ export default function App() {
               }
             } else if (message.type === 'skipped') {
               segmentationBusy = false;
+            } else if (message.type === 'frame-error') {
+              segmentationBusy = false;
+              if (!cloneSpriteReadyRef.current) setGestureLabel('Shadow Clone · retrying person cutout: ' + (message.message || 'frame was unclear'));
             } else if (message.type === 'error') {
               segmentationBusy = false;
               setCloneStatus('error');
@@ -668,7 +675,8 @@ export default function App() {
                 if (now - candidateAt > 175) {
                   const next = detected.jutsu;
                   if (next === 'clone') {
-                    castUntilRef.current = now + 15000;
+                    const cloneWindow = cloneSpriteReadyRef.current ? 6000 : 15000;
+                    castUntilRef.current = now + cloneWindow;
                     cloneVisualUntilRef.current = castUntilRef.current;
                   }
                   previewUntilRef.current = 0;
@@ -713,7 +721,8 @@ export default function App() {
             if (now - candidateAt > 175) {
               const next = detected.jutsu;
               if (next === 'clone') {
-                castUntilRef.current = now + 15000;
+                const cloneWindow = cloneSpriteReadyRef.current ? 6000 : 15000;
+                castUntilRef.current = now + cloneWindow;
                 cloneVisualUntilRef.current = castUntilRef.current;
               }
               previewUntilRef.current = 0;
@@ -803,22 +812,51 @@ export default function App() {
   const preview = (jutsu: Exclude<Jutsu, 'none'>) => {
     if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current);
     switchJutsu(jutsu);
-    const previewDuration = jutsu === 'clone' ? 6500 : 2200;
-    previewUntilRef.current = performance.now() + previewDuration;
+    const previewStartedAt = performance.now();
+    const cloneWaitLimit = 15000;
+    const previewDuration = jutsu === 'clone'
+      ? (cloneSpriteReadyRef.current ? 6000 : cloneWaitLimit)
+      : 2200;
+    previewUntilRef.current = previewStartedAt + previewDuration;
     if (jutsu === 'clone') {
-      castUntilRef.current = performance.now() + previewDuration;
+      castUntilRef.current = previewStartedAt + previewDuration;
       cloneVisualUntilRef.current = castUntilRef.current;
     }
     setGestureLabel(jutsu === 'clone'
       ? cameraState === 'ready'
-        ? 'Shadow Clone preview · loading your cutout'
+        ? 'Shadow Clone preview · preparing your live cutout'
         : 'Shadow Clone preview · start the camera to clone your image'
       : 'Rasengan preview · swirling chakra');
-    timeoutRef.current = window.setTimeout(() => {
+
+    const finishPreview = () => {
+      const now = performance.now();
+      if (jutsu === 'clone' && activeRef.current === 'clone') {
+        // Don't let a fixed preview timeout kill the first summon while the
+        // segmenter is still preparing. Keep polling briefly, then linger for
+        // six seconds from the first valid person cutout.
+        const waitingForImage = !cloneSpriteReadyRef.current &&
+          cloneStatusRef.current !== 'error' && now - previewStartedAt < cloneWaitLimit;
+        if (waitingForImage) {
+          const keepAliveUntil = now + 400;
+          castUntilRef.current = Math.max(castUntilRef.current, keepAliveUntil);
+          cloneVisualUntilRef.current = Math.max(cloneVisualUntilRef.current, keepAliveUntil);
+          timeoutRef.current = window.setTimeout(finishPreview, 250);
+          return;
+        }
+        if (cloneSpriteReadyRef.current && now < cloneVisualUntilRef.current) {
+          timeoutRef.current = window.setTimeout(finishPreview, Math.min(500, Math.max(50, cloneVisualUntilRef.current - now)));
+          return;
+        }
+      }
       previewUntilRef.current = 0;
       if (activeRef.current === jutsu) switchJutsu('none');
-      setGestureLabel(cameraState === 'ready' ? 'Ready · form Rasengan or Shadow Clone' : 'Preview complete · start camera for tracking');
-    }, previewDuration);
+      setGestureLabel(cameraState === 'ready'
+        ? jutsu === 'clone' && !cloneSpriteReadyRef.current
+          ? 'Shadow Clone could not isolate your image · check Detection status'
+          : 'Ready · form Rasengan or Shadow Clone'
+        : 'Preview complete · start camera for tracking');
+    };
+    timeoutRef.current = window.setTimeout(finishPreview, jutsu === 'clone' ? 250 : previewDuration);
   };
   const activeInfo = activeJutsu === 'none' ? null : INFO[activeJutsu];
 
