@@ -16,6 +16,9 @@ const scope = self as unknown as WorkerScope;
 let segmenter: ImageSegmenter | null = null;
 let busy = false;
 let lastTimestamp = 0;
+let previousScores: Float32Array | null = null;
+let previousWidth = 0;
+let previousHeight = 0;
 
 const describe = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
 
@@ -54,6 +57,9 @@ function processFrame(message: FrameMessage) {
   try {
     const timestamp = Math.max(message.timestamp, lastTimestamp + 1);
     lastTimestamp = timestamp;
+
+    // Keep the transferable frame alive until MediaPipe invokes its result
+    // callback. The callback API may complete asynchronously in live video mode.
     segmenter.segmentForVideo(bitmap, timestamp, (result) => {
       try {
         const masks = result.confidenceMasks ?? [];
@@ -61,26 +67,36 @@ function processFrame(message: FrameMessage) {
           scope.postMessage({ type: 'error', message: 'Segmentation returned no confidence masks.' });
           return;
         }
-        // The landscape selfie model normally returns a single foreground confidence mask.
-        // If it returns multiple masks, prefer the first non-background class when labels exist.
+
         const labels = segmenter?.getLabels() ?? [];
         const foreground = labels.findIndex((label) => /person|foreground|human/i.test(label));
         const nonBackground = labels.findIndex((label) => !/background/i.test(label));
         const maskIndex = foreground >= 0 ? foreground : nonBackground >= 0 ? nonBackground : 0;
         const mask = masks[maskIndex] ?? masks[0];
         const scores = new Float32Array(mask.getAsFloat32Array());
+
+        // A light temporal blend reduces mask-edge flicker without retaining so
+        // much history that a moving arm leaves a visible ghost trail.
+        if (previousScores && previousWidth === mask.width && previousHeight === mask.height && previousScores.length === scores.length) {
+          for (let i = 0; i < scores.length; i++) {
+            scores[i] = scores[i] * 0.78 + previousScores[i] * 0.22;
+          }
+        }
+        previousScores = new Float32Array(scores);
+        previousWidth = mask.width;
+        previousHeight = mask.height;
         scope.postMessage({ type: 'mask', width: mask.width, height: mask.height, scores }, [scores.buffer]);
       } catch (cause) {
         scope.postMessage({ type: 'error', message: 'Could not serialize person mask: ' + describe(cause) });
       } finally {
         busy = false;
+        bitmap.close();
       }
     });
   } catch (cause) {
     busy = false;
-    scope.postMessage({ type: 'error', message: 'Segmentation frame failed: ' + describe(cause) });
-  } finally {
     bitmap.close();
+    scope.postMessage({ type: 'error', message: 'Segmentation frame failed: ' + describe(cause) });
   }
 }
 
