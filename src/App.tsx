@@ -555,7 +555,7 @@ export default function App() {
           segmenterFailed = true;
           segmenterWorkerRef.current?.terminate(); segmenterWorkerRef.current = null;
           setCloneStatus('error');
-          setGestureLabel('Shadow Clone cutout unavailable; using the visual fallback (' + describeFailure(cause) + ')');
+          setGestureLabel('Shadow Clone image cutout unavailable (' + describeFailure(cause) + ')');
         } finally {
           segmenterLoading = false;
         }
@@ -862,7 +862,7 @@ export default function App() {
             <div className="readout-row"><span>Hand landmarks</span><strong>{cameraState === 'ready' ? (handCount ? handCount + ' hand' + (handCount === 1 ? '' : 's') + ' tracked' : 'Searching…') : 'Not connected'}</strong></div>
             <div className="readout-row"><span>Inference engine</span><strong>{trackingEngine === 'worker-gpu' ? 'Web Worker · GPU' : trackingEngine === 'worker-cpu' ? 'Web Worker · CPU' : trackingEngine === 'main-thread' ? 'Compatibility fallback' : trackingEngine === 'starting' ? 'Initializing…' : trackingEngine === 'unavailable' ? 'Unavailable' : 'Idle'}</strong></div>
             <div className="readout-row"><span>Gesture classifier</span><strong>{cameraState === 'ready' ? 'Running locally' : 'Awaiting camera'}</strong></div>
-            <div className="readout-row"><span>Clone cutout</span><strong>{cloneStatus === 'ready' ? 'Segmentation ready' : cloneStatus === 'loading' ? 'Loading model…' : cloneStatus === 'error' ? 'Visual fallback' : 'Loads on first clone'}</strong></div>
+            <div className="readout-row"><span>Clone cutout</span><strong>{cloneStatus === 'ready' ? 'Your image · ready' : cloneStatus === 'loading' ? 'Preparing your image…' : cloneStatus === 'error' ? 'Image cutout unavailable' : 'Loads on first clone'}</strong></div>
             <div className="signal-track"><span style={{ width: cameraState === 'ready' ? (handCount ? '86%' : '32%') : '5%' }} /></div>
             <p className="signal-caption">{gestureLabel}</p>
           </div>
