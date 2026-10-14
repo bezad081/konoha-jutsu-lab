@@ -239,26 +239,25 @@ function palmOrientationAllowsRasengan(result: HandLandmarkerResult, handIndex: 
   return normalZ * side > 0.00002 || normalY * side > 0.00002;
 }
 function readJutsu(result: HandLandmarkerResult | null): { jutsu: Jutsu; gesture: Gesture } {
-  const hands=(result?.landmarks??[]) as Point[][], gestures=hands.map((hand)=>classify(hand));
-  if(isShadowCloneSeal(hands)) return {jutsu:'clone',gesture:'clone-seal'};
-  const near=hands.length===2&&hands.every(hand=>hand.length>=21)&&Math.hypot(palm(hands[0]).x-palm(hands[1]).x,palm(hands[0]).y-palm(hands[1]).y)<(dist(hands[0][0],hands[0][9])+dist(hands[1][0],hands[1][9]))*1.25;
-  if(near&&gestures.every(g=>g==='fist'))return {jutsu:'none',gesture:'ox-seal'};
-  if(hands.length===2&&gestures.every(g=>g==='fist'))return {jutsu:'fireball',gesture:'two-fist'};
-  if(hands.length===1&&gestures[0]==='fist')return {jutsu:'amaterasu',gesture:'fist'};
-  const hare=hands.some(hand=>hand.length>=21&&fingerExtended(hand,8,6,5)&&fingerExtended(hand,12,10,9)&&!fingerExtended(hand,16,14,13)&&!fingerExtended(hand,20,18,17));
-  if(hare)return {jutsu:'wind-scythe',gesture:'hare-seal'};
-  const openHands = gestures.map((gesture, index) => gesture === 'open' ? index : -1).filter((index) => index >= 0);
-  if(openHands.length > 1) {
-    if(result && openHands.every((index) => palmOrientationAllowsRasengan(result, index))) return {jutsu:'lightning-burst',gesture:'two-open'};
-    return {jutsu:'none',gesture:'none'};
-  }
-  if(openHands.length === 1) {
+  const hands = (result?.landmarks ?? []) as Point[][];
+  const gestures = hands.map((hand) => classify(hand));
+
+  // Keep the live classifier intentionally narrow: these are the only two
+  // techniques in the focused experience.
+  if (isShadowCloneSeal(hands)) return { jutsu: 'clone', gesture: 'clone-seal' };
+
+  const openHands = gestures
+    .map((gesture, index) => gesture === 'open' ? index : -1)
+    .filter((index) => index >= 0);
+
+  if (openHands.length === 1) {
     const index = openHands[0];
-    if(result && palmOrientationAllowsRasengan(result, index)) return {jutsu:'rasengan',gesture:'open'};
-    return {jutsu:'none',gesture:'none'};
+    if (result && palmOrientationAllowsRasengan(result, index)) {
+      return { jutsu: 'rasengan', gesture: 'open' };
+    }
   }
-  if(gestures.includes('fist'))return {jutsu:'none',gesture:'fist'};
-  return {jutsu:'none',gesture:'none'};
+  if (gestures.includes('fist')) return { jutsu: 'none', gesture: 'fist' };
+  return { jutsu: 'none', gesture: 'none' };
 }
 function palm(points: Point[]) {
   const ids = [0,5,9,13,17];
