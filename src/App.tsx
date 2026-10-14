@@ -571,8 +571,9 @@ export default function App() {
             worker.onmessage = (event: MessageEvent<{ type: string; message?: string }>) => {
               const message = event.data;
               if (message.type === 'ready') { window.clearTimeout(timer); setCloneStatus('ready'); resolve(); }
-              else if (message.type === 'error' && !segmentationBusy) {
-                setGestureLabel('Shadow Clone segmentation: ' + (message.message || 'worker error'));
+              else if (message.type === 'error') {
+                window.clearTimeout(timer);
+                reject(new Error(message.message || 'Segmentation worker initialization failed.'));
               }
             };
             worker.onerror = (event) => { window.clearTimeout(timer); reject(new Error(event.message || 'Segmentation worker failed.')); };
