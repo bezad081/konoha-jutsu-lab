@@ -71,8 +71,12 @@ function processFrame(message: FrameMessage) {
         const labels = segmenter?.getLabels() ?? [];
         const foreground = labels.findIndex((label) => /person|foreground|human/i.test(label));
         const nonBackground = labels.findIndex((label) => !/background/i.test(label));
-        const maskIndex = foreground >= 0 ? foreground : nonBackground >= 0 ? nonBackground : 0;
-        const mask = masks[maskIndex] ?? masks[0];
+        // The selfie-segmentation model commonly orders its classes as
+        // background=0, person=1. Some runtimes expose no labels at all, so
+        // choosing mask 0 blindly can cut out the background instead of you.
+        const fallbackPersonIndex = masks.length > 1 ? 1 : 0;
+        const maskIndex = foreground >= 0 ? foreground : nonBackground >= 0 ? nonBackground : fallbackPersonIndex;
+        const mask = masks[maskIndex] ?? masks[fallbackPersonIndex] ?? masks[0];
         const scores = new Float32Array(mask.getAsFloat32Array());
 
         // A light temporal blend reduces mask-edge flicker without retaining so
