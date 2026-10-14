@@ -182,3 +182,12 @@ body{background:radial-gradient(ellipse at 9% 4%,rgba(255,145,48,.12),transparen
   .jutsu-foot{flex-direction:row;align-items:center;gap:8px;margin-top:8px}
   .camera-controls{grid-template-columns:1fr 1fr}
 }
+
+
+/* A clone-specific HUD keeps the two techniques visually distinct. */
+.clone-summon-hud{position:absolute;z-index:8;top:49px;right:15px;display:grid;grid-template-columns:15px auto;align-items:center;column-gap:7px;row-gap:4px;padding:10px 13px;border:1px solid rgba(174,143,255,.35);border-radius:9px;background:linear-gradient(135deg,rgba(23,15,48,.91),rgba(11,18,36,.84));box-shadow:0 8px 30px rgba(0,0,0,.27),inset 0 0 20px rgba(153,109,255,.08);color:#d3c4ff;backdrop-filter:blur(8px);pointer-events:none;animation:cloneHudIn .3s ease-out}
+.clone-summon-hud svg{grid-row:span 2;color:#bba0ff;filter:drop-shadow(0 0 7px rgba(168,133,255,.75))}
+.clone-summon-hud span{font:9px 'DM Mono',monospace;letter-spacing:.09em}
+.clone-summon-hud small{font:7px 'DM Mono',monospace;letter-spacing:.07em;color:#8f82b8}
+@keyframes cloneHudIn{from{opacity:0;transform:translateY(-5px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+@media(max-width:700px){.clone-summon-hud{top:43px;right:8px;padding:8px 9px;column-gap:5px}.clone-summon-hud span{font-size:7px}.clone-summon-hud small{font-size:6px}}
