@@ -3,7 +3,7 @@ import {
   Activity, Camera, Check, ChevronDown, CircleHelp, CirclePlay, Cpu, Expand,
   Hand, Info, Lightbulb, LoaderCircle, RotateCcw, ShieldCheck, Sparkles, Zap
 } from 'lucide-react';
-import { FaceLandmarker, FilesetResolver, HandLandmarker, type FaceLandmarkerResult, type HandLandmarkerResult } from '@mediapipe/tasks-vision';
+import { FilesetResolver, HandLandmarker, type HandLandmarkerResult } from '@mediapipe/tasks-vision';
 import ThreeEffects, { type ThreeTrackingState } from './ThreeEffects';
 
 type Jutsu = 'none' | 'rasengan' | 'chidori' | 'clone' | 'lightning-burst' | 'fireball' | 'amaterasu' | 'wind-scythe';
@@ -15,11 +15,9 @@ type NinjaTool = 'none' | 'shuriken' | 'kunai';
 type SequenceKind = 'chidori' | 'fireball';
 type ThrownTool = { kind: Exclude<NinjaTool, 'none'>; x: number; y: number; vx: number; vy: number; born: number; spin: number };
 type WorkerHandPayload = { landmarks: Point[][]; handedness?: Array<Array<{ categoryName: string }>>; worldLandmarks?: Point[][] };
-type WorkerFacePayload = { faceLandmarks: Point[][]; faceBlendshapes?: Array<{ categories: Array<{ categoryName: string; score: number }> }> };
 type VisionWorkerOutput =
   | { type: 'ready'; delegate: string }
-  | { type: 'face-status'; available: boolean; message?: string }
-  | { type: 'result'; timestamp: number; hands: WorkerHandPayload; faceUpdated: boolean; face: WorkerFacePayload | null }
+  | { type: 'result'; timestamp: number; hands: WorkerHandPayload }
   | { type: 'tracking-error'; message: string }
   | { type: 'init-error'; message: string };
 
@@ -32,7 +30,6 @@ const MODEL_URLS = [
   'https://github.com/sanderdesnaijer/mediapipe-model-mirrors/releases/download/v1/hand_landmarker.task',
   'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
 ];
-const FACE_MODEL_URLS = [new URL('models/face_landmarker.task', document.baseURI).href, 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task'];
 const SEGMENTER_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter_landscape/float16/latest/selfie_segmenter_landscape.tflite';
 const WASM_URLS = [
   LOCAL_WASM_URL,
@@ -264,14 +261,6 @@ function palm(points: Point[]) {
   return ids.reduce((p, i) => ({ x: p.x + points[i].x / ids.length, y: p.y + points[i].y / ids.length }), { x: 0, y: 0 });
 }
 
-async function createFaceTracker(vision: Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>>) {
-  const failures: string[] = [];
-  for (const modelAssetPath of FACE_MODEL_URLS) for (const delegate of ['GPU', 'CPU'] as const) {
-    try { return await FaceLandmarker.createFromOptions(vision, { baseOptions: { modelAssetPath, delegate }, runningMode: 'VIDEO', numFaces: 1, outputFaceBlendshapes: true }); }
-    catch (cause) { failures.push(`${delegate}: ${describeFailure(cause)}`); }
-  }
-  throw new Error(`Face tracking could not initialize: ${failures.slice(-3).join(' | ')}`);
-}
 function drawLandmarks(ctx: CanvasRenderingContext2D, hands: Point[][], w: number, h: number) {
   ctx.save(); ctx.lineWidth = Math.max(1.5, w * 0.002); ctx.lineCap = 'round';
   for (const hand of hands) {
@@ -324,9 +313,6 @@ export default function App() {
   const segmenterWorkerRef = useRef<Worker | null>(null);
   const cloneSpriteRef = useRef<HTMLCanvasElement | null>(null);
   const cloneSpriteReadyRef = useRef(false);
-  const faceTrackerRef = useRef<FaceLandmarker | null>(null);
-  const sharinganRef = useRef(false);
-  const sharinganEnabledRef = useRef(false);
   const smoothedLandmarksRef = useRef<Point[][]>([]);
   const oneEuroFiltersRef = useRef<OneEuroPoint[][]>([]);
   const smoothedHandednessRef = useRef<string[]>([]);
@@ -356,8 +342,6 @@ export default function App() {
   const [fps, setFps] = useState(0);
   const [trackingEngine, setTrackingEngine] = useState<'idle'|'starting'|'worker-gpu'|'worker-cpu'|'main-thread'|'unavailable'>('idle');
   const [cloneStatus, setCloneStatus] = useState<'idle'|'loading'|'ready'|'error'>('idle');
-  const [, setFaceTrackingState] = useState<'loading'|'ready'|'unavailable'>('loading');
-  const [, setSharinganActive] = useState(false);
   const [, setComboMode] = useState(false);
   const [, setComboProgress] = useState(0);
   const [, setComboHoldProgress] = useState(0);
@@ -404,12 +388,11 @@ export default function App() {
     streamRef.current = null;
     trackerRef.current?.close(); trackerRef.current = null;
     visionWorkerRef.current?.terminate(); visionWorkerRef.current = null;
-    faceTrackerRef.current?.close(); faceTrackerRef.current = null;
     segmenterWorkerRef.current?.terminate(); segmenterWorkerRef.current = null;
     cloneSpriteRef.current = null; cloneSpriteReadyRef.current = false;
     smoothedLandmarksRef.current = []; smoothedHandednessRef.current = []; oneEuroFiltersRef.current = [];
     gestureVoteHistoryRef.current = [];
-    sharinganRef.current = false; setSharinganActive(false); setFaceTrackingState('loading'); setTrackingEngine('idle');
+    setTrackingEngine('idle');
     setCloneStatus('idle');
     comboModeRef.current = false; setComboMode(false); comboCandidateRef.current = 'none';
     castUntilRef.current = 0; cloneVisualUntilRef.current = 0;
@@ -448,9 +431,6 @@ export default function App() {
       let workerBusy = false;
       let inferencePending = false;
       let latest: HandLandmarkerResult | null = null;
-      let latestFace: FaceLandmarkerResult | null = null;
-      let faceUpdatedPending = false;
-      let earlyFaceStatus: boolean | null = null;
       let workerDelegate = 'GPU';
 
       if (typeof Worker !== 'undefined' && typeof createImageBitmap === 'function') {
@@ -468,8 +448,6 @@ export default function App() {
               } else if (message.type === 'init-error') {
                 window.clearTimeout(timer);
                 reject(new Error(message.message));
-              } else if (message.type === 'face-status') {
-                earlyFaceStatus = message.available;
               } else if (message.type === 'tracking-error') {
                 setGestureLabel('Vision worker: ' + message.message);
               }
@@ -478,28 +456,18 @@ export default function App() {
               window.clearTimeout(timer);
               reject(new Error(event.message || 'Background vision worker failed to start.'));
             };
-            activeWorker.postMessage({ type: 'init', wasmUrls: WASM_URLS, handModelUrls: MODEL_URLS, faceModelUrls: FACE_MODEL_URLS });
+            activeWorker.postMessage({ type: 'init', wasmUrls: WASM_URLS, handModelUrls: MODEL_URLS });
           });
           visionWorkerRef.current = activeWorker;
           workerMode = true;
           setTrackingEngine(workerDelegate === 'GPU' ? 'worker-gpu' : 'worker-cpu');
-          setFaceTrackingState(earlyFaceStatus === null ? 'loading' : earlyFaceStatus ? 'ready' : 'unavailable');
           activeWorker.onmessage = (event: MessageEvent<VisionWorkerOutput>) => {
             const message = event.data;
             if (visionWorkerRef.current !== activeWorker) return;
             if (message.type === 'result') {
               latest = message.hands as unknown as HandLandmarkerResult;
-              if (message.faceUpdated) {
-                faceUpdatedPending = true;
-                latestFace = message.face
-                  ? message.face as unknown as FaceLandmarkerResult
-                  : { faceLandmarks: [], faceBlendshapes: [] } as unknown as FaceLandmarkerResult;
-              }
               inferencePending = true;
               workerBusy = false;
-            } else if (message.type === 'face-status') {
-              setFaceTrackingState(message.available ? 'ready' : 'unavailable');
-              if (!message.available) latestFace = { faceLandmarks: [], faceBlendshapes: [] } as unknown as FaceLandmarkerResult;
             } else if (message.type === 'tracking-error') {
               workerBusy = false;
               setGestureLabel('Tracking hiccup · retrying in background');
@@ -517,14 +485,10 @@ export default function App() {
               if (streamRef.current !== cameraStream) { initialized.tracker.close(); return; }
               trackerRef.current = initialized.tracker;
               setTrackingEngine('main-thread');
-              void createFaceTracker(initialized.vision).then((faceTracker) => {
-                if (streamRef.current !== cameraStream) { faceTracker.close(); return; }
-                faceTrackerRef.current = faceTracker; setFaceTrackingState('ready');
-              }).catch(() => setFaceTrackingState('unavailable'));
               setGestureLabel('Tracking ready · form Rasengan or Shadow Clone');
             }).catch((cause) => {
               setCameraState('camera-only');
-              setFaceTrackingState('unavailable'); setTrackingEngine('unavailable');
+              setTrackingEngine('unavailable');
               setError('Background tracking failed and the compatibility tracker could not start: ' + describeFailure(cause));
             });
           };
@@ -535,7 +499,6 @@ export default function App() {
           workerMode = false;
           setGestureLabel('Background tracking unavailable · using compatible fallback');
           setTrackingEngine('starting');
-          setFaceTrackingState('loading');
         }
       }
 
@@ -543,11 +506,6 @@ export default function App() {
         const initialized = await createHandTracker();
         trackerRef.current = initialized.tracker;
         setTrackingEngine('main-thread');
-        setFaceTrackingState('loading');
-        void createFaceTracker(initialized.vision).then((faceTracker) => {
-          if (streamRef.current !== cameraStream) { faceTracker.close(); return; }
-          faceTrackerRef.current = faceTracker; setFaceTrackingState('ready');
-        }).catch(() => setFaceTrackingState('unavailable'));
       }
       setCameraState('ready');
       setGestureLabel(workerMode ? 'Tracking ready · open palm for Rasengan or cross-finger seal for Shadow Clone' : 'Tracking ready · open palm for Rasengan or cross-finger seal for Shadow Clone');
@@ -600,7 +558,7 @@ export default function App() {
           segmenterLoading = false;
         }
       };
-      let lastVideoTime = -1, lastWrist: Point | null = null, lastWristAt = 0, lastToolThrowAt = 0, lastProjectileFrameAt = performance.now(), lastFaceDetectAt = 0, move = {x:.2,y:-.05};
+      let lastVideoTime = -1, lastWrist: Point | null = null, lastWristAt = 0, lastToolThrowAt = 0, lastProjectileFrameAt = performance.now(), move = {x:.2,y:-.05};
       let candidate: Jutsu = 'none', candidateAt = 0, noPoseAt = 0, fpsAt = performance.now(), frames = 0;
       let eyesClosed = false, eyeClosedAt = 0, lastBlinkAt = 0;
       const energyTrail: Array<{ x: number; y: number; at: number }> = [];
@@ -626,37 +584,7 @@ export default function App() {
             }
           } else if (model) {
             latest = model.detectForVideo(v, now);
-            if (faceTrackerRef.current && now - lastFaceDetectAt > 100) {
-              lastFaceDetectAt = now;
-              try {
-                const fr = faceTrackerRef.current.detectForVideo(v, now); latestFace = fr;
-                faceUpdatedPending = true;
-              } catch { faceTrackerRef.current?.close(); faceTrackerRef.current = null; setFaceTrackingState('unavailable'); }
-            }
             inferencePending = true;
-          }
-        }
-        if (faceUpdatedPending) {
-          faceUpdatedPending = false;
-          const categories = latestFace?.faceBlendshapes?.[0]?.categories ?? [];
-          const leftBlink = categories.find((category) => category.categoryName === 'eyeBlinkLeft')?.score ?? 0;
-          const rightBlink = categories.find((category) => category.categoryName === 'eyeBlinkRight')?.score ?? 0;
-          // Require both eyes to close, then reopen; a short cooldown prevents double triggers.
-          const closed = leftBlink > 0.62 && rightBlink > 0.62;
-          if (!sharinganEnabledRef.current) {
-            eyesClosed = false;
-          } else {
-            if (closed && !eyesClosed) eyeClosedAt = now;
-            if (!closed && eyesClosed) {
-              const duration = now - eyeClosedAt;
-              if (duration >= 85 && duration <= 520 && now - lastBlinkAt > 1100) {
-                lastBlinkAt = now;
-                sharinganRef.current = !sharinganRef.current;
-                setSharinganActive(sharinganRef.current);
-                setGestureLabel(sharinganRef.current ? 'Sharingan awakened · blink to seal' : 'Sharingan sealed · blink to awaken');
-              }
-            }
-            eyesClosed = closed;
           }
         }
         if (inferencePending && latest) {
@@ -895,7 +823,6 @@ export default function App() {
         }
         threeTrackingRef.current = {
           hands: smoothedLandmarksRef.current,
-          face: (latestFace?.faceLandmarks?.[0] as Point[] | undefined) ?? [],
           move,
           activeTool: activeToolRef.current,
           thrownTools: thrownToolsRef.current,
@@ -937,7 +864,6 @@ export default function App() {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     trackerRef.current?.close();
     visionWorkerRef.current?.terminate(); visionWorkerRef.current = null;
-    faceTrackerRef.current?.close(); faceTrackerRef.current = null;
     segmenterWorkerRef.current?.terminate(); segmenterWorkerRef.current = null;
     audioRef.current?.close().catch(() => undefined);
   }, []);
