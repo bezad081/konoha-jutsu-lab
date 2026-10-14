@@ -13,6 +13,8 @@ A React + TypeScript + Vite prototype for webcam-based hand tracking and Naruto-
 - Shadow Clone seal heuristic: two hands close together, index/middle fingers extended in a crossed/plus-like arrangement, outer fingers curled; selfie segmentation creates natural-color cutout copies of the live subject that remain for about six seconds after the seal is released.
 - Uchiha Fire Style / Great Fireball: a face-anchored stream of turbulent flames starts at the detected mouth and is followed by a swirling fireball. The original hand-position fireball remains as fallback if face tracking is unavailable.\n- Sharingan eye effect: blink both eyes to toggle a red iris with three black tomoe marks; the overlay follows face/iris landmarks and has a manual toggle.
 - Raiton Pulse: two open palms trigger a blue lightning burst.
+- Three.js/WebGL now drives the live Rasengan, Chidori, Raiton Pulse, Fireball, Amaterasu, Wind Fang, Sharingan and ninja-weapon visuals. The transparent renderer uses procedural 3D geometry, additive glow layers, animated particles, electric branches and extruded metallic tools.
+- Canvas remains for hand-landmark guides and segmentation-based Shadow Clone cutouts, where pixel-level compositing is still the right tool. The primary live technique effects have moved out of the old 2D drawing routines.
 - The sound toggle plays a sample when enabled, making it easy to check the audio before casting.
 - Preview controls when camera access is unavailable.
 - Responsive UI, camera permission errors, camera cleanup, and optional generated sound.
@@ -45,7 +47,7 @@ The production build downloads and checksum-verifies the hand model, attempts to
 ## Known limits / next milestones
 
 1. Shadow Clone uses a geometric crossed-finger plus-seal heuristic rather than a custom-trained gesture model. Hand orientation, camera angle, and lighting can affect recognition; a browser-based training workflow with positive and negative samples would improve reliability.
-2. Rasengan and Chidori are procedural 2D Canvas effects attached to a detected hand; they are richer and motion-responsive, but not production-grade 3D assets.
+2. The core technique visuals are now procedural Three.js geometry rather than Canvas drawings. They are an experimental WebGL pass, not final artist-authored 3D assets; advanced bloom/post-processing and richer fire simulation remain future upgrades.
 3. Shadow Clone now uses selfie segmentation to draw live cutout echoes. Hair, sleeves, motion blur and background edges can still produce artifacts; this is a prototype effect, not a studio-quality rotoscope.
 4. Add per-user calibration, confidence smoothing, pose capture/testing, and device performance profiling.
 5. Before public or commercial release, audit dependencies and use original or properly licensed visual/audio assets. Naruto-related branding and character assets may have separate rights.
@@ -54,7 +56,7 @@ The production build downloads and checksum-verifies the hand model, attempts to
 
 - React, TypeScript, Vite and CSS for a browser-first UI.
 - `@mediapipe/tasks-vision` for hand landmarks and on-demand selfie segmentation.
-- Canvas for procedural effects to avoid a large asset bundle at this stage.
+- Three.js/WebGL for the main live technique effects, particle systems, weapon meshes and eye overlays; Canvas remains for landmarks and segmentation-based clone compositing.
 - Relative Vite base path to support subpath hosting.
 
 ## GitHub Pages deployment
