@@ -27,7 +27,11 @@ const MODEL_URLS = [
   'https://github.com/sanderdesnaijer/mediapipe-model-mirrors/releases/download/v1/hand_landmarker.task',
   'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
 ];
-const SEGMENTER_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter_landscape/float16/latest/selfie_segmenter_landscape.tflite';
+const LOCAL_SEGMENTER_MODEL_URL = new URL('models/selfie_segmenter_landscape.tflite', document.baseURI).href;
+const SEGMENTER_MODEL_URLS = [
+  LOCAL_SEGMENTER_MODEL_URL,
+  'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter_landscape/float16/latest/selfie_segmenter_landscape.tflite',
+];
 const WASM_URLS = [
   LOCAL_WASM_URL,
   'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm',
@@ -264,56 +268,23 @@ function drawLandmarks(ctx: CanvasRenderingContext2D, hands: Point[][], w: numbe
   }
   ctx.restore();
 }
-function updateCloneSprite(
-  source: CanvasImageSource,
-  sourceWidth: number,
-  sourceHeight: number,
-  mask: { width: number; height: number; scores: Float32Array },
-  sprite: HTMLCanvasElement,
-) {
-  if (!mask.width || !mask.height) return;
-  // Use the exact frame that produced this mask; a newer video frame creates
-  // edge halos when a person moves while segmentation is still running.
-  const inputWidth = sourceWidth || mask.width;
-  const inputHeight = sourceHeight || mask.height;
-  const scale = Math.min(1, 640 / inputWidth);
-  const width = Math.max(1, Math.round(inputWidth * scale));
-  const height = Math.max(1, Math.round(inputHeight * scale));
+function updateCloneSprite(cutout: ImageBitmap, sprite: HTMLCanvasElement) {
+  if (!cutout.width || !cutout.height) return;
+  // Segmentation and alpha compositing now happen off the UI thread. Only the
+  // compact cropped person sprite crosses back into the main thread.
+  const scale = Math.min(1, 480 / cutout.width, 640 / cutout.height);
+  const width = Math.max(1, Math.round(cutout.width * scale));
+  const height = Math.max(1, Math.round(cutout.height * scale));
   if (sprite.width !== width || sprite.height !== height) {
     sprite.width = width;
     sprite.height = height;
   }
-  const ctx = sprite.getContext('2d', { willReadFrequently: true });
+  const ctx = sprite.getContext('2d');
   if (!ctx) return;
   ctx.clearRect(0, 0, width, height);
-  ctx.drawImage(source, 0, 0, width, height);
-  const pixels = ctx.getImageData(0, 0, width, height);
-  const scores = mask.scores;
-  const maskWidth = mask.width;
-  const maskHeight = mask.height;
-  const count = Math.min(scores.length, maskWidth * maskHeight);
-  if (count < maskWidth * maskHeight) return;
-
-  for (let y = 0; y < height; y++) {
-    const sourceY = (y + 0.5) * maskHeight / height - 0.5;
-    const y0 = Math.max(0, Math.min(maskHeight - 1, Math.floor(sourceY)));
-    const y1 = Math.min(maskHeight - 1, y0 + 1);
-    const fy = Math.max(0, Math.min(1, sourceY - Math.floor(sourceY)));
-    for (let x = 0; x < width; x++) {
-      const sourceX = (x + 0.5) * maskWidth / width - 0.5;
-      const x0 = Math.max(0, Math.min(maskWidth - 1, Math.floor(sourceX)));
-      const x1 = Math.min(maskWidth - 1, x0 + 1);
-      const fx = Math.max(0, Math.min(1, sourceX - Math.floor(sourceX)));
-      const top = scores[y0 * maskWidth + x0] * (1 - fx) + scores[y0 * maskWidth + x1] * fx;
-      const bottom = scores[y1 * maskWidth + x0] * (1 - fx) + scores[y1 * maskWidth + x1] * fx;
-      const score = top * (1 - fy) + bottom * fy;
-      const confidence = Math.max(0, Math.min(1, (score - 0.16) / 0.62));
-      const soft = confidence * confidence * (3 - 2 * confidence);
-      const alphaIndex = (y * width + x) * 4 + 3;
-      pixels.data[alphaIndex] = Math.round(pixels.data[alphaIndex] * soft);
-    }
-  }
-  ctx.putImageData(pixels, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(cutout, 0, 0, width, height);
   sprite.dataset.revision = String((Number(sprite.dataset.revision) || 0) + 1);
 }
 
@@ -351,7 +322,7 @@ export default function App() {
   const [chargeLevel, setChargeLevel] = useState(0);
   const [gestureLabel, setGestureLabel] = useState('Waiting for hands');
   const [handCount, setHandCount] = useState(0);
-  const [showLandmarks, setShowLandmarks] = useState(true);
+  const [showLandmarks, setShowLandmarks] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [fps, setFps] = useState(0);
@@ -515,7 +486,7 @@ export default function App() {
       }
       setCameraState('ready');
       setGestureLabel('Tracking ready · open palm for Rasengan or cross-finger seal for Shadow Clone');
-      let segmenterLoading = false, segmenterFailed = false, segmentationBusy = false;
+      let segmenterLoading = false, segmenterFailed = false, segmenterReady = false, segmentationBusy = false;
       let lastSegmentationAt = 0, lastSegmentationVideoTime = -1;
       const cloneSprite = document.createElement('canvas');
       cloneSpriteRef.current = cloneSprite; cloneSpriteReadyRef.current = false;
@@ -541,30 +512,48 @@ export default function App() {
               }
             };
             worker.onerror = (event) => { window.clearTimeout(timer); reject(new Error(event.message || 'Segmentation worker failed.')); };
-            worker.postMessage({ type: 'init', wasmUrls: WASM_URLS, modelUrl: SEGMENTER_MODEL_URL });
+            worker.postMessage({ type: 'init', wasmUrls: WASM_URLS, modelUrls: SEGMENTER_MODEL_URLS });
           });
-          worker.onmessage = (event: MessageEvent<{ type: string; width?: number; height?: number; scores?: Float32Array; bitmap?: ImageBitmap; message?: string }>) => {
+          segmenterReady = true;
+          // Install the frame handler only after the model has initialized. This
+          // prevents a pre-ready frame from leaving segmentationBusy stuck true.
+          worker.onmessage = (event: MessageEvent<{ type: string; cutout?: ImageBitmap; inferenceMs?: number; message?: string }>) => {
             const message = event.data;
-            if (message.type === 'mask') {
+            if (message.type === 'cutout' && message.cutout) {
               try {
-                if (message.scores && message.bitmap && cloneSpriteRef.current) {
-                  updateCloneSprite(message.bitmap, message.bitmap.width, message.bitmap.height,
-                    { width: message.width || 0, height: message.height || 0, scores: message.scores }, cloneSpriteRef.current);
+                if (cloneSpriteRef.current) {
+                  updateCloneSprite(message.cutout, cloneSpriteRef.current);
                   cloneSpriteReadyRef.current = true;
+                  setCloneStatus('ready');
                 }
+              } catch (cause) {
+                setCloneStatus('error');
+                setGestureLabel('Could not draw the person cutout: ' + describeFailure(cause));
               } finally {
-                message.bitmap?.close();
+                message.cutout.close();
                 segmentationBusy = false;
               }
+            } else if (message.type === 'skipped') {
+              segmentationBusy = false;
             } else if (message.type === 'error') {
               segmentationBusy = false;
               setCloneStatus('error');
               setGestureLabel('Shadow Clone segmentation error: ' + (message.message || 'worker error'));
             }
           };
+          worker.onerror = (event) => {
+            segmentationBusy = false;
+            segmenterReady = false;
+            segmenterFailed = true;
+            setCloneStatus('error');
+            setGestureLabel('Shadow Clone worker stopped: ' + (event.message || 'unknown worker error'));
+            if (segmenterWorkerRef.current === worker) segmenterWorkerRef.current = null;
+            worker.terminate();
+          };
         } catch (cause) {
           segmenterFailed = true;
           segmenterWorkerRef.current?.terminate(); segmenterWorkerRef.current = null;
+          segmenterReady = false;
           setCloneStatus('error');
           setGestureLabel('Shadow Clone image cutout unavailable (' + describeFailure(cause) + ')');
         } finally {
@@ -572,12 +561,13 @@ export default function App() {
         }
       };
       let lastVideoTime = -1;
+      let overlayDirty = true;
       let candidate: Jutsu = 'none', candidateAt = 0, noPoseAt = 0, fpsAt = performance.now(), frames = 0;
       const frame = () => {
         const v = videoRef.current, canvas = canvasRef.current, model = trackerRef.current;
         if (!v || !canvas || (!model && !workerMode) || v.readyState < 2) { rafRef.current = requestAnimationFrame(frame); return; }
         const w = v.videoWidth || 960, h = v.videoHeight || 540;
-        if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+        if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; overlayDirty = true; }
         const now = performance.now();
         if (v.currentTime !== lastVideoTime) {
           lastVideoTime = v.currentTime;
@@ -603,6 +593,7 @@ export default function App() {
           frames++;
           if (now - fpsAt >= 1000) { setFps(Math.round(frames * 1000 / (now - fpsAt))); fpsAt = now; frames = 0; }
           const rawHands = (latest.landmarks ?? []) as Point[][];
+          overlayDirty = true;
           effectLandmarksRef.current = rawHands;
           const oldHandedness = smoothedHandednessRef.current;
           const previousFilters = oneEuroFiltersRef.current;
@@ -715,7 +706,7 @@ export default function App() {
         }
         if (activeRef.current === 'clone') {
           if (!segmenterWorkerRef.current && !segmenterLoading && !segmenterFailed) void loadSegmenter();
-          if (segmenterWorkerRef.current && !segmentationBusy && v.currentTime !== lastSegmentationVideoTime && now - lastSegmentationAt > 80) {
+          if (segmenterReady && segmenterWorkerRef.current && !segmentationBusy && v.currentTime !== lastSegmentationVideoTime && now - lastSegmentationAt > 90) {
             lastSegmentationVideoTime = v.currentTime;
             lastSegmentationAt = now;
             segmentationBusy = true;
@@ -726,11 +717,14 @@ export default function App() {
             }).catch(() => { segmentationBusy = false; });
           }
         }
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.clearRect(0, 0, w, h);
-          const hands = smoothedLandmarksRef.current;
-          if (landmarksRef.current) drawLandmarks(ctx, hands, w, h);
+        if (overlayDirty) {
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.clearRect(0, 0, w, h);
+            const hands = smoothedLandmarksRef.current;
+            if (landmarksRef.current) drawLandmarks(ctx, hands, w, h);
+          }
+          overlayDirty = false;
         }
         threeTrackingRef.current = {
           hands: smoothedLandmarksRef.current,
@@ -813,7 +807,7 @@ export default function App() {
       <section className="intro-row" id="top">
         <div><div className="eyebrow"><span className="eyebrow-line" /> YOUR HIDDEN LEAF TRAINING GROUND</div>
           <h1>Bring chakra<br /><span>to life.</span></h1>
-          <p className="intro-copy">Enter the Hidden Leaf training ground. Charge a Rasengan that locks onto your hand, then summon shadow clones cut from your own image.</p>
+          <p className="intro-copy">Enter the Hidden Leaf training ground. Charge a Rasengan that locks onto your hand, then split into true shadow clones cut from your own live image.</p>
         </div>
         <div className="intro-stats">
           <div className="stat-item"><span className="stat-icon"><Hand size={17} /></span><div><b>2 jutsu</b><small>one focused experience</small></div></div>
