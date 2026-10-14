@@ -533,10 +533,8 @@ export default function App() {
           segmenterLoading = false;
         }
       };
-      let lastVideoTime = -1, lastWrist: Point | null = null, lastWristAt = 0, lastToolThrowAt = 0, lastProjectileFrameAt = performance.now(), move = {x:.2,y:-.05};
+      let lastVideoTime = -1;
       let candidate: Jutsu = 'none', candidateAt = 0, noPoseAt = 0, fpsAt = performance.now(), frames = 0;
-      let eyesClosed = false, eyeClosedAt = 0, lastBlinkAt = 0;
-      const energyTrail: Array<{ x: number; y: number; at: number }> = [];
       const frame = () => {
         const v = videoRef.current, canvas = canvasRef.current, model = trackerRef.current;
         if (!v || !canvas || (!model && !workerMode) || v.readyState < 2) { rafRef.current = requestAnimationFrame(frame); return; }
@@ -590,171 +588,91 @@ export default function App() {
           oneEuroFiltersRef.current = nextFilters;
           smoothedHandednessRef.current = currentHandedness;
           const rawDetected = readJutsu(latest), count = rawHands.length;
-          let detected = rawDetected;
-          // Combo mode uses the raw gesture because each sequence step has its own hold timer.
-          // Free casting benefits from temporal consensus, like the rolling-vote approach used
-          // in dedicated Naruto hand-seal recognizers.
-          if (!comboModeRef.current) {
-            const voteHistory = gestureVoteHistoryRef.current;
-            voteHistory.push({ ...rawDetected, at: now });
-            // Keep only a compact recent window: three matching predictions out of five are
-            // enough to confirm a pose, while old poses expire quickly when the player switches.
-            while (voteHistory.length > 5 || (voteHistory[0] && now - voteHistory[0].at > 320)) voteHistory.shift();
-            const votes = new Map<string, { jutsu: Jutsu; gesture: Gesture; count: number }>();
-            for (const sample of voteHistory) {
-              const key = sample.jutsu + ':' + sample.gesture;
-              const vote = votes.get(key);
-              if (vote) vote.count++;
-              else votes.set(key, { jutsu: sample.jutsu, gesture: sample.gesture, count: 1 });
-            }
-            let winner: { jutsu: Jutsu; gesture: Gesture; count: number } | undefined;
-            for (const vote of votes.values()) if (!winner || vote.count > winner.count) winner = vote;
-            detected = winner && winner.count >= 3
-              ? { jutsu: winner.jutsu, gesture: winner.gesture }
-              : { jutsu: 'none', gesture: rawDetected.gesture };
-          } else {
-            gestureVoteHistoryRef.current = [];
+          const voteHistory = gestureVoteHistoryRef.current;
+          voteHistory.push({ ...rawDetected, at: now });
+          // A short temporal vote suppresses single-frame flicker without adding much lag.
+          while (voteHistory.length > 5 || (voteHistory[0] && now - voteHistory[0].at > 320)) voteHistory.shift();
+          const votes = new Map<string, { jutsu: Jutsu; gesture: Gesture; count: number }>();
+          for (const sample of voteHistory) {
+            const key = sample.jutsu + ':' + sample.gesture;
+            const vote = votes.get(key);
+            if (vote) vote.count++;
+            else votes.set(key, { jutsu: sample.jutsu, gesture: sample.gesture, count: 1 });
           }
+          let winner: { jutsu: Jutsu; gesture: Gesture; count: number } | undefined;
+          for (const vote of votes.values()) if (!winner || vote.count > winner.count) winner = vote;
+          const detected = winner && winner.count >= 3
+            ? { jutsu: winner.jutsu, gesture: winner.gesture }
+            : { jutsu: 'none' as const, gesture: rawDetected.gesture };
           setHandCount(count);
-          if (!comboModeRef.current && activeRef.current === 'chidori' && now < castUntilRef.current) {
-            candidate = 'none'; noPoseAt = 0;
-            setGestureLabel('Chidori released · lightning surrounds your hand!');
-          } else if (!comboModeRef.current && activeRef.current !== 'none') {
+          if (activeRef.current !== 'none') {
             if (count > 0) {
               noPoseAt = 0;
               if (detected.jutsu !== 'none' && detected.jutsu !== activeRef.current) {
                 if (candidate !== detected.jutsu) { candidate = detected.jutsu; candidateAt = now; }
-                if (now - candidateAt > 240) {
-                  if (detected.gesture === 'clone-seal') { castUntilRef.current = now + 6000; cloneVisualUntilRef.current = now + 6000; }
+                if (now - candidateAt > 175) {
                   const next = detected.jutsu;
-                  switchJutsu(next); candidate = 'none'; candidateAt = 0;
-                  setGestureLabel(detected.gesture === 'hare-seal'
-                    ? 'Wind Fang detected · sweep your hand to drive the crescent slash'
-                    : detected.gesture === 'clone-seal'
-                      ? 'Shadow Clone · clones stay for six seconds'
-                      : detected.gesture === 'two-open'
-                        ? 'Raiton Pulse · two palms detected'
-                        : detected.gesture === 'open'
-                          ? 'Rasengan · open palm detected'
-                          : detected.gesture === 'fist'
-                            ? 'Amaterasu · closed fist detected'
-                            : INFO[next].name + ' activated');
-                } else {
-                  setGestureLabel('Switch pose detected · hold steady to change to ' + INFO[detected.jutsu].name);
-                }
+                  if (next === 'clone') {
+                    castUntilRef.current = now + 6000;
+                    cloneVisualUntilRef.current = castUntilRef.current;
+                  }
+                  previewUntilRef.current = 0;
+                  switchJutsu(next);
+                  candidate = 'none'; candidateAt = 0;
+                  setGestureLabel(next === 'clone'
+                    ? 'Shadow Clone summoned · clones linger for six seconds'
+                    : 'Rasengan formed · keep your palm visible to build chakra');
+                } else setGestureLabel('New hand sign detected · hold steady for a moment to switch');
               } else {
                 candidate = 'none'; candidateAt = 0;
-                if (activeRef.current === 'clone' && detected.gesture === 'clone-seal') cloneVisualUntilRef.current = now + 6000;
+                if (activeRef.current === 'clone' && detected.gesture === 'clone-seal') {
+                  cloneVisualUntilRef.current = now + 6000;
+                  castUntilRef.current = cloneVisualUntilRef.current;
+                }
                 setGestureLabel(detected.jutsu === activeRef.current
-                  ? INFO[activeRef.current].name + ' active'
-                  : INFO[activeRef.current].name + ' active · form a different jutsu gesture to switch');
+                  ? activeRef.current === 'clone'
+                    ? 'Shadow Clone active · hold the crossed-finger seal to keep summoning'
+                    : 'Rasengan charging · keep your open palm facing the camera'
+                  : activeRef.current === 'clone'
+                    ? 'Shadow Clone active · form the crossed-finger seal again to refresh'
+                    : 'Rasengan active · keep your palm in frame to sustain the chakra');
               }
             } else {
               candidate = 'none';
               if (!noPoseAt) noPoseAt = now;
               const cloneStillVisible = activeRef.current === 'clone' && now < cloneVisualUntilRef.current;
+              const previewStillVisible = now < previewUntilRef.current;
               if (cloneStillVisible) setGestureLabel('Shadow Clone · afterimages linger for six seconds');
+              else if (previewStillVisible) setGestureLabel(activeRef.current === 'clone' ? 'Shadow Clone preview · loading your cutout' : 'Rasengan preview · building chakra');
               else if (now > castUntilRef.current && now - noPoseAt > 500) {
                 switchJutsu('none'); castUntilRef.current = 0; noPoseAt = 0;
-                setGestureLabel('Ready · show a hand sign to cast');
+                setGestureLabel('Ready · form Rasengan or the crossed-finger Shadow Clone seal');
               }
-            }
-          } else if (comboModeRef.current) {
-                        const steps = sequenceTypeRef.current === 'fireball' ? FIREBALL_STEPS : COMBO_STEPS;
-            let expected = steps[comboProgressRef.current], timedOut = false;
-            candidate = 'none'; noPoseAt = 0;
-            if (comboStepStartedAtRef.current && now - comboStepStartedAtRef.current > 6500) {
-              comboProgressRef.current = 0; comboCandidateRef.current = 'none'; comboCandidateAtRef.current = 0;
-              comboStepStartedAtRef.current = now; setComboProgress(0); setComboHoldProgress(0);
-              setComboFeedback('Sequence timed out. Restart from the first hand sign.');
-              setGestureLabel('Technique sequence timed out · restart from step 1');
-              expected = steps[0]; timedOut = true;
-            }
-            if (!timedOut && expected && detected.gesture === expected.gesture) {
-              if (comboCandidateRef.current !== expected.gesture) {
-                comboCandidateRef.current = expected.gesture; comboCandidateAtRef.current = now;
-                setComboHoldProgress(0); setComboFeedback(`Hold ${expected.title} steady…`);
-              }
-              const heldFor = now - comboCandidateAtRef.current;
-              if (now - comboProgressUiAtRef.current > 70) {
-                setComboHoldProgress(Math.min(100, heldFor / 500 * 100)); comboProgressUiAtRef.current = now;
-              }
-              if (heldFor >= 500) {
-                const nextProgress = comboProgressRef.current + 1;
-                comboProgressRef.current = nextProgress; setComboProgress(nextProgress);
-                comboCandidateRef.current = 'none'; comboCandidateAtRef.current = 0; setComboHoldProgress(0);
-                comboStepStartedAtRef.current = now;
-                if (nextProgress >= steps.length) {
-                  const completedJutsu = sequenceTypeRef.current;
-                  comboModeRef.current = false; setComboMode(false);
-                  setComboFeedback(completedJutsu === 'fireball' ? 'Uchiha Fire released! Flames erupt from your mouth.' : 'Chidori released! Lightning gathers around your hand.');
-                  setGestureLabel(completedJutsu === 'fireball' ? 'Uchiha Fire sequence complete · Weave → Focus → Release' : 'Chidori sequence complete · Charge → Release');
-                  castUntilRef.current = now + 2800; switchJutsu(completedJutsu);
-                } else {
-                  setComboFeedback(`Step ${nextProgress} complete. Next: ${steps[nextProgress].instruction}.`);
-                  setGestureLabel(`Technique sequence · step ${nextProgress + 1} of ${steps.length}`);
-                }
-              }
-            } else if (!timedOut) {
-              comboCandidateRef.current = 'none'; comboCandidateAtRef.current = 0; setComboHoldProgress(0);
-              if (detected.gesture !== 'none' && expected) setComboFeedback(`Keep going — step ${comboProgressRef.current + 1}: ${expected.instruction}.`);
-              setGestureLabel(expected ? `Technique sequence · step ${comboProgressRef.current + 1} of ${steps.length}` : 'Finishing sequence…');
             }
           } else if (detected.jutsu !== 'none') {
             noPoseAt = 0;
             if (candidate !== detected.jutsu) { candidate = detected.jutsu; candidateAt = now; }
-            if (now - candidateAt > 240) {
-              if (detected.gesture === 'clone-seal') { castUntilRef.current = now + 6000; cloneVisualUntilRef.current = now + 6000; }
-              switchJutsu(detected.jutsu);
-              setGestureLabel(
-                detected.gesture === 'clone-seal'
-                  ? 'Shadow Clone · clones stay for six seconds'
-                  : detected.gesture === 'two-open'
-                    ? 'Raiton Pulse · two palms detected'
-                    : detected.gesture === 'open'
-                      ? 'Open palm detected'
-                      : detected.gesture === 'hare-seal'
-                        ? 'Hare seal · Wind Fang activated'
-                        : 'Fist detected',
-              );
-            } else setGestureLabel('Hold the pose steady…');
+            if (now - candidateAt > 175) {
+              const next = detected.jutsu;
+              if (next === 'clone') {
+                castUntilRef.current = now + 6000;
+                cloneVisualUntilRef.current = castUntilRef.current;
+              }
+              previewUntilRef.current = 0;
+              switchJutsu(next);
+              setGestureLabel(next === 'clone'
+                ? 'Shadow Clone summoned · clones linger for six seconds'
+                : 'Rasengan formed · keep your palm visible to build chakra');
+              candidate = 'none'; candidateAt = 0;
+            } else setGestureLabel('Hand sign recognized · hold steady to summon');
           } else {
-            candidate = 'none'; candidateAt = now; if (!noPoseAt) noPoseAt = now;
-            setGestureLabel(count ? 'Pose detected · face an open palm toward the camera for Rasengan, or form the crossed-finger seal for Shadow Clone' : 'Move your hands into the frame');
+            candidate = 'none'; candidateAt = now;
+            if (!noPoseAt) noPoseAt = now;
+            setGestureLabel(count
+              ? 'Pose detected · face one open palm toward the camera for Rasengan, or cross both index/middle fingers for Shadow Clone'
+              : 'Move your hands into the frame');
             if (now > castUntilRef.current && now - noPoseAt > 700) switchJutsu('none');
           }
-          const first = latest.landmarks?.[0] as Point[] | undefined;
-          if (first) {
-            if (lastWrist) {
-              move = {x:first[0].x-lastWrist.x,y:first[0].y-lastWrist.y};
-              const elapsed = Math.max(12, now - lastWristAt);
-              const vx = move.x / elapsed * 1000, vy = move.y / elapsed * 1000;
-              const speed = Math.hypot(vx, vy);
-              if (activeToolRef.current !== 'none' && speed > 0.95 && now - lastToolThrowAt > 430) {
-                const launch = palm(smoothedLandmarksRef.current[0] ?? first);
-                const scale = Math.min(1.75, Math.max(.7, speed * .72));
-                thrownToolsRef.current.push({
-                  kind: activeToolRef.current, x: launch.x, y: launch.y,
-                  vx: vx * scale, vy: vy * scale, born: now, spin: Math.random() * Math.PI * 2,
-                });
-                if (thrownToolsRef.current.length > 12) thrownToolsRef.current.shift();
-                lastToolThrowAt = now;
-                setGestureLabel(activeToolRef.current === 'shuriken' ? 'Shuriken thrown · make another quick motion to throw again' : 'Kunai thrown · make another quick motion to throw again');
-                if (soundRef.current) {
-                  try {
-                    const audio = audioRef.current ?? new window.AudioContext(); audioRef.current = audio; void audio.resume();
-                    const oscillator = audio.createOscillator(), gain = audio.createGain();
-                    oscillator.type = 'triangle'; oscillator.frequency.setValueAtTime(820, audio.currentTime);
-                    oscillator.frequency.exponentialRampToValueAtTime(240, audio.currentTime + .11);
-                    gain.gain.setValueAtTime(.0001, audio.currentTime); gain.gain.exponentialRampToValueAtTime(.12, audio.currentTime + .012);
-                    gain.gain.exponentialRampToValueAtTime(.0001, audio.currentTime + .12);
-                    oscillator.connect(gain); gain.connect(audio.destination); oscillator.start(); oscillator.stop(audio.currentTime + .13);
-                  } catch { /* optional tool throw cue */ }
-                }
-              }
-            }
-            lastWrist = { ...first[0] }; lastWristAt = now;
-          } else { lastWrist = null; lastWristAt = 0; }
         }
         if (activeRef.current === 'clone') {
           if (!segmenterWorkerRef.current && !segmenterLoading && !segmenterFailed) void loadSegmenter();
@@ -771,41 +689,16 @@ export default function App() {
         }
         const ctx = canvas.getContext('2d');
         if (ctx) {
-          ctx.clearRect(0,0,w,h);
+          ctx.clearRect(0, 0, w, h);
           const hands = smoothedLandmarksRef.current;
-          if (landmarksRef.current) drawLandmarks(ctx,hands,w,h);
-          if (activeRef.current !== 'none' && hands.length) {
-            const focus = activeRef.current === 'lightning-burst' && hands.length > 1
-              ? { x: (palm(hands[0]).x + palm(hands[1]).x) / 2, y: (palm(hands[0]).y + palm(hands[1]).y) / 2 }
-              : palm(hands[0]);
-            const previous = energyTrail[energyTrail.length - 1];
-            if (!previous || Math.hypot(focus.x - previous.x, focus.y - previous.y) > 0.0025 || now - previous.at > 45) {
-              energyTrail.push({ ...focus, at: now });
-            }
-          }
-          while (energyTrail.length && now - energyTrail[0].at > 520) energyTrail.shift();
-          if (activeRef.current === 'none') energyTrail.length = 0;
-          const dt = Math.min(.05, Math.max(0, (now - lastProjectileFrameAt) / 1000));
-          lastProjectileFrameAt = now;
-          thrownToolsRef.current.forEach((projectile) => {
-            projectile.x += projectile.vx * dt;
-            projectile.y += projectile.vy * dt;
-            projectile.vy += .18 * dt;
-          });
-          thrownToolsRef.current = thrownToolsRef.current.filter((projectile) =>
-            now - projectile.born < 1800 && projectile.x > -.2 && projectile.x < 1.2 && projectile.y > -.2 && projectile.y < 1.2
-          );
+          if (landmarksRef.current) drawLandmarks(ctx, hands, w, h);
         }
         threeTrackingRef.current = {
           hands: smoothedLandmarksRef.current,
-          move,
-          activeTool: activeToolRef.current,
-          thrownTools: thrownToolsRef.current,
-          trail: energyTrail,
           cloneSprite: cloneSpriteReadyRef.current ? cloneSpriteRef.current : null,
           cloneRevision: cloneSpriteRef.current ? Number(cloneSpriteRef.current.dataset.revision ?? 0) : 0,
           cloneVisibleUntil: cloneVisualUntilRef.current,
-        };
+        }
         rafRef.current = requestAnimationFrame(frame);
       };
       rafRef.current = requestAnimationFrame(frame);
