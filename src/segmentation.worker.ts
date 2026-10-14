@@ -62,7 +62,7 @@ async function initialize(message: InitMessage) {
   scope.postMessage({ type: 'error', message: 'Could not initialize person segmentation: ' + failures.slice(-4).join(' | ') });
 }
 
-function selectPersonMask(masks: NonNullable<ReturnType<ImageSegmenter['segmentForVideo']>['confidenceMasks']>) {
+function selectPersonMask(masks: Array<{ width: number; height: number; getAsFloat32Array: () => Float32Array; close: () => void }>) {
   const person = labels.findIndex((label) => /person|foreground|human/i.test(label));
   if (person >= 0 && person < masks.length) return masks[person];
   const nonBackground = labels.findIndex((label) => !/background/i.test(label));
