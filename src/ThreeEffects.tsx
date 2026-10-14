@@ -6,7 +6,7 @@ export type EffectTool='none'|'shuriken'|'kunai';
 export type EffectProjectile={kind:Exclude<EffectTool,'none'>;x:number;y:number;vx:number;vy:number;born:number;spin:number};
 export type ThreeTrackingState={hands:EffectPoint[][];face:EffectPoint[];move:{x:number;y:number};activeTool:EffectTool;thrownTools:EffectProjectile[];trail:Array<{x:number;y:number;at:number}>};
 type Props={trackingRef:RefObject<ThreeTrackingState>;activeJutsu:string;sharinganActive:boolean;chargeLevel:number};
-type FX={root:T.Group;spin:T.Group;rings:T.Mesh[];flames:T.Mesh[];bolts:T.LineSegments|null;dust:T.Points};
+type FX={root:T.Group;spin:T.Group;rings:T.Mesh[];flames:T.Mesh[];bolts:T.LineSegments|null;dust:T.Points;energy:T.Mesh|null};
 const additive=T.AdditiveBlending;
 const mat=(color:number,opacity=1)=>new T.MeshBasicMaterial({color,transparent:opacity<1,opacity,blending:additive,depthWrite:false,side:T.DoubleSide});
 const orb=(r:number,c:number,o=1)=>new T.Mesh(new T.SphereGeometry(r,20,14),mat(c,o));
@@ -19,7 +19,35 @@ function effect(scene:T.Scene,name:string):FX{
  if(name==='fireball'){c=0xff5d16;hot=0xfff1b1;dustColor=0xff8a32;}
  if(name==='amaterasu'){c=0x170b27;hot=0x9b72ff;dustColor=0x9b72ff;}
  if(name==='wind-scythe'){c=0x32e99b;hot=0xdffff0;dustColor=0x70ffc0;}
- if(name!=='wind-scythe')spin.add(orb(29,c,.12),orb(21,c,.28),orb(13,c,.8),orb(6,hot,.98));
+ let energy:T.Mesh|null=null;
+ if(name!=='wind-scythe'){
+  spin.add(orb(name==='fireball'?30:28,c,.09));
+  const mode=name==='fireball'?1:name==='amaterasu'?2:0;
+  const material=new T.ShaderMaterial({
+   uniforms:{uTime:{value:0},uBaseColor:{value:new T.Color(c)},uHotColor:{value:new T.Color(hot)},uMode:{value:mode}},
+   vertexShader:`varying vec3 vLocalPosition; varying vec3 vNormalView; varying vec3 vViewPosition;
+    void main(){vLocalPosition=position;vec4 mvPosition=modelViewMatrix*vec4(position,1.0);vViewPosition=-mvPosition.xyz;vNormalView=normalize(normalMatrix*normal);gl_Position=projectionMatrix*mvPosition;}`,
+   fragmentShader:`uniform float uTime;uniform vec3 uBaseColor;uniform vec3 uHotColor;uniform float uMode;
+    varying vec3 vLocalPosition;varying vec3 vNormalView;varying vec3 vViewPosition;
+    void main(){
+     vec3 n=normalize(vNormalView);vec3 viewDir=normalize(vViewPosition);
+     float angle=atan(vLocalPosition.y,vLocalPosition.x);
+     float phase=angle*10.0+vLocalPosition.z*0.42-uTime*(uMode>0.5?3.0:4.8)+sin(vLocalPosition.y*0.34+uTime*1.7)*1.35;
+     float bands=0.5+0.5*sin(phase);
+     float filaments=smoothstep(0.72,0.98,bands);
+     float ribs=pow(0.5+0.5*sin(angle*23.0-vLocalPosition.z*0.22-uTime*3.5),9.0);
+     float fresnel=pow(1.0-max(0.0,dot(n,viewDir)),2.35);
+     float core=pow(max(0.0,1.0-length(vLocalPosition.xy)*0.035),3.0);
+     vec3 color=mix(uBaseColor,uHotColor,clamp(filaments*0.72+ribs*0.26+fresnel*0.5+core*0.2,0.0,1.0));
+     if(uMode>0.5&&uMode<1.5){float flame=0.5+0.5*sin(vLocalPosition.y*0.38+vLocalPosition.x*0.12+uTime*3.2+sin(angle*7.0)*1.5);color=mix(uBaseColor,vec3(1.0,0.24,0.025),clamp(flame*0.65+fresnel*0.5,0.0,1.0));}
+     if(uMode>1.5){float ember=smoothstep(0.48,0.98,bands+fresnel*0.25);color=mix(vec3(0.025,0.008,0.045),uHotColor,ember*0.9);}
+     float alpha=clamp(0.35+fresnel*0.58+filaments*0.28+ribs*0.12,0.0,0.96);
+     gl_FragColor=vec4(color*(0.75+fresnel*1.5+filaments*0.5),alpha);
+    }`,
+   transparent:true,blending:additive,depthWrite:false,side:T.DoubleSide
+  });
+  energy=new T.Mesh(new T.SphereGeometry(name==='fireball'?24:21,32,24),material);energy.position.z=1;spin.add(energy);
+ }
  const rings:T.Mesh[]=[];const ringCount=name==='wind-scythe'?3:4;
  for(let i=0;i<ringCount;i++){const r=ring(name==='wind-scythe'?25+i*7:18+i*4,.7+i%2*.45,i%2?hot:c);r.rotation.set(i*.7,i*1.1,i*.45);if(name==='wind-scythe')r.scale.set(1.6,.52,1);rings.push(r);spin.add(r);}
  const flames:T.Mesh[]=[];
@@ -36,7 +64,7 @@ function effect(scene:T.Scene,name:string):FX{
   bolts=new T.LineSegments(g,new T.LineBasicMaterial({color:0x74e5ff,transparent:true,opacity:.9,blending:additive,depthWrite:false}));root.add(bolts);
  }
  const dust=cloud(name==='rasengan'?72:name==='fireball'?72:46,name==='fireball'?43:36,dustColor);root.add(dust);scene.add(root);
- return{root,spin,rings,flames,bolts,dust};
+ return{root,spin,rings,flames,bolts,dust,energy};
 }
 function tool(kind:'shuriken'|'kunai'){
  const g=new T.Group(),metal=new T.MeshStandardMaterial({color:0xc6d9e8,metalness:.94,roughness:.2,emissive:0x315a78,emissiveIntensity:.45}),edge=new T.MeshStandardMaterial({color:0xf4fcff,metalness:.98,roughness:.15});
@@ -62,7 +90,7 @@ export default function ThreeEffects({trackingRef,activeJutsu,sharinganActive,ch
  const palm=(a:EffectPoint[]|undefined)=>a&&a.length>=21?{x:[0,5,9,13,17].reduce((v,i)=>v+a[i].x/5,0),y:[0,5,9,13,17].reduce((v,i)=>v+a[i].y/5,0)}:{x:.5,y:.54};
  const a=palm(hands[0]),b=hands[1]?palm(hands[1]):null,mouth=face.length>14?{x:(face[13].x+face[14].x)/2,y:(face[13].y+face[14].y)/2}:null,focus=p.activeJutsu==='fireball'&&mouth?mouth:p.activeJutsu==='lightning-burst'&&b?{x:(a.x+b.x)/2,y:(a.y+b.y)/2}:a,pos=xy(focus,w,h),scale=Math.min(w,h)/360,q=Math.max(.2,Math.min(1.25,p.chargeLevel/100||.2));
  if(p.activeJutsu==='wind-scythe'){const mv=s?.move??{x:0,y:0};if(Math.hypot(mv.x,mv.y)>.0008){const target=Math.atan2(mv.y,mv.x);windAngle+=Math.atan2(Math.sin(target-windAngle),Math.cos(target-windAngle))*.25;}pos.x+=Math.cos(windAngle)*20*scale;pos.y+=Math.sin(windAngle)*20*scale;}
- Object.entries(fx).forEach(([name,f])=>{f.root.visible=p.activeJutsu===name;if(!f.root.visible)return;f.root.position.copy(pos);f.root.scale.setScalar(scale*(name==='wind-scythe'?1.05:name==='fireball'?1.12+q*.18:name==='rasengan'?.88+q*.2:.86+q*.12));if(name==='wind-scythe'){f.spin.rotation.y=0;f.spin.rotation.z=t*.42;f.root.rotation.z=windAngle;}else{f.spin.rotation.y=t*1.6;f.spin.rotation.z=t*(name==='rasengan'?2.3:1.5);}f.rings.forEach((r,i)=>{r.rotation.x+=.009;r.rotation.y+=.013+i*.002;r.rotation.z+=(i%2?-1:1)*.02;});f.flames.forEach((m,i)=>{const base=Number(m.userData.base||1),v=.8+Math.sin(t*13+i*2)*.2;m.scale.set(base*v,base*(.8+v*.35),1);m.rotation.z+=Math.sin(t*4+i)*.009;});if(f.bolts){const at=f.bolts.geometry.getAttribute('position') as T.BufferAttribute,arr=at.array as Float32Array;for(let i=0;i<18;i++){const ang=i/18*Math.PI*2+t*.5+Math.sin(t*3+i)*.04,len=28+(i*17)%24,x1=Math.cos(ang+Math.sin(t*28+i)*.2)*len*.4,y1=Math.sin(ang+Math.sin(t*25+i)*.2)*len*.4,x2=Math.cos(ang+.22)*len*.7,y2=Math.sin(ang+.22)*len*.7,x3=Math.cos(ang-.08)*len,y3=Math.sin(ang-.08)*len,k=i*18;arr[k]=0;arr[k+1]=0;arr[k+2]=0;arr[k+3]=x1;arr[k+4]=y1;arr[k+5]=2;arr[k+6]=x1;arr[k+7]=y1;arr[k+8]=2;arr[k+9]=x2;arr[k+10]=y2;arr[k+11]=-3;arr[k+12]=x2;arr[k+13]=y2;arr[k+14]=-3;arr[k+15]=x3;arr[k+16]=y3;arr[k+17]=3;}at.needsUpdate=true;}f.dust.rotation.z=-t*.9;f.dust.rotation.y=t*.7;(f.dust.material as T.PointsMaterial).opacity=.58+Math.sin(t*7)*.2;});
+ Object.entries(fx).forEach(([name,f])=>{f.root.visible=p.activeJutsu===name;if(!f.root.visible)return;f.root.position.copy(pos);f.root.scale.setScalar(scale*(name==='wind-scythe'?1.05:name==='fireball'?1.12+q*.18:name==='rasengan'?.88+q*.2:.86+q*.12));if(name==='wind-scythe'){f.spin.rotation.y=0;f.spin.rotation.z=t*.42;f.root.rotation.z=windAngle;}else{f.spin.rotation.y=t*1.6;f.spin.rotation.z=t*(name==='rasengan'?2.3:1.5);}if(f.energy){(f.energy.material as T.ShaderMaterial).uniforms.uTime.value=t;}f.rings.forEach((r,i)=>{r.rotation.x+=.009;r.rotation.y+=.013+i*.002;r.rotation.z+=(i%2?-1:1)*.02;});f.flames.forEach((m,i)=>{const base=Number(m.userData.base||1),v=.8+Math.sin(t*13+i*2)*.2;m.scale.set(base*v,base*(.8+v*.35),1);m.rotation.z+=Math.sin(t*4+i)*.009;});if(f.bolts){const at=f.bolts.geometry.getAttribute('position') as T.BufferAttribute,arr=at.array as Float32Array;for(let i=0;i<18;i++){const ang=i/18*Math.PI*2+t*.5+Math.sin(t*3+i)*.04,len=28+(i*17)%24,x1=Math.cos(ang+Math.sin(t*28+i)*.2)*len*.4,y1=Math.sin(ang+Math.sin(t*25+i)*.2)*len*.4,x2=Math.cos(ang+.22)*len*.7,y2=Math.sin(ang+.22)*len*.7,x3=Math.cos(ang-.08)*len,y3=Math.sin(ang-.08)*len,k=i*18;arr[k]=0;arr[k+1]=0;arr[k+2]=0;arr[k+3]=x1;arr[k+4]=y1;arr[k+5]=2;arr[k+6]=x1;arr[k+7]=y1;arr[k+8]=2;arr[k+9]=x2;arr[k+10]=y2;arr[k+11]=-3;arr[k+12]=x2;arr[k+13]=y2;arr[k+14]=-3;arr[k+15]=x3;arr[k+16]=y3;arr[k+17]=3;}at.needsUpdate=true;}f.dust.rotation.z=-t*.9;f.dust.rotation.y=t*.7;(f.dust.material as T.PointsMaterial).opacity=.58+Math.sin(t*7)*.2;});
  const activeTool=s?.activeTool??'none';heldS.visible=activeTool==='shuriken'&&hands.length>0;heldK.visible=activeTool==='kunai'&&hands.length>0;if(heldS.visible||heldK.visible){const m=activeTool==='shuriken'?heldS:heldK;m.position.copy(xy(a,w,h));m.position.z=24;m.scale.setScalar(scale*.75);m.rotation.z=Math.atan2((hands[0]?.[8]?.y??a.y)-(hands[0]?.[5]?.y??a.y-.1),(hands[0]?.[8]?.x??a.x)-(hands[0]?.[5]?.x??a.x))+Math.PI/2;if(activeTool==='shuriken')m.rotation.y=t*2;}
  const usedS=new Set<number>(),usedK=new Set<number>();(s?.thrownTools??[]).forEach(v=>{const pool=v.kind==='shuriken'?poolS:poolK,used=v.kind==='shuriken'?usedS:usedK;let i=0;while(used.has(i)&&i<pool.length)i++;if(i>=pool.length)return;used.add(i);const m=pool[i];m.visible=true;m.position.copy(xy(v,w,h));m.position.z=28;m.scale.setScalar(scale*.75);m.rotation.z=v.spin+(now-v.born)*.014;});poolS.forEach((m,i)=>{if(!usedS.has(i))m.visible=false;});poolK.forEach((m,i)=>{if(!usedK.has(i))m.visible=false;});
  eyes.forEach((e,i)=>{const v=face.length>=478?face[i===0?468:473]:null;e.visible=p.sharinganActive&&!!v;if(v){e.position.copy(xy(v,w,h));e.position.z=40;e.scale.setScalar(scale*.78);e.rotation.z=t*.22;}});
