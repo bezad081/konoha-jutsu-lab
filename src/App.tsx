@@ -821,7 +821,7 @@ export default function App() {
             } else setGestureLabel('Hold the pose steady…');
           } else {
             candidate = 'none'; candidateAt = now; if (!noPoseAt) noPoseAt = now;
-            setGestureLabel(count ? 'Pose detected · show your palm to cast Rasengan, or start the two-move Chidori sequence' : 'Move your hands into the frame');
+            setGestureLabel(count ? 'Pose detected · face an open palm toward the camera for Rasengan, or form the crossed-finger seal for Shadow Clone' : 'Move your hands into the frame');
             if (now > castUntilRef.current && now - noPoseAt > 700) switchJutsu('none');
           }
           const first = latest.landmarks?.[0] as Point[] | undefined;
@@ -1005,7 +1005,7 @@ export default function App() {
             <div className={'live-status ' + (cameraState === 'ready' || cameraState === 'camera-only' ? 'is-live' : cameraState === 'error' ? 'is-error' : '')}><span />{cameraState === 'ready' ? 'LIVE TRACKING' : cameraState === 'camera-only' ? 'CAMERA ON · TRACKING OFF' : cameraState === 'loading' ? 'INITIALIZING' : cameraState === 'error' ? 'CAMERA ERROR' : 'STANDBY'}</div>
           </div>
           <div ref={stageRef} className={'camera-stage ' + (activeInfo ? 'effect-' + activeInfo.color : '')}>
-            <div className="stage-grid" />{sharinganActive && <div className="sharingan-badge"><Eye size={12} /> SHARINGAN AWAKENED <small>BLINK TO SEAL</small></div>}<div className="stage-corner corner-tl" /><div className="stage-corner corner-tr" /><div className="stage-corner corner-bl" /><div className="stage-corner corner-br" />
+            <div className="stage-grid" /><div className="stage-corner corner-tl" /><div className="stage-corner corner-tr" /><div className="stage-corner corner-bl" /><div className="stage-corner corner-br" />
             <div className="stage-topline"><span><Activity size={13} /> INPUT FEED</span><span>{cameraState === 'ready' ? (fps || '—') + ' FPS' : '1280 × 720 TARGET'}</span></div>
             {activeJutsu !== 'none' && <div className="chakra-charge-hud" aria-live="polite">
               <div className="charge-hud-top"><span><Zap size={12} /> CHAKRA OUTPUT</span><strong>{chargeLevel}%</strong></div>
@@ -1028,26 +1028,8 @@ export default function App() {
             {cameraState === 'ready' || cameraState === 'camera-only' ? <button className="primary-button stop-button" onClick={stopCamera}><span className="stop-square" /> Stop camera</button> :
               <button className="primary-button" onClick={startCamera} disabled={cameraState === 'loading'}>{cameraState === 'loading' ? <LoaderCircle className="spin" size={17} /> : <Camera size={17} />}{cameraState === 'loading' ? 'Starting camera…' : 'Start camera'}</button>}
             <button className={'secondary-button ' + (showLandmarks ? 'selected' : '')} onClick={() => setShowLandmarks((v) => !v)}><Hand size={16} /> Landmark overlay <span className="toggle-pill">{showLandmarks ? 'ON' : 'OFF'}</span></button>
-            <button className={'secondary-button ' + (soundEnabled ? 'selected' : '')} onClick={() => { const next = !soundEnabled; setSoundEnabled(next); if (next) { try { const audio = audioRef.current ?? new window.AudioContext(); audioRef.current = audio; void audio.resume().then(() => playJutsuCue(audio, 'chidori')); } catch { /* optional audio */ } } }} title="Tap to turn on and hear a sample; tap again to turn off"><Zap size={16} /> Jutsu sound · test <span className="toggle-pill">{soundEnabled ? 'ON' : 'OFF'}</span></button>
+            <button className={'secondary-button ' + (soundEnabled ? 'selected' : '')} onClick={() => { const next = !soundEnabled; setSoundEnabled(next); if (next) { try { const audio = audioRef.current ?? new window.AudioContext(); audioRef.current = audio; void audio.resume().then(() => playJutsuCue(audio, 'rasengan')); } catch { /* optional audio */ } } }} title="Turn the chakra sound on or off"><Zap size={16} /> Chakra sound <span className="toggle-pill">{soundEnabled ? 'ON' : 'OFF'}</span></button>
             <button className="reset-button" onClick={() => { switchJutsu('none'); setGestureLabel('Effects cleared'); }} title="Clear current effect"><RotateCcw size={16} /></button>
-          </div>
-          <div className="ninja-tool-controls" aria-label="Ninja tool selection">
-            <div className="tool-controls-heading"><span className="section-kicker">HAND-HELD TOOLS</span><small>Select a tool, then make a quick throwing motion</small></div>
-            <div className="tool-buttons">
-              <button className={'tool-button shuriken-tool ' + (activeTool === 'shuriken' ? 'is-selected' : '')} onClick={() => {
-                const next = activeTool === 'shuriken' ? 'none' : 'shuriken'; activeToolRef.current = next; setActiveTool(next);
-                setGestureLabel(next === 'shuriken' ? 'Shuriken ready · move your hand quickly to throw' : 'Tool cleared');
-              }} aria-pressed={activeTool === 'shuriken'}>
-                <span className="tool-symbol shuriken-symbol">✳</span><span><strong>Shuriken</strong><small>{activeTool === 'shuriken' ? 'READY · quick hand motion throws' : 'Select & throw'}</small></span>
-              </button>
-              <button className={'tool-button kunai-tool ' + (activeTool === 'kunai' ? 'is-selected' : '')} onClick={() => {
-                const next = activeTool === 'kunai' ? 'none' : 'kunai'; activeToolRef.current = next; setActiveTool(next);
-                setGestureLabel(next === 'kunai' ? 'Kunai ready · move your hand quickly to throw' : 'Tool cleared');
-              }} aria-pressed={activeTool === 'kunai'}>
-                <span className="tool-symbol kunai-symbol">➤</span><span><strong>Kunai</strong><small>{activeTool === 'kunai' ? 'READY · quick hand motion throws' : 'Select & throw'}</small></span>
-              </button>
-              <button className="tool-clear-button" onClick={() => { activeToolRef.current = 'none'; setActiveTool('none'); setGestureLabel('Tool cleared'); }}>Clear</button>
-            </div>
           </div>
           {(cameraState === 'error' || cameraState === 'camera-only') && <p className="error-hint"><Info size={14} /> {cameraState === 'camera-only' ? 'The camera preview is being kept active. Hand tracking is unavailable until the model/runtime loads; use the GitHub Actions link to check that the newest build was deployed.' : 'Camera access requires browser permission and a secure context (localhost or HTTPS).'}</p>}
         </div>
