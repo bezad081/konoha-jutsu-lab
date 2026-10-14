@@ -1,0 +1,58 @@
+import { useEffect, useRef, type RefObject } from 'react';
+import * as T from 'three';
+
+export type EffectPoint={x:number;y:number;z?:number};
+export type EffectTool='none'|'shuriken'|'kunai';
+export type EffectProjectile={kind:Exclude<EffectTool,'none'>;x:number;y:number;vx:number;vy:number;born:number;spin:number};
+export type ThreeTrackingState={hands:EffectPoint[][];face:EffectPoint[];move:{x:number;y:number};activeTool:EffectTool;thrownTools:EffectProjectile[];trail:Array<{x:number;y:number;at:number}>};
+type Props={trackingRef:RefObject<ThreeTrackingState>;activeJutsu:string;sharinganActive:boolean;chargeLevel:number};
+type FX={root:T.Group;spin:T.Group;rings:T.Mesh[];flames:T.Mesh[];bolts:T.Line[];dust:T.Points};
+const additive=T.AdditiveBlending;
+const mat=(color:number,opacity=1)=>new T.MeshBasicMaterial({color,transparent:opacity<1,opacity,blending:additive,depthWrite:false,side:T.DoubleSide});
+const orb=(r:number,c:number,o=1)=>new T.Mesh(new T.SphereGeometry(r,20,14),mat(c,o));
+const ring=(r:number,t:number,c:number)=>new T.Mesh(new T.TorusGeometry(r,t,6,64),mat(c,.78));
+function line(points:T.Vector3[],color:number){return new T.Line(new T.BufferGeometry().setFromPoints(points),new T.LineBasicMaterial({color,transparent:true,opacity:.9,blending:additive,depthWrite:false}));}
+function cloud(n:number,spread:number,color:number){const p=new Float32Array(n*3);for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2,r=spread*(.2+Math.random()*.8);p[i*3]=Math.cos(a)*r;p[i*3+1]=Math.sin(a)*r;p[i*3+2]=(Math.random()-.5)*spread*.6;}const g=new T.BufferGeometry();g.setAttribute('position',new T.BufferAttribute(p,3));return new T.Points(g,new T.PointsMaterial({color,size:2.5,transparent:true,opacity:.9,blending:additive,depthWrite:false,sizeAttenuation:false}));}
+function effect(scene:T.Scene,name:string):FX{
+ const root=new T.Group(),spin=new T.Group();root.add(spin);let c=0x42bfff,hot=0xeaffff,dustColor=0x8beaff;
+ if(name==='fireball'){c=0xff5d16;hot=0xfff1b1;dustColor=0xff8a32;}
+ if(name==='amaterasu'){c=0x170b27;hot=0x9b72ff;dustColor=0x9b72ff;}
+ if(name==='wind-scythe'){c=0x32e99b;hot=0xdffff0;dustColor=0x70ffc0;}
+ spin.add(orb(30,c,.12),orb(22,c,.3),orb(14,c,.78),orb(6,hot,.98));
+ const rings:T.Mesh[]=[];for(let i=0;i<4;i++){const r=ring(18+i*4,.7+i%2*.45,i%2?hot:c);r.rotation.set(i*.7,i*1.1,i*.45);rings.push(r);spin.add(r);}
+ const flames:T.Mesh[]=[];const n=name==='fireball'?16:name==='amaterasu'?13:name==='wind-scythe'?5:0;
+ for(let i=0;i<n;i++){const a=i/n*Math.PI*2,len=name==='wind-scythe'?32:14+Math.random()*23;const f=new T.Mesh(new T.ConeGeometry(name==='wind-scythe'?2.2:3+Math.random()*2,len,7),mat(name==='amaterasu'&&i%4?0x0b0714:i%3?c:hot,.86));f.position.set(Math.cos(a)*17,Math.sin(a)*17,(Math.random()-.5)*7);f.rotation.z=a-Math.PI/2;f.userData.base=.7+Math.random()*.7;flames.push(f);spin.add(f);}
+ if(name==='rasengan')for(let s=0;s<4;s++){const p:T.Vector3[]=[];for(let i=0;i<85;i++){const q=i/84,a=q*Math.PI*5+s*Math.PI/2;p.push(new T.Vector3(Math.cos(a)*(10+q*23),Math.sin(a)*(10+q*23),Math.sin(a*.7+s)*6));}spin.add(line(p,s%2?0x4b9dff:0xd5ffff));}
+ const bolts:T.Line[]=[];if(name==='chidori'||name==='lightning-burst')for(let i=0;i<18;i++){const a=i/18*Math.PI*2,l=27+Math.random()*24;bolts.push(line([new T.Vector3(0,0,0),new T.Vector3(Math.cos(a)*l*.4,Math.sin(a)*l*.4,2),new T.Vector3(Math.cos(a+.2)*l*.7,Math.sin(a+.2)*l*.7,-3),new T.Vector3(Math.cos(a-.08)*l,Math.sin(a-.08)*l,3)],i%3?0x61dfff:0xffffff));}
+ bolts.forEach(b=>root.add(b));const dust=cloud(name==='rasengan'?90:70,name==='fireball'?45:38,dustColor);root.add(dust);scene.add(root);return{root,spin,rings,flames,bolts,dust};
+}
+function tool(kind:'shuriken'|'kunai'){
+ const g=new T.Group(),metal=new T.MeshStandardMaterial({color:0xc6d9e8,metalness:.94,roughness:.2,emissive:0x315a78,emissiveIntensity:.45}),edge=new T.MeshStandardMaterial({color:0xf4fcff,metalness:.98,roughness:.15});
+ if(kind==='shuriken'){const s=new T.Shape();for(let i=0;i<8;i++){const a=-Math.PI/2+i*Math.PI/4,r=i%2===0?19:5.5,x=Math.cos(a)*r,y=Math.sin(a)*r;if(!i)s.moveTo(x,y);else s.lineTo(x,y);}s.closePath();const h=new T.Path();h.absarc(0,0,3,0,Math.PI*2,true);s.holes.push(h);g.add(new T.Mesh(new T.ExtrudeGeometry(s,{depth:2,bevelEnabled:true,bevelSize:.6,bevelThickness:.4,bevelSegments:1}),metal));}
+ else{const s=new T.Shape();s.moveTo(0,25);s.lineTo(6,2);s.lineTo(4,-11);s.lineTo(0,-16);s.lineTo(-4,-11);s.lineTo(-6,2);s.closePath();g.add(new T.Mesh(new T.ExtrudeGeometry(s,{depth:2.5,bevelEnabled:true,bevelSize:.6,bevelThickness:.4,bevelSegments:1}),edge));const h=new T.Mesh(new T.CylinderGeometry(1.5,2,15,8),metal);h.position.y=-23;g.add(h);const loop=new T.Mesh(new T.TorusGeometry(3,1,6,18),edge);loop.position.y=-31;g.add(loop);}
+ return g;
+}
+function eye(){const g=new T.Group();g.add(new T.Mesh(new T.CircleGeometry(10,32),new T.MeshBasicMaterial({color:0xc91532,transparent:true,opacity:.95})),new T.Mesh(new T.TorusGeometry(10,1.1,6,32),new T.MeshBasicMaterial({color:0x30050d})));const p=new T.Mesh(new T.CircleGeometry(2.7,18),new T.MeshBasicMaterial({color:0x08050a}));p.position.z=1.5;g.add(p);for(let i=0;i<3;i++){const t=new T.Group(),d=new T.Mesh(new T.CircleGeometry(1.7,12),new T.MeshBasicMaterial({color:0x08050a}));d.position.set(0,5.8,1.4);t.add(d);t.rotation.z=i*Math.PI*2/3;g.add(t);}return g;}
+export default function ThreeEffects({trackingRef,activeJutsu,sharinganActive,chargeLevel}:Props){
+ const host=useRef<HTMLDivElement>(null),latest=useRef({activeJutsu,sharinganActive,chargeLevel});latest.current={activeJutsu,sharinganActive,chargeLevel};
+ useEffect(()=>{const el=host.current;if(!el)return;let renderer:T.WebGLRenderer;try{renderer=new T.WebGLRenderer({alpha:true,antialias:true,powerPreference:'high-performance',premultipliedAlpha:false});}catch{el.dataset.renderer='unavailable';return;}
+ renderer.setClearColor(0,0);renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.5));renderer.outputColorSpace=T.SRGBColorSpace;renderer.domElement.className='three-effects-canvas';el.appendChild(renderer.domElement);
+ const scene=new T.Scene(),camera=new T.OrthographicCamera(-1,1,1,-1,.1,1000);camera.position.z=300;scene.add(new T.AmbientLight(0xffffff,.8));
+ const names=['rasengan','chidori','lightning-burst','fireball','amaterasu','wind-scythe'],fx:Record<string,FX>={};names.forEach(n=>fx[n]=effect(scene,n));
+ const heldS=tool('shuriken'),heldK=tool('kunai');scene.add(heldS,heldK);heldS.visible=heldK.visible=false;const poolS:T.Group[]=[],poolK:T.Group[]=[];for(let i=0;i<12;i++){const s=tool('shuriken'),k=tool('kunai');s.visible=k.visible=false;scene.add(s,k);poolS.push(s);poolK.push(k);}
+ const eyes=[eye(),eye()];eyes.forEach(e=>{e.visible=false;scene.add(e);});const trPos=new Float32Array(192),trGeo=new T.BufferGeometry();trGeo.setAttribute('position',new T.BufferAttribute(trPos,3));const trMat=new T.LineBasicMaterial({color:0x69dfff,transparent:true,opacity:.7,blending:additive,depthWrite:false}),trLine=new T.Line(trGeo,trMat);trLine.frustumCulled=false;scene.add(trLine);
+ const resize=()=>{const w=Math.max(1,el.clientWidth),h=Math.max(1,el.clientHeight);camera.left=-w/2;camera.right=w/2;camera.top=h/2;camera.bottom=-h/2;camera.updateProjectionMatrix();renderer.setSize(w,h,false);};const ro=typeof ResizeObserver!=='undefined'?new ResizeObserver(resize):null;ro?.observe(el);resize();
+ const xy=(p:EffectPoint,w:number,h:number)=>new T.Vector3((p.x-.5)*w,(.5-p.y)*h,0),clock=new T.Clock();let raf=0;
+ const draw=()=>{const now=performance.now(),t=clock.getElapsedTime(),w=Math.max(1,el.clientWidth),h=Math.max(1,el.clientHeight),s=trackingRef.current,p=latest.current,hands=s?.hands??[],face=s?.face??[];
+ const palm=(a:EffectPoint[]|undefined)=>a&&a.length>=21?{x:[0,5,9,13,17].reduce((v,i)=>v+a[i].x/5,0),y:[0,5,9,13,17].reduce((v,i)=>v+a[i].y/5,0)}:{x:.5,y:.54};
+ const a=palm(hands[0]),b=hands[1]?palm(hands[1]):null,mouth=face.length>14?{x:(face[13].x+face[14].x)/2,y:(face[13].y+face[14].y)/2}:null,focus=p.activeJutsu==='fireball'&&mouth?mouth:p.activeJutsu==='lightning-burst'&&b?{x:(a.x+b.x)/2,y:(a.y+b.y)/2}:a,pos=xy(focus,w,h),scale=Math.min(w,h)/360,q=Math.max(.2,Math.min(1.25,p.chargeLevel/100||.2));
+ Object.entries(fx).forEach(([name,f])=>{f.root.visible=p.activeJutsu===name;if(!f.root.visible)return;f.root.position.copy(pos);f.root.scale.setScalar(scale*(name==='rasengan'?.85+q*.22:name==='fireball'?.9+q*.27:.86+q*.12));f.spin.rotation.y=t*1.6;f.spin.rotation.z=t*(name==='rasengan'?2.3:1.5);f.rings.forEach((r,i)=>{r.rotation.x+=.009;r.rotation.y+=.013+i*.002;r.rotation.z+=(i%2?-1:1)*.02;});f.flames.forEach((m,i)=>{const base=Number(m.userData.base||1),v=.78+Math.sin(t*13+i*2)*.22+Math.random()*.1;m.scale.set(base*v,base*(.8+v*.35),1);m.rotation.z+=Math.sin(t*4+i)*.009;});f.bolts.forEach((l,i)=>{const at=l.geometry.getAttribute('position') as T.BufferAttribute,ang=i/f.bolts.length*Math.PI*2+t*.5,len=28+(i*17)%24;(at.array as Float32Array).set([0,0,0,Math.cos(ang)*len*.4,Math.sin(ang)*len*.4,2,Math.cos(ang+.2)*len*.7,Math.sin(ang+.2)*len*.7,-3,Math.cos(ang-.08)*len,Math.sin(ang-.08)*len,3]);at.needsUpdate=true;});f.dust.rotation.z=-t*.9;f.dust.rotation.y=t*.7;(f.dust.material as T.PointsMaterial).opacity=.58+Math.sin(t*7)*.2;});
+ const activeTool=s?.activeTool??'none';heldS.visible=activeTool==='shuriken'&&hands.length>0;heldK.visible=activeTool==='kunai'&&hands.length>0;if(heldS.visible||heldK.visible){const m=activeTool==='shuriken'?heldS:heldK;m.position.copy(xy(a,w,h));m.position.z=24;m.scale.setScalar(scale*.75);m.rotation.z=Math.atan2((hands[0]?.[8]?.y??a.y)-(hands[0]?.[5]?.y??a.y-.1),(hands[0]?.[8]?.x??a.x)-(hands[0]?.[5]?.x??a.x))+Math.PI/2;if(activeTool==='shuriken')m.rotation.y=t*2;}
+ const usedS=new Set<number>(),usedK=new Set<number>();(s?.thrownTools??[]).forEach(v=>{const pool=v.kind==='shuriken'?poolS:poolK,used=v.kind==='shuriken'?usedS:usedK;let i=0;while(used.has(i)&&i<pool.length)i++;if(i>=pool.length)return;used.add(i);const m=pool[i];m.visible=true;m.position.copy(xy(v,w,h));m.position.z=28;m.scale.setScalar(scale*.75);m.rotation.z=v.spin+(now-v.born)*.014;});poolS.forEach((m,i)=>{if(!usedS.has(i))m.visible=false;});poolK.forEach((m,i)=>{if(!usedK.has(i))m.visible=false;});
+ eyes.forEach((e,i)=>{const v=face.length>=478?face[i===0?468:473]:null;e.visible=p.sharinganActive&&!!v;if(v){e.position.copy(xy(v,w,h));e.position.z=40;e.scale.setScalar(scale*.78);e.rotation.z=t*.22;}});
+ const recent=(s?.trail??[]).slice(-64),at=trGeo.getAttribute('position') as T.BufferAttribute,arr=at.array as Float32Array;recent.forEach((v,i)=>{const z=xy(v,w,h);arr[i*3]=z.x;arr[i*3+1]=z.y;arr[i*3+2]=8;});at.needsUpdate=true;trGeo.setDrawRange(0,recent.length);trMat.color.setHex(p.activeJutsu==='fireball'?0xff8731:p.activeJutsu==='amaterasu'?0x9a6aff:p.activeJutsu==='wind-scythe'?0x68ffc0:p.activeJutsu==='chidori'||p.activeJutsu==='lightning-burst'?0x74e5ff:0x50bfff);trMat.opacity=p.activeJutsu==='none'?0:.66;
+ renderer.render(scene,camera);raf=requestAnimationFrame(draw);};raf=requestAnimationFrame(draw);
+ return()=>{cancelAnimationFrame(raf);ro?.disconnect();scene.traverse(o=>{const m=o as T.Mesh;if(m.geometry)m.geometry.dispose();const z=m.material;if(z){if(Array.isArray(z))z.forEach(a=>a.dispose());else z.dispose();}});renderer.dispose();renderer.domElement.remove();};
+ },[trackingRef]);
+ return <div ref={host} className="three-effects-layer" aria-hidden="true"/>;
+}
