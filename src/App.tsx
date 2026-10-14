@@ -277,7 +277,7 @@ function updateCloneSprite(
   const inputWidth = sourceWidth || mask.width;
   const inputHeight = sourceHeight || mask.height;
   const scale = Math.min(1, 640 / inputWidth);
-  const width = Math.max(1, Math.round(sourceWidth * scale));
+  const width = Math.max(1, Math.round(inputWidth * scale));
   const height = Math.max(1, Math.round(inputHeight * scale));
   if (sprite.width !== width || sprite.height !== height) {
     sprite.width = width;
