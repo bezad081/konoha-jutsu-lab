@@ -945,11 +945,18 @@ export default function App() {
   const preview = (jutsu: Exclude<Jutsu, 'none'>) => {
     if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current);
     switchJutsu(jutsu);
-    setGestureLabel('Preview mode · ' + INFO[jutsu].name);
+    const previewDuration = jutsu === 'clone' ? 6500 : 2200;
+    if (jutsu === 'clone') {
+      castUntilRef.current = performance.now() + previewDuration;
+      cloneVisualUntilRef.current = castUntilRef.current;
+    }
+    setGestureLabel(jutsu === 'clone'
+      ? 'Shadow Clone preview · allowing time for the cutout model to load'
+      : 'Preview mode · ' + INFO[jutsu].name);
     timeoutRef.current = window.setTimeout(() => {
       if (activeRef.current === jutsu) switchJutsu('none');
-      setGestureLabel(cameraState === 'ready' ? 'Show a gesture to cast' : 'Preview complete · start camera for tracking');
-    }, 2200);
+      setGestureLabel(cameraState === 'ready' ? 'Ready · form Rasengan or Shadow Clone' : 'Preview complete · start camera for tracking');
+    }, previewDuration);
   };
   const activeInfo = activeJutsu === 'none' ? null : INFO[activeJutsu];
 
