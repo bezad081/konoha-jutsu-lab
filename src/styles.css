@@ -191,3 +191,54 @@ body{background:radial-gradient(ellipse at 9% 4%,rgba(255,145,48,.12),transparen
 .clone-summon-hud small{font:7px 'DM Mono',monospace;letter-spacing:.07em;color:#8f82b8}
 @keyframes cloneHudIn{from{opacity:0;transform:translateY(-5px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
 @media(max-width:700px){.clone-summon-hud{top:43px;right:8px;padding:8px 9px;column-gap:5px}.clone-summon-hud span{font-size:7px}.clone-summon-hud small{font-size:6px}}
+
+
+/* Chakra-era visual pass: black + electric blue stay dominant, Naruto orange and
+   Shadow Clone violet are supporting accents—not replacements for the core palette. */
+:root{--bg:#050a16;--panel:#0b1427;--panel2:#101d35;--border:rgba(83,177,255,.19);--muted:#8097bb;--soft:#c0d7f5;--cyan:#65e7ff;--blue:#388dff;--violet:#ad8cff;--green:#78e6cf;--naruto-orange:#ff9f43;--leaf-green:#72e5b5;--sharingan-red:#ff617d;--chakra-blue:#57c9ff}
+body{background:radial-gradient(ellipse at 7% 0%,rgba(33,123,255,.17),transparent 34%),radial-gradient(ellipse at 92% 7%,rgba(255,143,49,.085),transparent 25%),radial-gradient(ellipse at 55% 100%,rgba(103,65,255,.08),transparent 38%),var(--bg)}
+.brand-mark{color:#bff7ff;background:linear-gradient(145deg,rgba(28,132,220,.36),rgba(23,26,63,.92) 68%,rgba(255,143,49,.18));border-color:rgba(85,204,255,.4);box-shadow:0 0 22px rgba(41,162,255,.17),inset 0 0 15px rgba(63,177,255,.09)}
+.brand strong span{color:#79dfff}.brand small{color:#6f94c4}
+.build-chip{border-color:rgba(86,187,255,.2);background:rgba(5,14,30,.78);color:#a3c1e7}
+.status-dot{background:#58dfff;box-shadow:0 0 11px #36bfff}
+.eyebrow,.section-kicker{color:#86a8d6}.eyebrow{color:#9ac8f5}.eyebrow-line{background:linear-gradient(90deg,#ff9f43,#57c9ff)}
+.intro-row h1 span{background:linear-gradient(100deg,#f8fcff 0%,#64d9ff 28%,#438bff 66%,#ffab54 100%);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 18px rgba(48,150,255,.12))}
+.stat-icon{background:rgba(55,165,255,.13);color:#74dfff}.stat-icon.violet{color:#c5a9ff;background:rgba(142,100,255,.14)}.stat-icon.green{color:#ffbd73;background:rgba(255,159,67,.1)}
+.camera-stage{border-color:rgba(70,177,255,.28);box-shadow:0 18px 52px rgba(0,0,0,.28),0 0 0 1px rgba(43,119,255,.045),inset 0 0 28px rgba(40,138,255,.035)}
+.stage-grid{background-image:linear-gradient(rgba(91,176,255,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(91,176,255,.06) 1px,transparent 1px)}
+.stage-corner{border-color:#62dfff;filter:drop-shadow(0 0 5px rgba(56,198,255,.55))}
+.camera-stage.effect-blue{box-shadow:0 0 0 1px rgba(63,178,255,.23),0 0 38px rgba(35,133,255,.11),0 18px 52px rgba(0,0,0,.3)}
+.camera-stage.effect-violet{box-shadow:0 0 0 1px rgba(168,124,255,.25),0 0 40px rgba(128,72,255,.12),0 18px 52px rgba(0,0,0,.3)}
+.primary-button{color:#04101d;border:1px solid rgba(166,246,255,.75);background:linear-gradient(115deg,#7df1ff 0%,#48baff 48%,#5590ff 100%);box-shadow:0 6px 26px rgba(48,158,255,.2),inset 0 1px rgba(255,255,255,.35)}
+.primary-button:hover{background:linear-gradient(115deg,#b4fbff 0%,#79d6ff 48%,#87b2ff 100%);box-shadow:0 8px 30px rgba(48,158,255,.28)}
+.secondary-button{background:linear-gradient(140deg,rgba(16,36,65,.95),rgba(8,16,31,.96));border-color:rgba(91,177,255,.2)}
+.secondary-button:hover,.secondary-button.selected{border-color:rgba(92,220,255,.55);box-shadow:0 0 18px rgba(48,170,255,.07)}
+.toggle-pill{background:rgba(69,126,196,.16);color:#a3c9ee}.secondary-button.selected .toggle-pill{background:rgba(62,204,255,.16);color:#78eaff}
+.jutsu-card{background:linear-gradient(120deg,rgba(12,30,55,.97),rgba(5,12,26,.99));border-color:rgba(89,166,255,.17)}
+.jutsu-card:before{content:"";position:absolute;inset:0;pointer-events:none;opacity:0;background:linear-gradient(115deg,rgba(65,176,255,.1),transparent 58%,rgba(255,157,67,.035));transition:opacity .2s}
+.jutsu-card:hover:before,.jutsu-card.is-active:before{opacity:1}
+.jutsu-card.blue-card,.blue-card{border-color:rgba(70,184,255,.27);background:linear-gradient(120deg,rgba(12,40,72,.98),rgba(5,13,28,.99))}
+.jutsu-card.violet-card,.violet-card{border-color:rgba(156,124,255,.25);background:linear-gradient(120deg,rgba(28,22,61,.95),rgba(5,13,28,.99))}
+.blue-card .jutsu-art{background:radial-gradient(circle at 50% 46%,rgba(35,154,255,.32),rgba(5,16,36,.82))}
+.violet-card .jutsu-art{background:radial-gradient(circle at 50% 50%,rgba(151,95,255,.28),rgba(7,11,30,.88))}
+.violet-card .jutsu-overline{color:#c5a8ff}.violet-card .clone-figure{border-color:#a8baff;background:rgba(103,129,255,.19);box-shadow:0 0 12px rgba(120,110,255,.48)}
+.violet-card .clone-figure:before{background:#263a72;border-color:#d2caff}.violet-card .clone-star{color:#ffd07a;filter:drop-shadow(0 0 7px rgba(255,171,76,.62))}
+.jutsu-card.blue-card.is-active,.blue-card:hover,.blue-card.is-active{border-color:rgba(94,223,255,.84);box-shadow:0 0 0 1px rgba(77,197,255,.18),0 0 25px rgba(36,145,255,.14),0 12px 34px rgba(16,61,122,.2)}
+.jutsu-card.violet-card.is-active,.violet-card:hover,.violet-card.is-active{border-color:rgba(180,146,255,.82);box-shadow:0 0 0 1px rgba(166,128,255,.18),0 0 28px rgba(130,73,255,.13),0 12px 34px rgba(16,30,72,.2)}
+.jutsu-overline{color:#7bdfff}.difficulty{color:#a0eaff;background:rgba(55,160,255,.12)}.difficulty.advanced{color:#d1bdff;background:rgba(147,99,255,.15)}
+.detection-card,.bottom-card{border-color:rgba(86,166,255,.17);background:linear-gradient(140deg,rgba(11,22,42,.96),rgba(6,13,27,.96))}
+.detection-heading>svg{color:#67dfff}.readout-row strong.signal-active{color:#7deaff;text-shadow:0 0 12px rgba(71,202,255,.2)}
+.signal-track{background:rgba(86,130,188,.17)}.signal-track span{background:linear-gradient(90deg,#378eff,#5eeaff 54%,#a58aff)}
+.bottom-icon{border-color:rgba(85,193,255,.23);background:rgba(54,153,255,.13);color:#77e4ff}.green-icon{color:#ffbf70;border-color:rgba(255,159,67,.23);background:rgba(255,143,49,.09)}.privacy-check{color:#69e5ff}
+.footer{border-color:rgba(90,174,255,.17)}.footer-mark{color:#ffb35e}
+.help-panel{border-color:rgba(73,183,255,.3);background:linear-gradient(110deg,rgba(33,135,255,.1),rgba(132,87,255,.075),rgba(255,145,45,.045))}
+.help-panel strong{color:#c8f4ff}.text-button{color:#70dfff}
+.chakra-charge-hud{border-color:rgba(86,218,255,.42);background:linear-gradient(135deg,rgba(4,20,43,.94),rgba(18,27,66,.86));box-shadow:0 8px 30px rgba(0,0,0,.3),0 0 20px rgba(44,157,255,.08),inset 0 0 25px rgba(65,160,255,.1)}
+.charge-hud-top{color:#9beeff}.charge-hud-track{background:rgba(78,138,201,.17)}.charge-hud-track span{background:linear-gradient(90deg,#3b8bff,#50e8ff,#ffbf65);box-shadow:0 0 11px rgba(75,206,255,.5)}
+.clone-summon-hud{border-color:rgba(153,126,255,.45);background:linear-gradient(130deg,rgba(18,14,47,.95),rgba(5,17,41,.92) 65%,rgba(43,25,54,.88));box-shadow:0 8px 30px rgba(0,0,0,.3),0 0 25px rgba(135,83,255,.12),inset 0 0 20px rgba(84,156,255,.08);color:#d8d2ff}
+.clone-summon-hud svg{color:#76dfff;filter:drop-shadow(0 0 7px rgba(91,213,255,.6))}.clone-summon-hud small{color:#ad9cde}
+.camera-orb{color:#7ceaff;border-color:rgba(80,204,255,.37);background:radial-gradient(circle at 25% 20%,rgba(51,177,255,.27),rgba(48,80,147,.1));box-shadow:0 0 42px rgba(47,155,255,.17)}
+.stage-corner.corner-tr,.stage-corner.corner-bl{border-color:#ffad53}
+@keyframes chakraPulse{0%,100%{filter:brightness(1);text-shadow:0 0 9px rgba(77,200,255,.15)}50%{filter:brightness(1.2);text-shadow:0 0 19px rgba(77,200,255,.3)}}
+.build-chip{animation:chakraPulse 3.2s ease-in-out infinite}
+@media(prefers-reduced-motion:reduce){.build-chip{animation:none}.orb-ring{animation-duration:8s}}
