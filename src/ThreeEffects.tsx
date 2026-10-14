@@ -138,31 +138,6 @@ function createRasengan(scene: T.Scene): RasenganFx {
   return { root, core, innerCore, rings, spirals, particles };
 }
 
-function createGhost(color: number) {
-  const group = new T.Group();
-  const material = new T.MeshBasicMaterial({
-    color, transparent: true, opacity: 0.28, blending: additive, depthWrite: false, side: T.DoubleSide,
-  });
-  const head = new T.Mesh(new T.SphereGeometry(8, 16, 12), material);
-  head.position.y = 31;
-  group.add(head);
-  const torso = new T.Mesh(new T.SphereGeometry(13, 16, 12), material);
-  torso.scale.set(0.92, 1.55, 0.62);
-  torso.position.y = 6;
-  group.add(torso);
-  const armGeometry = new T.CylinderGeometry(3.2, 4.2, 27, 7);
-  const legGeometry = new T.CylinderGeometry(4, 5, 29, 7);
-  for (const side of [-1, 1]) {
-    const arm = new T.Mesh(armGeometry, material);
-    arm.position.set(side * 15, 7, 0);
-    arm.rotation.z = side * 0.42;
-    group.add(arm);
-    const leg = new T.Mesh(legGeometry, material);
-    leg.position.set(side * 6, -21, 0);
-    group.add(leg);
-  }
-  return group;
-}
 
 export default function ThreeEffects({ trackingRef, activeJutsu, chargeLevel }: Props) {
   const host = useRef<HTMLDivElement>(null);
@@ -213,8 +188,6 @@ export default function ThreeEffects({ trackingRef, activeJutsu, chargeLevel }: 
       scene.add(mesh);
       return mesh;
     });
-    const cloneGhosts = [createGhost(0x9b79ff), createGhost(0x70dcff)];
-    cloneGhosts.forEach((ghost) => { ghost.visible = false; scene.add(ghost); });
     const summonRings = [
       new T.Mesh(new T.TorusGeometry(18, 1.2, 7, 56), basic(0xeffbff, 0.8)),
       new T.Mesh(new T.TorusGeometry(18, 1.2, 7, 56), basic(0xbca0ff, 0.8)),
@@ -382,11 +355,6 @@ export default function ThreeEffects({ trackingRef, activeJutsu, chargeLevel }: 
         glowPlanes[i].position.z = 9.8 + i * 0.01;
         glowPlanes[i].scale.copy(mesh.scale).multiplyScalar(1.025);
         glowMaterials[i].opacity = 0.2 * (0.12 + 0.88 * entryEase);
-      });
-      cloneGhosts.forEach((ghost, i) => {
-        ghost.visible = cloneActive && !hasCloneTexture;
-        ghost.position.set(width * cloneOffsets[i] * (0.28 + 0.72 * entryEase), -height * 0.025, 6 + i * 0.01);
-        ghost.scale.setScalar(scale * (0.72 + 0.23 * entryEase));
       });
       summonRings.forEach((ringMesh, i) => {
         if (!ringMesh.visible) return;
