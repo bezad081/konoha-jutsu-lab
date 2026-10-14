@@ -236,6 +236,8 @@ export default function ThreeEffects({ trackingRef, activeJutsu, chargeLevel }: 
     let anchor = new T.Vector3();
     let anchorReady = false;
     let lastObservedTarget = new T.Vector3();
+    let predictedTarget = new T.Vector3();
+    let trackedVelocity = new T.Vector3();
     let lastObservedTargetAt = 0;
     let trackedMotionSpeed = 0;
 
@@ -291,6 +293,8 @@ export default function ThreeEffects({ trackingRef, activeJutsu, chargeLevel }: 
           if (!anchorReady || previousJutsu !== 'rasengan') {
             anchor.copy(target);
             lastObservedTarget.copy(target);
+            predictedTarget.copy(target);
+            trackedVelocity.set(0, 0, 0);
             lastObservedTargetAt = now;
             trackedMotionSpeed = 0;
             anchorReady = true;
@@ -298,17 +302,36 @@ export default function ThreeEffects({ trackingRef, activeJutsu, chargeLevel }: 
             // Estimate velocity from the live hand target, not the trailing effect.
             // Fast movement raises the follow rate and keeps the orb attached to the palm.
             const observedDelta = target.distanceTo(lastObservedTarget);
-            if (observedDelta > 0.75) {
-              const elapsed = Math.max(0.016, (now - lastObservedTargetAt) / 1000);
-              trackedMotionSpeed = observedDelta / Math.max(1, minDimension) / elapsed;
+            if (observedDelta > 0.45) {
+              const elapsed = clamp((now - lastObservedTargetAt) / 1000, 0.016, 0.12);
+              trackedVelocity.copy(target).sub(lastObservedTarget).divideScalar(elapsed);
+              trackedMotionSpeed = trackedVelocity.length() / Math.max(1, minDimension);
               lastObservedTarget.copy(target);
               lastObservedTargetAt = now;
             } else {
-              trackedMotionSpeed *= Math.exp(-deltaMs / 140);
+              const decay = Math.exp(-deltaMs / 85);
+              trackedVelocity.multiplyScalar(decay);
+              trackedMotionSpeed = trackedVelocity.length() / Math.max(1, minDimension);
             }
-            const followRate = clamp(44 + trackedMotionSpeed * 9, 44, 105);
+            // Landmark results arrive at camera/inference cadence while WebGL can
+            // render faster. Predict a few milliseconds ahead (with a strict cap)
+            // to counter the visible lag on quick hand swipes without overshooting stops.
+            predictedTarget.copy(target);
+            const predictionSeconds = Math.min(0.012, Math.max(0.004, deltaMs / 1000 * 0.6));
+            let leadX = trackedVelocity.x * predictionSeconds;
+            let leadY = trackedVelocity.y * predictionSeconds;
+            const lead = Math.hypot(leadX, leadY);
+            const maxLead = minDimension * 0.032;
+            if (lead > maxLead && lead > 0) {
+              const cap = maxLead / lead;
+              leadX *= cap;
+              leadY *= cap;
+            }
+            predictedTarget.x += leadX;
+            predictedTarget.y += leadY;
+            const followRate = clamp(60 + trackedMotionSpeed * 10, 60, 140);
             const follow = 1 - Math.exp(-followRate * Math.max(0.008, deltaMs / 1000));
-            anchor.lerp(target, follow);
+            anchor.lerp(predictedTarget, follow);
           }
         }
       }
