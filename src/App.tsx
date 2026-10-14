@@ -525,7 +525,7 @@ export default function App() {
                 if (streamRef.current !== cameraStream) { faceTracker.close(); return; }
                 faceTrackerRef.current = faceTracker; setFaceTrackingState('ready');
               }).catch(() => setFaceTrackingState('unavailable'));
-              setGestureLabel('Compatibility tracking active · show a hand sign to cast');
+              setGestureLabel('Tracking ready · form Rasengan or Shadow Clone');
             }).catch((cause) => {
               setCameraState('camera-only');
               setFaceTrackingState('unavailable'); setTrackingEngine('unavailable');
@@ -554,7 +554,7 @@ export default function App() {
         }).catch(() => setFaceTrackingState('unavailable'));
       }
       setCameraState('ready');
-      setGestureLabel(workerMode ? 'Background tracking active · show a hand sign to cast' : 'Rasengan: open palm · Chidori: two closed-fist moves · Fireball: two fists apart · Amaterasu: one fist');
+      setGestureLabel(workerMode ? 'Tracking ready · open palm for Rasengan or cross-finger seal for Shadow Clone' : 'Tracking ready · open palm for Rasengan or cross-finger seal for Shadow Clone');
       let segmenterLoading = false, segmenterFailed = false, segmentationBusy = false;
       let lastSegmentationAt = 0, lastSegmentationVideoTime = -1;
       const cloneSprite = document.createElement('canvas');
@@ -981,27 +981,27 @@ export default function App() {
       <header className="topbar">
         <a className="brand" href="#top" aria-label="Konoha Jutsu Lab home">
           <div className="brand-mark"><Sparkles size={21} /></div>
-          <div><strong>KONOHA <span>JUTSU LAB</span></strong><small>CAMERA-TRACKED CHAKRA PROTOTYPE</small></div>
+          <div><strong>KONOHA <span>JUTSU LAB</span></strong><small>RASENGAN · SHADOW CLONE TRAINING</small></div>
         </a>
-        <div className="topbar-right"><div className="topbar-portraits" aria-label="Featured shinobi"><img src="https://wallpapers.com/images/hd/naruto-blue-sky-ready-for-battle-w7rfnmhxkzu441oh.jpg" alt="Naruto Uzumaki anime art" title="Naruto Uzumaki" /><img src="https://wallpapers.com/images/hd/sensei-kakashi-hatake-png-jja-oqkhqqgluqkoq0q6.png" alt="Kakashi Hatake anime art" title="Kakashi Hatake" /></div><div className="build-chip"><span className="status-dot" /> PROTOTYPE / 0.5</div>
+        <div className="topbar-right"><div className="build-chip"><span className="status-dot" /> TWO SIGNATURE JUTSU</div>
           <button className="icon-button" onClick={() => setHelpOpen((v) => !v)} aria-label="Toggle instructions"><CircleHelp size={18} /></button>
         </div>
       </header>
       <section className="intro-row" id="top">
-        <div><div className="eyebrow"><span className="eyebrow-line" /> THE HIDDEN LEAF, IN YOUR BROWSER</div>
-          <h1>Make your hands<br /><span>feel like jutsu.</span></h1>
-          <p className="intro-copy">A first step toward real-time hand seals and chakra effects — powered by your webcam, not a keyboard combo.</p>
+        <div><div className="eyebrow"><span className="eyebrow-line" /> YOUR HIDDEN LEAF TRAINING GROUND</div>
+          <h1>Bring chakra<br /><span>to life.</span></h1>
+          <p className="intro-copy">One webcam. Two signature techniques. Build a spinning Rasengan, then summon shadow clones that look like you.</p>
         </div>
         <div className="intro-stats">
-          <div className="stat-item"><span className="stat-icon"><Hand size={17} /></span><div><b>2 hands</b><small>tracked live</small></div></div>
-          <div className="stat-item"><span className="stat-icon violet"><Cpu size={17} /></span><div><b>On-device</b><small>pose inference</small></div></div>
-          <div className="stat-item"><span className="stat-icon green"><ShieldCheck size={17} /></span><div><b>No upload</b><small>video stays local</small></div></div>
+          <div className="stat-item"><span className="stat-icon"><Hand size={17} /></span><div><b>2 jutsu</b><small>one focused experience</small></div></div>
+          <div className="stat-item"><span className="stat-icon violet"><Cpu size={17} /></span><div><b>Live tracking</b><small>hands in real time</small></div></div>
+          <div className="stat-item"><span className="stat-icon green"><ShieldCheck size={17} /></span><div><b>Private</b><small>video stays local</small></div></div>
         </div>
       </section>
-      {helpOpen && <section className="help-panel"><Info size={18} /><div><strong>Quick start · How to cast</strong><p><b>1.</b> Start the camera. <b>2. Rasengan:</b> show one open palm. <b>3. Chidori:</b> press Start Chidori, bring both closed fists close together in front of your upper chest, then thrust one fist toward the camera while pulling the other back by your shoulder. <b>4. Uchiha Fire:</b> use the guided sequence: hare sign, fists close to focus chakra, then separate them to release fire from your mouth. <b>5. Amaterasu:</b> show one closed fist. <b>6. Shadow Clone:</b> cross the index/middle fingers of both hands into a plus (+) shape. <b>7. Wind Fang:</b> raise the index and middle fingers of one hand while curling the ring and little fingers. Move that hand to sweep the green wind blade. You can switch techniques directly: hold the next hand sign briefly and the old effect transitions to the new one without taking both hands out of frame. Clones linger for six seconds after the seal is released. Video is processed in your browser.</p></div><button className="text-button" onClick={() => setHelpOpen(false)}>Got it</button></section>}
+      {helpOpen && <section className="help-panel"><Info size={18} /><div><strong>Quick start · Your two signature jutsu</strong><p><b>1.</b> Start the camera and keep your hands in frame. <b>2. Rasengan:</b> face one open palm toward the camera and hold it steady while chakra gathers. <b>3. Shadow Clone:</b> bring both hands together and cross the index and middle fingers into a clear plus (+) seal. Keep your upper body visible and give the segmentation model a moment to load. The camera feed is processed in your browser.</p></div><button className="text-button" onClick={() => setHelpOpen(false)}>Got it</button></section>}
       <section className="workspace">
         <div className="camera-column">
-          <div className="panel-heading"><div><span className="section-kicker">01 / LIVE INPUT</span><h2>Chakra viewport</h2></div>
+          <div className="panel-heading"><div><span className="section-kicker">01 / LIVE INPUT</span><h2>Your training mirror</h2></div>
             <div className={'live-status ' + (cameraState === 'ready' || cameraState === 'camera-only' ? 'is-live' : cameraState === 'error' ? 'is-error' : '')}><span />{cameraState === 'ready' ? 'LIVE TRACKING' : cameraState === 'camera-only' ? 'CAMERA ON · TRACKING OFF' : cameraState === 'loading' ? 'INITIALIZING' : cameraState === 'error' ? 'CAMERA ERROR' : 'STANDBY'}</div>
           </div>
           <div ref={stageRef} className={'camera-stage ' + (activeInfo ? 'effect-' + activeInfo.color : '')}>
@@ -1019,7 +1019,7 @@ export default function App() {
               {cameraState !== 'ready' && cameraState !== 'camera-only' && <div className="camera-placeholder">
                 {cameraState === 'loading' ? <LoaderCircle className="spin" size={38} /> : cameraState === 'error' ? <Camera size={35} /> : <div className="camera-orb"><Camera size={28} /></div>}
                 <strong>{cameraState === 'loading' ? 'Warming up the chakra flow' : cameraState === 'error' ? (error.includes('hand tracking') ? 'Hand tracking unavailable' : 'Camera not ready') : 'Your training space awaits'}</strong>
-                <span>{cameraState === 'loading' ? 'Requesting camera and loading hand tracking…' : cameraState === 'error' ? error : 'Start the camera to see your hands and effects live.'}</span>
+                <span>{cameraState === 'loading' ? 'Requesting camera and loading hand tracking…' : cameraState === 'error' ? error : 'Start the camera, then choose Rasengan or Shadow Clone.'}</span>
               </div>}
             </div>
             <div className="stage-bottomline"><span><span className={'small-dot ' + (cameraState === 'ready' ? 'active' : '')} /> {cameraState === 'ready' ? handCount + ' HAND' + (handCount === 1 ? '' : 'S') + ' DETECTED' : cameraState === 'camera-only' ? 'CAMERA ON · TRACKING UNAVAILABLE' : 'AWAITING VIDEO SOURCE'}</span><span className="mono">MP / HAND LANDMARKER</span></div>
@@ -1029,15 +1029,6 @@ export default function App() {
               <button className="primary-button" onClick={startCamera} disabled={cameraState === 'loading'}>{cameraState === 'loading' ? <LoaderCircle className="spin" size={17} /> : <Camera size={17} />}{cameraState === 'loading' ? 'Starting camera…' : 'Start camera'}</button>}
             <button className={'secondary-button ' + (showLandmarks ? 'selected' : '')} onClick={() => setShowLandmarks((v) => !v)}><Hand size={16} /> Landmark overlay <span className="toggle-pill">{showLandmarks ? 'ON' : 'OFF'}</span></button>
             <button className={'secondary-button ' + (soundEnabled ? 'selected' : '')} onClick={() => { const next = !soundEnabled; setSoundEnabled(next); if (next) { try { const audio = audioRef.current ?? new window.AudioContext(); audioRef.current = audio; void audio.resume().then(() => playJutsuCue(audio, 'chidori')); } catch { /* optional audio */ } } }} title="Tap to turn on and hear a sample; tap again to turn off"><Zap size={16} /> Jutsu sound · test <span className="toggle-pill">{soundEnabled ? 'ON' : 'OFF'}</span></button>
-            <button className={'secondary-button sharingan-toggle ' + (sharinganEnabled ? 'selected' : '')} onClick={() => {
-              const next = !sharinganEnabled;
-              sharinganEnabledRef.current = next;
-              setSharinganEnabled(next);
-              sharinganRef.current = false;
-              setSharinganActive(false);
-              if (!next) setGestureLabel('Sharingan trigger disabled');
-              else setGestureLabel(faceTrackingState === 'ready' ? 'Sharingan armed · close and reopen both eyes to awaken' : 'Sharingan armed · face tracking is still loading');
-            }} aria-pressed={sharinganEnabled} title="Enable blink-to-awaken Sharingan; blink again to turn it off"><Eye size={16} /> Sharingan <span className="toggle-pill">{sharinganEnabled ? 'ARMED' : 'OFF'}</span></button>
             <button className="reset-button" onClick={() => { switchJutsu('none'); setGestureLabel('Effects cleared'); }} title="Clear current effect"><RotateCcw size={16} /></button>
           </div>
           <div className="ninja-tool-controls" aria-label="Ninja tool selection">
@@ -1061,61 +1052,21 @@ export default function App() {
           {(cameraState === 'error' || cameraState === 'camera-only') && <p className="error-hint"><Info size={14} /> {cameraState === 'camera-only' ? 'The camera preview is being kept active. Hand tracking is unavailable until the model/runtime loads; use the GitHub Actions link to check that the newest build was deployed.' : 'Camera access requires browser permission and a secure context (localhost or HTTPS).'}</p>}
         </div>
         <aside className="right-column">
-          <div className="panel-heading"><div><span className="section-kicker">02 / TECHNIQUE SELECTOR</span><h2>Choose your jutsu</h2></div><span className="mini-count">06</span></div>
+          <div className="panel-heading"><div><span className="section-kicker">02 / YOUR TECHNIQUES</span><h2>Choose your jutsu</h2></div><span className="mini-count">02</span></div>
           <div className="jutsu-list">
             <button className={'jutsu-card blue-card ' + (activeJutsu === 'rasengan' ? 'is-active' : '')} onClick={() => preview('rasengan')}>
               <div className="jutsu-art rasengan-art"><span className="orb-core" /><span className="orb-ring ring-one" /><span className="orb-ring ring-two" /><span className="orb-spark s1" /><span className="orb-spark s2" /></div>
               <div className="jutsu-copy"><div className="jutsu-overline">WIND / CHAKRA</div><h3>Rasengan</h3><p>Show your palm, not the back of your hand · the orb grows into a spinning chakra sphere</p><div className="jutsu-foot"><span className="difficulty easy">BEGINNER</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">01</span>
             </button>
-            <button className={'jutsu-card cyan-card ' + (activeJutsu === 'chidori' ? 'is-active' : '')} onClick={() => preview('chidori')}>
-              <div className="jutsu-art lightning-art"><Zap className="lightning-symbol" size={44} /><i className="bolt b1" /><i className="bolt b2" /><i className="bolt b3" /></div>
-              <div className="jutsu-copy"><div className="jutsu-overline">LIGHTNING STYLE</div><h3>Chidori</h3><p>Two anime-style closed-fist moves · thrust one fist forward and pull the other back</p><div className="jutsu-foot"><span className="difficulty medium">INTERMEDIATE</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">02</span>
-            </button>
             <button className={'jutsu-card violet-card ' + (activeJutsu === 'clone' ? 'is-active' : '')} onClick={() => preview('clone')}>
               <div className="jutsu-art clone-art"><span className="clone-figure figure-one" /><span className="clone-figure figure-two" /><span className="clone-figure figure-three" /><Sparkles className="clone-star" size={17} /></div>
               <div className="jutsu-copy"><div className="jutsu-overline">NINJUTSU / DECOY</div><h3>Shadow Clone</h3><p>Cross index/middle fingers into a + seal; clones linger for six seconds</p><div className="jutsu-foot"><span className="difficulty advanced">CROSSED SEAL</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">03</span>
             </button>
-            <button className={'jutsu-card fire-card ' + (activeJutsu === 'fireball' ? 'is-active' : '')} onClick={() => preview('fireball')}>
-              <div className="jutsu-art fireball-art"><span className="fire-core" /><i className="fire-tongue f1" /><i className="fire-tongue f2" /><i className="fire-tongue f3" /></div>
-              <div className="jutsu-copy"><div className="jutsu-overline">FIRE STYLE · KATON</div><h3>Fireball Jutsu</h3><p>Use the guided three-step seal sequence to breathe a flame stream from your mouth, followed by a swirling fireball. Two separated fists remain available as a quick-cast shortcut.</p><div className="jutsu-foot"><span className="difficulty medium">NEW TECHNIQUE</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">04</span>
-            </button>
-            <button className={'jutsu-card amaterasu-card ' + (activeJutsu === 'amaterasu' ? 'is-active' : '')} onClick={() => preview('amaterasu')}>
-              <div className="jutsu-art amaterasu-art"><span className="black-flame flame-a" /><span className="black-flame flame-b" /><span className="black-flame flame-c" /><span className="amaterasu-core" /></div>
-              <div className="jutsu-copy"><div className="jutsu-overline">MANGEKYŌ SHARINGAN</div><h3>Amaterasu</h3><p>Raise one closed fist to summon writhing black flames edged with violet chakra.</p><div className="jutsu-foot"><span className="difficulty advanced">ADVANCED</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">05</span>
-            </button>
-          </div>
-            <button className={'jutsu-card wind-card ' + (activeJutsu === 'wind-scythe' ? 'is-active' : '')} onClick={() => preview('wind-scythe')}>
-              <div className="jutsu-art wind-art"><span className="wind-ring wind-ring-a" /><span className="wind-ring wind-ring-b" /><i className="wind-blade blade-a" /><i className="wind-blade blade-b" /><Sparkles className="wind-star" size={19} /></div>
-              <div className="jutsu-copy"><div className="jutsu-overline">WIND STYLE · GALE</div><h3>Wind Fang</h3><p>Raise two fingers and sweep your hand to spin a bright green crescent slash with drifting wind particles.</p><div className="jutsu-foot"><span className="difficulty easy">NEW · HAND SIGN</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">06</span>
-            </button>
-          <div className="combo-card">
-            <div className="combo-header">
-              <div><span className="section-kicker">03 / TECHNIQUE SEQUENCES</span><h3>{sequenceType === 'fireball' ? 'Uchiha Fire · Three-step cast' : 'Chidori · Two-step cast'}</h3></div>
-              <span className="combo-count">{comboProgress}/{displayedSequenceSteps.length}</span>
-            </div>
-            <div className="combo-steps">
-              {displayedSequenceSteps.map((step, index) => (
-                <div className={'combo-step ' + (index < comboProgress ? 'complete' : index === comboProgress && comboMode ? 'current' : '')} key={step.title}>
-                  <span className="combo-step-index">{index < comboProgress ? <Check size={13} /> : String(index + 1).padStart(2, '0')}</span>
-                  <div><strong>{step.title}</strong><small>{step.instruction}</small></div>
-                </div>
-              ))}
-            </div>
-            <div className="combo-hold-meter" aria-label={`Pose hold progress ${Math.round(comboHoldProgress)} percent`}><span style={{ width: `${comboHoldProgress}%` }} /></div>
-            <p className="combo-feedback">{comboFeedback}</p>
-            <div className="combo-actions">
-              {comboMode ? <button className="secondary-button combo-cancel" onClick={() => toggleCombo()} disabled={cameraState === 'loading'}><RotateCcw size={15} /> Cancel sequence</button> : <>
-                <button className="primary-button combo-start" onClick={() => toggleCombo('chidori')} disabled={cameraState === 'loading'}><Hand size={15} /> Start Chidori</button>
-                <button className="secondary-button combo-fire-start" onClick={() => toggleCombo('fireball')} disabled={cameraState === 'loading'}><Flame size={15} /> Start Uchiha Fire</button>
-              </>}
-              <span>Hold each pose · 0.5 sec · 6.5 sec timeout</span>
-            </div>
-            <p className="combo-note">Chidori: bring both fists close, then thrust one forward. Uchiha Fire: form the hare sign, focus with both fists close, then separate them to release a mouth-origin flame stream and fireball.</p>
           </div>
           <div className="detection-card">
             <div className="detection-heading"><div><span className="section-kicker">LIVE READOUT</span><h3>Detection status</h3></div><Activity size={17} /></div>
             <div className="readout-row"><span>Current signal</span><strong className={activeJutsu !== 'none' ? 'signal-active' : ''}>{activeJutsu === 'none' ? 'No active jutsu' : INFO[activeJutsu].name}</strong></div>
-            <div className="readout-row"><span>Face / eye tracking</span><strong>{faceTrackingState === "ready" ? (sharinganActive ? "Sharingan active" : sharinganEnabled ? "Armed · blink to awaken" : "Disabled") : faceTrackingState === "loading" ? "Loading model…" : "Unavailable · face model failed"}</strong></div><div className="readout-row"><span>Hand landmarks</span><strong>{cameraState === 'ready' ? (handCount ? handCount + ' hand' + (handCount === 1 ? '' : 's') + ' tracked' : 'Searching…') : 'Not connected'}</strong></div>
+            <div className="readout-row"><span>Hand landmarks</span><strong>{cameraState === 'ready' ? (handCount ? handCount + ' hand' + (handCount === 1 ? '' : 's') + ' tracked' : 'Searching…') : 'Not connected'}</strong></div>
             <div className="readout-row"><span>Inference engine</span><strong>{trackingEngine === 'worker-gpu' ? 'Web Worker · GPU' : trackingEngine === 'worker-cpu' ? 'Web Worker · CPU' : trackingEngine === 'main-thread' ? 'Compatibility fallback' : trackingEngine === 'starting' ? 'Initializing…' : trackingEngine === 'unavailable' ? 'Unavailable' : 'Idle'}</strong></div>
             <div className="readout-row"><span>Gesture classifier</span><strong>{cameraState === 'ready' ? 'Running locally' : 'Awaiting camera'}</strong></div>
             <div className="readout-row"><span>Clone cutout</span><strong>{cloneStatus === 'ready' ? 'Segmentation ready' : cloneStatus === 'loading' ? 'Loading model…' : cloneStatus === 'error' ? 'Visual fallback' : 'Loads on first clone'}</strong></div>
@@ -1125,21 +1076,8 @@ export default function App() {
         </aside>
       </section>
       <section className="bottom-grid">
-        <div className="bottom-card mission-card"><div className="bottom-icon"><Lightbulb size={18} /></div><div><div className="section-kicker">YOUR FIRST MISSION</div><h3>Land your first clean cast</h3><p>Move into frame and hold a single open palm steady to cast Rasengan. For Shadow Clone, keep both open hands visible while the browser loads body segmentation. Try two open palms together to cast Raiton Pulse, two closed fists apart for Fireball, one closed fist for Amaterasu, or the two-finger hare seal for Wind Fang. Show your palm—not the back of your hand—for Rasengan. For Wind Fang, keep only index and middle fingers extended; hold a new sign briefly to switch techniques.</p></div><ChevronDown size={18} className="muted-chevron" /></div>
+        <div className="bottom-card mission-card"><div className="bottom-icon"><Lightbulb size={18} /></div><div><div className="section-kicker">YOUR FIRST MISSION</div><h3>Land your first clean cast</h3><p>First, land a clean Rasengan: face one open palm toward the camera and hold steady as the chakra sphere builds. Then summon your own shadow clones: make the classic crossed-finger seal with both hands, keep your upper body in frame, and allow a moment for the cutout model to load.</p></div><ChevronDown size={18} className="muted-chevron" /></div>
         <div className="bottom-card privacy-card"><div className="bottom-icon green-icon"><ShieldCheck size={18} /></div><div><div className="section-kicker">PRIVACY BY DESIGN</div><h3>Your video stays on your device</h3><p>Hand landmarks are processed in the browser. The model is fetched from a public CDN the first time; camera footage is not sent to a server by this prototype.</p></div><Check size={18} className="privacy-check" /></div>
-      </section>
-      <section className="shinobi-strip" aria-label="Featured shinobi">
-        <div className="shinobi-heading"><span className="section-kicker">HIDDEN LEAF ROSTER</span><span className="shinobi-note">CHAKRA · TEAM 7 · KONOHA</span></div>
-        <div className="shinobi-cards">
-          <a className="shinobi-card naruto-profile" href="https://naruto-official.com/en/anime/naruto2/list/01_923" target="_blank" rel="noreferrer">
-            <img src="https://wallpapers.com/images/hd/naruto-blue-sky-ready-for-battle-w7rfnmhxkzu441oh.jpg" alt="Naruto Uzumaki anime portrait" loading="lazy" />
-            <span className="shinobi-glow" /><div className="shinobi-copy"><small>THE NINE-TAILS JINCHURIKI</small><strong>Naruto Uzumaki</strong><span>RASENGAN · SHADOW CLONE</span></div><span className="shinobi-symbol">うずまき</span>
-          </a>
-          <a className="shinobi-card kakashi-profile" href="https://naruto-official.com/en/news/01_1903" target="_blank" rel="noreferrer">
-            <img src="https://wallpapers.com/images/hd/sensei-kakashi-hatake-png-jja-oqkhqqgluqkoq0q6.png" alt="Kakashi Hatake anime portrait" loading="lazy" />
-            <span className="shinobi-glow" /><div className="shinobi-copy"><small>THE COPY NINJA</small><strong>Kakashi Hatake</strong><span>CHIDORI · LIGHTNING BLADE</span></div><span className="shinobi-symbol">写輪眼</span>
-          </a>
-        </div>
       </section>
       <footer className="footer"><div><span className="footer-mark">木ノ葉</span><span> KONOHA JUTSU LAB</span><span className="footer-dim"> · Early access prototype</span></div><div><span className="footer-dim">Built with MediaPipe · Three.js · WebGL</span><a href="https://github.com/FavorPan/naruto" target="_blank" rel="noreferrer">Inspired by open-source experiments <Expand size={12} /></a></div></footer>
     </main>
