@@ -9,6 +9,8 @@ import ThreeEffects, { type ThreeTrackingState } from './ThreeEffects';
 type Jutsu = 'none' | 'rasengan' | 'chidori' | 'clone' | 'lightning-burst' | 'fireball' | 'amaterasu' | 'wind-scythe';
 type Gesture = 'none' | 'open' | 'fist' | 'two-open' | 'two-fist' | 'clone-seal' | 'ox-seal' | 'hare-seal' | 'monkey-seal';
 type Point = { x: number; y: number; z: number };
+type OneEuroAxis = { raw: number; filtered: number; derivative: number; at: number };
+type OneEuroPoint = { x: OneEuroAxis; y: OneEuroAxis; z: OneEuroAxis };
 type NinjaTool = 'none' | 'shuriken' | 'kunai';
 type SequenceKind = 'chidori' | 'fireball';
 type ThrownTool = { kind: Exclude<NinjaTool, 'none'>; x: number; y: number; vx: number; vy: number; born: number; spin: number };
@@ -116,6 +118,22 @@ function fingerExtended(points: Point[], tip: number, pip: number, mcp: number) 
   const cosine = Math.max(-1, Math.min(1, (ax * bx + ay * by + az * bz) / (la * lb)));
   const angle = Math.acos(cosine) * 180 / Math.PI;
   return angle > 148 && dist(points[tip], points[mcp]) > dist(points[pip], points[mcp]) * 1.08;
+}
+function filterOneEuro(value: number, previous: OneEuroAxis | undefined, now: number): { value: number; state: OneEuroAxis } {
+  if (!previous) return { value, state: { raw: value, filtered: value, derivative: 0, at: now } };
+  const dt = Math.max(1 / 120, Math.min(0.12, (now - previous.at) / 1000));
+  const alpha = (cutoff: number) => {
+    const tau = 1 / (2 * Math.PI * cutoff);
+    return 1 / (1 + tau / dt);
+  };
+  const rawDerivative = (value - previous.raw) / dt;
+  const derivativeAlpha = alpha(1.0);
+  const derivative = previous.derivative + derivativeAlpha * (rawDerivative - previous.derivative);
+  // Normalized video coordinates need a larger beta than pixel-space examples.
+  const cutoff = 1.6 + 4.5 * Math.abs(derivative);
+  const valueAlpha = alpha(cutoff);
+  const filtered = previous.filtered + valueAlpha * (value - previous.filtered);
+  return { value: filtered, state: { raw: value, filtered, derivative, at: now } };
 }
 function classify(points: Point[]): Gesture {
   if (points.length < 21) return 'none';
@@ -367,6 +385,7 @@ export default function App() {
   const faceTrackerRef = useRef<FaceLandmarker | null>(null);
   const sharinganRef = useRef(false);
   const smoothedLandmarksRef = useRef<Point[][]>([]);
+  const oneEuroFiltersRef = useRef<OneEuroPoint[][]>([]);
   const smoothedHandednessRef = useRef<string[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -443,7 +462,7 @@ export default function App() {
     faceTrackerRef.current?.close(); faceTrackerRef.current = null;
     segmenterRef.current?.close(); segmenterRef.current = null;
     cloneSpriteRef.current = null; cloneSpriteReadyRef.current = false;
-    smoothedLandmarksRef.current = []; smoothedHandednessRef.current = [];
+    smoothedLandmarksRef.current = []; smoothedHandednessRef.current = []; oneEuroFiltersRef.current = [];
     sharinganRef.current = false; setSharinganActive(false); setFaceTrackingState('loading');
     setCloneStatus('idle');
     comboModeRef.current = false; setComboMode(false); comboCandidateRef.current = 'none';
@@ -537,26 +556,27 @@ export default function App() {
           if (now - fpsAt >= 1000) { setFps(Math.round(frames * 1000 / (now - fpsAt))); fpsAt = now; frames = 0; }
           if (faceTrackerRef.current && now - lastFaceDetectAt > 66) { lastFaceDetectAt = now; try { const fr = faceTrackerRef.current.detectForVideo(v, now); latestFace = fr; const cats = fr.faceBlendshapes?.[0]?.categories ?? []; const left = cats.find((c) => c.categoryName === 'eyeBlinkLeft')?.score ?? 0, right = cats.find((c) => c.categoryName === 'eyeBlinkRight')?.score ?? 0, closed = left > .48 && right > .48; if (closed && !eyesClosed) eyeClosedAt = now; if (!closed && eyesClosed) { const duration = now - eyeClosedAt; if (duration >= 55 && duration <= 720 && now - lastBlinkAt > 950) { lastBlinkAt = now; sharinganRef.current = !sharinganRef.current; setSharinganActive(sharinganRef.current); setGestureLabel(sharinganRef.current ? 'Sharingan awakened · blink again to seal the eye' : 'Sharingan sealed · blink to awaken'); } } eyesClosed = closed; } catch { faceTrackerRef.current?.close(); faceTrackerRef.current = null; setFaceTrackingState('unavailable'); } }
           const rawHands = (latest.landmarks ?? []) as Point[][];
-          const previousHands = smoothedLandmarksRef.current;
           const oldHandedness = smoothedHandednessRef.current;
+          const previousFilters = oneEuroFiltersRef.current;
           const currentHandedness = latest.handedness?.map((entry, index) => entry[0]?.categoryName ?? `Unknown-${index}`) ?? rawHands.map((_, index) => `Unknown-${index}`);
-          // Match left/right hands by handedness to prevent sudden smoothing jumps.
+          // Match filters to handedness so left/right order changes do not jump the overlay.
+          const nextFilters: OneEuroPoint[][] = [];
           smoothedLandmarksRef.current = rawHands.map((hand, handIndex) => {
             const priorIndex = oldHandedness.indexOf(currentHandedness[handIndex]);
-            const previous = previousHands[priorIndex >= 0 ? priorIndex : handIndex];
-            if (!previous || previous.length !== hand.length) return hand.map((point) => ({ ...point }));
-            return hand.map((point, pointIndex) => {
-              const prior = previous[pointIndex];
-              const speed = Math.hypot(point.x - prior.x, point.y - prior.y);
-              // Smooth slow jitter, but let fast gestures respond quickly enough for throwing.
-              const alpha = Math.min(0.94, 0.48 + speed * 8);
-              return {
-                x: prior.x + (point.x - prior.x) * alpha,
-                y: prior.y + (point.y - prior.y) * alpha,
-                z: prior.z + (point.z - prior.z) * alpha,
-              };
+            const priorFilters = previousFilters[priorIndex >= 0 ? priorIndex : handIndex];
+            const currentFilters: OneEuroPoint[] = [];
+            const filteredHand = hand.map((point, pointIndex) => {
+              const previous = priorFilters?.[pointIndex];
+              const x = filterOneEuro(point.x, previous?.x, now);
+              const y = filterOneEuro(point.y, previous?.y, now);
+              const z = filterOneEuro(point.z, previous?.z, now);
+              currentFilters.push({ x: x.state, y: y.state, z: z.state });
+              return { x: x.value, y: y.value, z: z.value };
             });
+            nextFilters.push(currentFilters);
+            return filteredHand;
           });
+          oneEuroFiltersRef.current = nextFilters;
           smoothedHandednessRef.current = currentHandedness;
           const detected = readJutsu(latest), count = rawHands.length;
           setHandCount(count);
