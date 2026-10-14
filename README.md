@@ -55,6 +55,7 @@ The production build downloads and checksum-verifies the hand model, attempts to
 ## Performance and gesture updates
 
 - Webcam capture targets 960×540 at 30 FPS to reduce inference and compositing cost while retaining enough detail for hand-pose tracking.
+- Hand and face inference run in a dedicated Web Worker when supported, transferring camera frames as `ImageBitmap` objects. UI animation can continue while inference runs; if worker initialization/runtime fails, the app switches back to the existing main-thread tracker. The live readout shows which engine/delegate is active.
 - Hand landmarks are filtered with a One-Euro low-pass filter: smoothing strengthens while still, and the cutoff adapts upward during fast motion to reduce perceived lag.
 - Face landmarks update at about 15 FPS; hand tracking remains synchronized to new camera frames. The HUD FPS reports processed camera frames rather than display refresh callbacks.
 - Stable technique switching uses a short pose debounce instead of locking the first effect until hands leave the frame.

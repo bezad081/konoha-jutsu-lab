@@ -135,7 +135,7 @@ async function recoverGpuFailure(kind: 'hand' | 'face') {
         minTrackingConfidence: 0.5,
       });
       handDelegate = 'CPU';
-      scope.postMessage({ type: 'face-status', available: !!faceTracker });
+      scope.postMessage({ type: 'tracking-error', message: 'GPU inference failed; hand tracking switched to CPU.' });
       return true;
     }
     if (kind === 'face' && faceDelegate === 'GPU' && faceModelPath) {

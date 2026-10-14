@@ -355,6 +355,7 @@ export default function App() {
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [fps, setFps] = useState(0);
+  const [trackingEngine, setTrackingEngine] = useState<'idle'|'starting'|'worker-gpu'|'worker-cpu'|'main-thread'|'unavailable'>('idle');
   const [cloneStatus, setCloneStatus] = useState<'idle'|'loading'|'ready'|'error'>('idle');
   const [faceTrackingState, setFaceTrackingState] = useState<'loading'|'ready'|'unavailable'>('loading');
   const [sharinganActive, setSharinganActive] = useState(false);
@@ -409,7 +410,7 @@ export default function App() {
     segmenterRef.current?.close(); segmenterRef.current = null;
     cloneSpriteRef.current = null; cloneSpriteReadyRef.current = false;
     smoothedLandmarksRef.current = []; smoothedHandednessRef.current = []; oneEuroFiltersRef.current = [];
-    sharinganRef.current = false; setSharinganActive(false); setFaceTrackingState('loading');
+    sharinganRef.current = false; setSharinganActive(false); setFaceTrackingState('loading'); setTrackingEngine('idle');
     setCloneStatus('idle');
     comboModeRef.current = false; setComboMode(false); comboCandidateRef.current = 'none';
     castUntilRef.current = 0; cloneVisualUntilRef.current = 0;
@@ -426,7 +427,7 @@ export default function App() {
       setError('This browser does not expose camera access. Use a current browser on localhost or HTTPS.');
       return;
     }
-    stopCamera(); setCameraState('loading'); setError(''); setGestureLabel('Loading hand-tracking model…');
+    stopCamera(); setCameraState('loading'); setError(''); setGestureLabel('Loading hand-tracking model…'); setTrackingEngine('starting');
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false, video: { facingMode: 'user', width: { ideal: 960 }, height: { ideal: 540 }, frameRate: { ideal: 30, max: 30 } }
@@ -451,6 +452,7 @@ export default function App() {
       let latest: HandLandmarkerResult | null = null;
       let latestFace: FaceLandmarkerResult | null = null;
       let earlyFaceStatus: boolean | null = null;
+      let workerDelegate = 'GPU';
 
       if (typeof Worker !== 'undefined' && typeof createImageBitmap === 'function') {
         try {
@@ -461,6 +463,7 @@ export default function App() {
             activeWorker.onmessage = (event: MessageEvent<VisionWorkerOutput>) => {
               const message = event.data;
               if (message.type === 'ready') {
+                workerDelegate = message.delegate;
                 window.clearTimeout(timer);
                 resolve();
               } else if (message.type === 'init-error') {
@@ -480,6 +483,7 @@ export default function App() {
           });
           visionWorkerRef.current = activeWorker;
           workerMode = true;
+          setTrackingEngine(workerDelegate === 'GPU' ? 'worker-gpu' : 'worker-cpu');
           setFaceTrackingState(earlyFaceStatus === null ? 'loading' : earlyFaceStatus ? 'ready' : 'unavailable');
           activeWorker.onmessage = (event: MessageEvent<VisionWorkerOutput>) => {
             const message = event.data;
@@ -507,11 +511,13 @@ export default function App() {
             visionWorkerRef.current = null;
             activeWorker.terminate();
             workerMode = false;
+            setTrackingEngine('starting');
             setGestureLabel('Background worker stopped · starting compatibility tracking');
             void createHandTracker().then((initialized) => {
               if (streamRef.current !== cameraStream) { initialized.tracker.close(); return; }
               trackerRef.current = initialized.tracker;
               vision = initialized.vision;
+              setTrackingEngine('main-thread');
               void createFaceTracker(initialized.vision).then((faceTracker) => {
                 if (streamRef.current !== cameraStream) { faceTracker.close(); return; }
                 faceTrackerRef.current = faceTracker; setFaceTrackingState('ready');
@@ -519,7 +525,7 @@ export default function App() {
               setGestureLabel('Compatibility tracking active · show a hand sign to cast');
             }).catch((cause) => {
               setCameraState('camera-only');
-              setFaceTrackingState('unavailable');
+              setFaceTrackingState('unavailable'); setTrackingEngine('unavailable');
               setError('Background tracking failed and the compatibility tracker could not start: ' + describeFailure(cause));
             });
           };
@@ -529,6 +535,7 @@ export default function App() {
           visionWorkerRef.current = null;
           workerMode = false;
           setGestureLabel('Background tracking unavailable · using compatible fallback');
+          setTrackingEngine('starting');
           setFaceTrackingState('loading');
         }
       }
@@ -537,6 +544,7 @@ export default function App() {
         const initialized = await createHandTracker();
         trackerRef.current = initialized.tracker;
         vision = initialized.vision;
+        setTrackingEngine('main-thread');
         setFaceTrackingState('loading');
         void createFaceTracker(initialized.vision).then((faceTracker) => {
           if (streamRef.current !== cameraStream) { faceTracker.close(); return; }
@@ -875,6 +883,7 @@ export default function App() {
       if (message.includes('Hand tracking could not initialize')) {
         // Keep the camera preview available for diagnostics; a model download failure should not turn the camera itself off.
         setCameraState('camera-only');
+        setTrackingEngine('unavailable');
         setHandCount(0);
         setGestureLabel('Camera is active, but hand tracking did not initialize.');
         setError('The webcam is working, but hand tracking could not start. This build now loads its model and WASM from the same site first. Reload once; if this remains, share the diagnostic details below. Details: ' + message);
@@ -1065,6 +1074,7 @@ export default function App() {
             <div className="detection-heading"><div><span className="section-kicker">LIVE READOUT</span><h3>Detection status</h3></div><Activity size={17} /></div>
             <div className="readout-row"><span>Current signal</span><strong className={activeJutsu !== 'none' ? 'signal-active' : ''}>{activeJutsu === 'none' ? 'No active jutsu' : INFO[activeJutsu].name}</strong></div>
             <div className="readout-row"><span>Face / eye tracking</span><strong>{faceTrackingState === "ready" ? (sharinganActive ? "Sharingan active" : "Ready · blink to awaken") : faceTrackingState === "loading" ? "Loading model…" : "Unavailable · manual toggle"}</strong></div><div className="readout-row"><span>Hand landmarks</span><strong>{cameraState === 'ready' ? (handCount ? handCount + ' hand' + (handCount === 1 ? '' : 's') + ' tracked' : 'Searching…') : 'Not connected'}</strong></div>
+            <div className="readout-row"><span>Inference engine</span><strong>{trackingEngine === 'worker-gpu' ? 'Web Worker · GPU' : trackingEngine === 'worker-cpu' ? 'Web Worker · CPU' : trackingEngine === 'main-thread' ? 'Compatibility fallback' : trackingEngine === 'starting' ? 'Initializing…' : trackingEngine === 'unavailable' ? 'Unavailable' : 'Idle'}</strong></div>
             <div className="readout-row"><span>Gesture classifier</span><strong>{cameraState === 'ready' ? 'Running locally' : 'Awaiting camera'}</strong></div>
             <div className="readout-row"><span>Clone cutout</span><strong>{cloneStatus === 'ready' ? 'Segmentation ready' : cloneStatus === 'loading' ? 'Loading model…' : cloneStatus === 'error' ? 'Visual fallback' : 'Loads on first clone'}</strong></div>
             <div className="signal-track"><span style={{ width: cameraState === 'ready' ? (handCount ? '86%' : '32%') : '5%' }} /></div>
