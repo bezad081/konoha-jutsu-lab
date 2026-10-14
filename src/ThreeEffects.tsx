@@ -68,6 +68,8 @@ export default function ThreeEffects({trackingRef,activeJutsu,sharinganActive,ch
  eyes.forEach((e,i)=>{const v=face.length>=478?face[i===0?468:473]:null;e.visible=p.sharinganActive&&!!v;if(v){e.position.copy(xy(v,w,h));e.position.z=40;e.scale.setScalar(scale*.78);e.rotation.z=t*.22;}});
  const recent=(s?.trail??[]).slice(-64),at=trGeo.getAttribute('position') as T.BufferAttribute,arr=at.array as Float32Array;recent.forEach((v,i)=>{const z=xy(v,w,h);arr[i*3]=z.x;arr[i*3+1]=z.y;arr[i*3+2]=8;});at.needsUpdate=true;trGeo.setDrawRange(0,recent.length);trMat.color.setHex(p.activeJutsu==='fireball'?0xff8731:p.activeJutsu==='amaterasu'?0x9a6aff:p.activeJutsu==='wind-scythe'?0x68ffc0:p.activeJutsu==='chidori'||p.activeJutsu==='lightning-burst'?0x74e5ff:0x50bfff);trMat.opacity=p.activeJutsu==='none'?0:.66;
  const renderStarted=performance.now();renderer.render(scene,camera);const cost=performance.now()-renderStarted;if(cost>23){slowFrames++;fastFrames=0;}else if(cost<11){fastFrames++;slowFrames=0;}else{slowFrames=0;fastFrames=0;}if(slowFrames>=4&&renderRatio>.75){renderRatio=.75;renderer.setPixelRatio(renderRatio);resize();slowFrames=0;}else if(fastFrames>=180&&renderRatio<Math.min(devicePixelRatio||1,1)){renderRatio=Math.min(devicePixelRatio||1,1);renderer.setPixelRatio(renderRatio);resize();fastFrames=0;}
+ };
+ raf=requestAnimationFrame(draw);
  return()=>{cancelAnimationFrame(raf);ro?.disconnect();scene.traverse(o=>{const m=o as T.Mesh;if(m.geometry)m.geometry.dispose();const z=m.material;if(z){if(Array.isArray(z))z.forEach(a=>a.dispose());else z.dispose();}});renderer.dispose();renderer.domElement.remove();};
  },[trackingRef]);
  return <div ref={host} className="three-effects-layer" aria-hidden="true"/>;

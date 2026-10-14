@@ -533,6 +533,8 @@ export default function App() {
         const now = performance.now();
         if (v.currentTime !== lastVideoTime) {
           lastVideoTime = v.currentTime; latest = model.detectForVideo(v, now);
+          frames++;
+          if (now - fpsAt >= 1000) { setFps(Math.round(frames * 1000 / (now - fpsAt))); fpsAt = now; frames = 0; }
           if (faceTrackerRef.current && now - lastFaceDetectAt > 66) { lastFaceDetectAt = now; try { const fr = faceTrackerRef.current.detectForVideo(v, now); latestFace = fr; const cats = fr.faceBlendshapes?.[0]?.categories ?? []; const left = cats.find((c) => c.categoryName === 'eyeBlinkLeft')?.score ?? 0, right = cats.find((c) => c.categoryName === 'eyeBlinkRight')?.score ?? 0, closed = left > .48 && right > .48; if (closed && !eyesClosed) eyeClosedAt = now; if (!closed && eyesClosed) { const duration = now - eyeClosedAt; if (duration >= 55 && duration <= 720 && now - lastBlinkAt > 950) { lastBlinkAt = now; sharinganRef.current = !sharinganRef.current; setSharinganActive(sharinganRef.current); setGestureLabel(sharinganRef.current ? 'Sharingan awakened · blink again to seal the eye' : 'Sharingan sealed · blink to awaken'); } } eyesClosed = closed; } catch { faceTrackerRef.current?.close(); faceTrackerRef.current = null; setFaceTrackingState('unavailable'); } }
           const rawHands = (latest.landmarks ?? []) as Point[][];
           const previousHands = smoothedLandmarksRef.current;
@@ -698,9 +700,7 @@ export default function App() {
             lastWrist = { ...first[0] }; lastWristAt = now;
           } else { lastWrist = null; lastWristAt = 0; }
         }
-        frames++;
-          if (now - fpsAt >= 1000) { setFps(Math.round(frames * 1000 / (now - fpsAt))); fpsAt = now; frames = 0; }
-          if (activeRef.current === 'clone') {
+        if (activeRef.current === 'clone') {
           if (!segmenterRef.current && !segmenterLoading && !segmenterFailed) void loadSegmenter();
           if (segmenterRef.current && v.currentTime !== lastSegmentationVideoTime && now - lastSegmentationAt > 125) {
             lastSegmentationVideoTime = v.currentTime;
@@ -882,7 +882,7 @@ export default function App() {
             <div className="video-wrap">
               <video ref={videoRef} className="camera-video" autoPlay playsInline muted aria-label="Mirrored webcam preview" />
               <canvas ref={canvasRef} className="effects-canvas" />
-              {(activeJutsu !== 'none' || sharinganActive || activeTool !== 'none' || thrownToolsRef.current.length > 0) && <ThreeEffects trackingRef={threeTrackingRef} activeJutsu={activeJutsu} sharinganActive={sharinganActive} chargeLevel={chargeLevel} />}
+              {(activeJutsu !== 'none' || sharinganActive || (cameraState === 'ready' && (activeTool !== 'none' || thrownToolsRef.current.length > 0))) && <ThreeEffects trackingRef={threeTrackingRef} activeJutsu={activeJutsu} sharinganActive={sharinganActive} chargeLevel={chargeLevel} />}
               {cameraState !== 'ready' && cameraState !== 'camera-only' && <div className="camera-placeholder">
                 {cameraState === 'loading' ? <LoaderCircle className="spin" size={38} /> : cameraState === 'error' ? <Camera size={35} /> : <div className="camera-orb"><Camera size={28} /></div>}
                 <strong>{cameraState === 'loading' ? 'Warming up the chakra flow' : cameraState === 'error' ? (error.includes('hand tracking') ? 'Hand tracking unavailable' : 'Camera not ready') : 'Your training space awaits'}</strong>
