@@ -358,6 +358,7 @@ export default function App() {
   }, []);
 
   const stopCamera = useCallback(() => {
+    previewUntilRef.current = 0;
     if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -740,6 +741,7 @@ export default function App() {
     if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current);
     switchJutsu(jutsu);
     const previewDuration = jutsu === 'clone' ? 6500 : 2200;
+    previewUntilRef.current = performance.now() + previewDuration;
     if (jutsu === 'clone') {
       castUntilRef.current = performance.now() + previewDuration;
       cloneVisualUntilRef.current = castUntilRef.current;
@@ -748,6 +750,7 @@ export default function App() {
       ? 'Shadow Clone preview · allowing time for the cutout model to load'
       : 'Preview mode · ' + INFO[jutsu].name);
     timeoutRef.current = window.setTimeout(() => {
+      previewUntilRef.current = 0;
       if (activeRef.current === jutsu) switchJutsu('none');
       setGestureLabel(cameraState === 'ready' ? 'Ready · form Rasengan or Shadow Clone' : 'Preview complete · start camera for tracking');
     }, previewDuration);
@@ -794,7 +797,7 @@ export default function App() {
             <div className="video-wrap">
               <video ref={videoRef} className="camera-video" autoPlay playsInline muted aria-label="Mirrored webcam preview" />
               <canvas ref={canvasRef} className="effects-canvas" />
-              {activeJutsu !== 'none' && <ThreeEffects trackingRef={threeTrackingRef} activeJutsu={activeJutsu} sharinganActive={false} chargeLevel={chargeLevel} />}
+              {(cameraState === 'ready' || activeJutsu !== 'none') && <ThreeEffects trackingRef={threeTrackingRef} activeJutsu={activeJutsu} chargeLevel={chargeLevel} />}
               {cameraState !== 'ready' && cameraState !== 'camera-only' && <div className="camera-placeholder">
                 {cameraState === 'loading' ? <LoaderCircle className="spin" size={38} /> : cameraState === 'error' ? <Camera size={35} /> : <div className="camera-orb"><Camera size={28} /></div>}
                 <strong>{cameraState === 'loading' ? 'Warming up the chakra flow' : cameraState === 'error' ? (error.includes('hand tracking') ? 'Hand tracking unavailable' : 'Camera not ready') : 'Your training space awaits'}</strong>
