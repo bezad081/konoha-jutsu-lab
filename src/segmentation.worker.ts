@@ -7,6 +7,7 @@ type Outgoing =
   | { type: 'ready'; delegate: 'GPU' | 'CPU'; modelUrl: string }
   | { type: 'cutout'; cutout: ImageBitmap; inferenceMs: number }
   | { type: 'skipped' }
+  | { type: 'frame-error'; message: string }
   | { type: 'error'; message: string };
 type WorkerScope = {
   onmessage: ((event: MessageEvent<Incoming>) => void) | null;
@@ -23,6 +24,10 @@ const describe = (cause: unknown) => cause instanceof Error ? cause.message : St
 const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(high, value));
 
 async function initialize(message: InitMessage) {
+  if (typeof OffscreenCanvas === 'undefined') {
+    scope.postMessage({ type: 'error', message: 'This browser cannot create transparent person cutouts in a worker.' });
+    return;
+  }
   const failures: string[] = [];
   let vision: Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>> | null = null;
   for (const wasmUrl of message.wasmUrls) {
@@ -216,7 +221,7 @@ function processFrame(message: FrameMessage) {
         closeMasks(result);
         bitmap.close();
         busy = false;
-        scope.postMessage({ type: 'error', message: describe(cause) });
+        scope.postMessage({ type: 'frame-error', message: describe(cause) });
         return;
       }
       closeMasks(result);
@@ -228,7 +233,7 @@ function processFrame(message: FrameMessage) {
           scope.postMessage({ type: 'cutout', cutout, inferenceMs: performance.now() - startedAt }, [cutout]);
         })
         .catch((cause) => {
-          scope.postMessage({ type: 'error', message: describe(cause) });
+          scope.postMessage({ type: 'frame-error', message: describe(cause) });
         })
         .finally(() => {
           bitmap.close();
@@ -238,7 +243,7 @@ function processFrame(message: FrameMessage) {
   } catch (cause) {
     bitmap.close();
     busy = false;
-    scope.postMessage({ type: 'error', message: 'Segmentation frame failed: ' + describe(cause) });
+    scope.postMessage({ type: 'frame-error', message: 'Segmentation frame failed: ' + describe(cause) });
   }
 }
 
