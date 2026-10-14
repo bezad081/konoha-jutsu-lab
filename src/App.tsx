@@ -65,7 +65,7 @@ async function createHandTracker() {
               minHandPresenceConfidence: 0.5,
               minTrackingConfidence: 0.5,
             });
-            return { tracker, vision };
+            return { tracker };
           } catch (cause) {
             failures.push(`${delegate} / ${modelAssetPath}: ${describeFailure(cause)}`);
           }
@@ -96,8 +96,8 @@ function fingerExtended(points: Point[], tip: number, pip: number, mcp: number) 
   if (points.length < 21) return false;
   const dip = points[tip - 1];
   const base = points[mcp], joint = points[pip];
-  // Prefer the PIP bend angle over wrist-distance alone. This better separates a
-  // two-finger Wind Fang seal from an open-palm Rasengan when the hand is rotated.
+  // Prefer the PIP bend angle to wrist-distance alone, which is more stable
+  // when the palm is rotated toward or away from the camera.
   const ax = base.x - joint.x, ay = base.y - joint.y, az = (base.z - joint.z) * 0.35;
   const bx = dip.x - joint.x, by = dip.y - joint.y, bz = (dip.z - joint.z) * 0.35;
   const la = Math.hypot(ax, ay, az), lb = Math.hypot(bx, by, bz);
@@ -269,8 +269,14 @@ function updateCloneSprite(
   mask: { width: number; height: number; scores: Float32Array },
   sprite: HTMLCanvasElement,
 ) {
-  const width = mask.width, height = mask.height;
-  if (!width || !height) return;
+  if (!mask.width || !mask.height) return;
+  // Keep the cutout texture sharper than MediaPipe's low-resolution confidence
+  // mask, while capping work to a camera-sized canvas instead of full HD.
+  const sourceWidth = video.videoWidth || mask.width;
+  const sourceHeight = video.videoHeight || mask.height;
+  const scale = Math.min(1, 640 / sourceWidth);
+  const width = Math.max(1, Math.round(sourceWidth * scale));
+  const height = Math.max(1, Math.round(sourceHeight * scale));
   if (sprite.width !== width || sprite.height !== height) {
     sprite.width = width;
     sprite.height = height;
@@ -281,11 +287,29 @@ function updateCloneSprite(
   ctx.drawImage(video, 0, 0, width, height);
   const pixels = ctx.getImageData(0, 0, width, height);
   const scores = mask.scores;
-  const count = Math.min(scores.length, width * height);
-  for (let i = 0; i < count; i++) {
-    const confidence = Math.max(0, Math.min(1, (scores[i] - 0.18) / 0.58));
-    const soft = confidence * confidence * (3 - 2 * confidence);
-    pixels.data[i * 4 + 3] = Math.round(pixels.data[i * 4 + 3] * soft);
+  const maskWidth = mask.width;
+  const maskHeight = mask.height;
+  const count = Math.min(scores.length, maskWidth * maskHeight);
+  if (count < maskWidth * maskHeight) return;
+
+  for (let y = 0; y < height; y++) {
+    const sourceY = (y + 0.5) * maskHeight / height - 0.5;
+    const y0 = Math.max(0, Math.min(maskHeight - 1, Math.floor(sourceY)));
+    const y1 = Math.min(maskHeight - 1, y0 + 1);
+    const fy = Math.max(0, Math.min(1, sourceY - Math.floor(sourceY)));
+    for (let x = 0; x < width; x++) {
+      const sourceX = (x + 0.5) * maskWidth / width - 0.5;
+      const x0 = Math.max(0, Math.min(maskWidth - 1, Math.floor(sourceX)));
+      const x1 = Math.min(maskWidth - 1, x0 + 1);
+      const fx = Math.max(0, Math.min(1, sourceX - Math.floor(sourceX)));
+      const top = scores[y0 * maskWidth + x0] * (1 - fx) + scores[y0 * maskWidth + x1] * fx;
+      const bottom = scores[y1 * maskWidth + x0] * (1 - fx) + scores[y1 * maskWidth + x1] * fx;
+      const score = top * (1 - fy) + bottom * fy;
+      const confidence = Math.max(0, Math.min(1, (score - 0.16) / 0.62));
+      const soft = confidence * confidence * (3 - 2 * confidence);
+      const alphaIndex = (y * width + x) * 4 + 3;
+      pixels.data[alphaIndex] = Math.round(pixels.data[alphaIndex] * soft);
+    }
   }
   ctx.putImageData(pixels, 0, 0);
   sprite.dataset.revision = String((Number(sprite.dataset.revision) || 0) + 1);
@@ -304,7 +328,7 @@ export default function App() {
   const smoothedLandmarksRef = useRef<Point[][]>([]);
   const oneEuroFiltersRef = useRef<OneEuroPoint[][]>([]);
   const smoothedHandednessRef = useRef<string[]>([]);
-  // A short rolling vote rejects one-frame gesture flicker without delaying combo-step recognition.
+  // A short rolling vote rejects one-frame gesture flicker between the two core signs.
   const gestureVoteHistoryRef = useRef<Array<{ jutsu: Jutsu; gesture: Gesture; at: number }>>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -484,7 +508,7 @@ export default function App() {
         setTrackingEngine('main-thread');
       }
       setCameraState('ready');
-      setGestureLabel(workerMode ? 'Tracking ready · open palm for Rasengan or cross-finger seal for Shadow Clone' : 'Tracking ready · open palm for Rasengan or cross-finger seal for Shadow Clone');
+      setGestureLabel('Tracking ready · open palm for Rasengan or cross-finger seal for Shadow Clone');
       let segmenterLoading = false, segmenterFailed = false, segmentationBusy = false;
       let lastSegmentationAt = 0, lastSegmentationVideoTime = -1;
       const cloneSprite = document.createElement('canvas');
@@ -789,11 +813,12 @@ export default function App() {
           <div ref={stageRef} className={'camera-stage ' + (activeInfo ? 'effect-' + activeInfo.color : '')}>
             <div className="stage-grid" /><div className="stage-corner corner-tl" /><div className="stage-corner corner-tr" /><div className="stage-corner corner-bl" /><div className="stage-corner corner-br" />
             <div className="stage-topline"><span><Activity size={13} /> INPUT FEED</span><span>{cameraState === 'ready' ? (fps || '—') + ' FPS' : '1280 × 720 TARGET'}</span></div>
-            {activeJutsu !== 'none' && <div className="chakra-charge-hud" aria-live="polite">
+            {activeJutsu === 'rasengan' && <div className="chakra-charge-hud" aria-live="polite">
               <div className="charge-hud-top"><span><Zap size={12} /> CHAKRA OUTPUT</span><strong>{chargeLevel}%</strong></div>
               <div className="charge-hud-track"><span style={{ width: chargeLevel + '%' }} /></div>
               <small>{chargeLevel < 35 ? 'GATHERING ENERGY' : chargeLevel < 78 ? 'CHAKRA RESONANCE' : 'MAXIMUM OUTPUT'}</small>
             </div>}
+            {activeJutsu === 'clone' && <div className="clone-summon-hud" aria-live="polite"><Sparkles size={13} /><span>SHADOW CLONE</span><small>CHAKRA SPLIT IN PROGRESS</small></div>}
             <div className="video-wrap">
               <video ref={videoRef} className="camera-video" autoPlay playsInline muted aria-label="Mirrored webcam preview" />
               <canvas ref={canvasRef} className="effects-canvas" />
