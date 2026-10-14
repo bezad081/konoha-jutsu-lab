@@ -117,7 +117,7 @@ function filterOneEuro(value: number, previous: OneEuroAxis | undefined, now: nu
   const derivativeAlpha = alpha(1.0);
   const derivative = previous.derivative + derivativeAlpha * (rawDerivative - previous.derivative);
   // Normalized video coordinates need a larger beta than pixel-space examples.
-  const cutoff = 1.6 + 4.5 * Math.abs(derivative);
+  const cutoff = 3.2 + 11.0 * Math.abs(derivative);
   const valueAlpha = alpha(cutoff);
   const filtered = previous.filtered + valueAlpha * (value - previous.filtered);
   return { value: filtered, state: { raw: value, filtered, derivative, at: now } };
@@ -265,18 +265,20 @@ function drawLandmarks(ctx: CanvasRenderingContext2D, hands: Point[][], w: numbe
   ctx.restore();
 }
 function updateCloneSprite(
-  video: HTMLVideoElement,
+  source: CanvasImageSource,
+  sourceWidth: number,
+  sourceHeight: number,
   mask: { width: number; height: number; scores: Float32Array },
   sprite: HTMLCanvasElement,
 ) {
   if (!mask.width || !mask.height) return;
-  // Keep the cutout texture sharper than MediaPipe's low-resolution confidence
-  // mask, while capping work to a camera-sized canvas instead of full HD.
-  const sourceWidth = video.videoWidth || mask.width;
-  const sourceHeight = video.videoHeight || mask.height;
-  const scale = Math.min(1, 640 / sourceWidth);
+  // Use the exact frame that produced this mask; a newer video frame creates
+  // edge halos when a person moves while segmentation is still running.
+  const inputWidth = sourceWidth || mask.width;
+  const inputHeight = sourceHeight || mask.height;
+  const scale = Math.min(1, 640 / inputWidth);
   const width = Math.max(1, Math.round(sourceWidth * scale));
-  const height = Math.max(1, Math.round(sourceHeight * scale));
+  const height = Math.max(1, Math.round(inputHeight * scale));
   if (sprite.width !== width || sprite.height !== height) {
     sprite.width = width;
     sprite.height = height;
@@ -284,7 +286,7 @@ function updateCloneSprite(
   const ctx = sprite.getContext('2d', { willReadFrequently: true });
   if (!ctx) return;
   ctx.clearRect(0, 0, width, height);
-  ctx.drawImage(video, 0, 0, width, height);
+  ctx.drawImage(source, 0, 0, width, height);
   const pixels = ctx.getImageData(0, 0, width, height);
   const scores = mask.scores;
   const maskWidth = mask.width;
@@ -319,13 +321,15 @@ export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const threeTrackingRef = useRef<ThreeTrackingState>({ hands: [], cloneSprite: null, cloneRevision: 0, cloneVisibleUntil: 0 });
+  const threeTrackingRef = useRef<ThreeTrackingState>({ hands: [], effectHands: [], cloneSprite: null, cloneRevision: 0, cloneVisibleUntil: 0 });
   const trackerRef = useRef<HandLandmarker | null>(null);
   const visionWorkerRef = useRef<Worker | null>(null);
   const segmenterWorkerRef = useRef<Worker | null>(null);
   const cloneSpriteRef = useRef<HTMLCanvasElement | null>(null);
   const cloneSpriteReadyRef = useRef(false);
   const smoothedLandmarksRef = useRef<Point[][]>([]);
+  // Effects receive raw landmarks so they can react immediately to fast movements.
+  const effectLandmarksRef = useRef<Point[][]>([]);
   const oneEuroFiltersRef = useRef<OneEuroPoint[][]>([]);
   const smoothedHandednessRef = useRef<string[]>([]);
   // A short rolling vote rejects one-frame gesture flicker between the two core signs.
@@ -393,13 +397,13 @@ export default function App() {
     visionWorkerRef.current?.terminate(); visionWorkerRef.current = null;
     segmenterWorkerRef.current?.terminate(); segmenterWorkerRef.current = null;
     cloneSpriteRef.current = null; cloneSpriteReadyRef.current = false;
-    smoothedLandmarksRef.current = []; smoothedHandednessRef.current = []; oneEuroFiltersRef.current = [];
+    smoothedLandmarksRef.current = []; effectLandmarksRef.current = []; smoothedHandednessRef.current = []; oneEuroFiltersRef.current = [];
     gestureVoteHistoryRef.current = [];
     setTrackingEngine('idle');
     setCloneStatus('idle');
     castUntilRef.current = 0; cloneVisualUntilRef.current = 0;
     if (videoRef.current) videoRef.current.srcObject = null;
-    threeTrackingRef.current = { hands: [], cloneSprite: null, cloneRevision: 0, cloneVisibleUntil: 0 };
+    threeTrackingRef.current = { hands: [], effectHands: [], cloneSprite: null, cloneRevision: 0, cloneVisibleUntil: 0 };
     switchJutsu('none'); setCameraState('idle'); setHandCount(0); setGestureLabel('Camera stopped');
     const ctx = canvasRef.current?.getContext('2d');
     if (ctx && canvasRef.current) ctx.clearRect(0,0,canvasRef.current.width,canvasRef.current.height);
@@ -539,16 +543,23 @@ export default function App() {
             worker.onerror = (event) => { window.clearTimeout(timer); reject(new Error(event.message || 'Segmentation worker failed.')); };
             worker.postMessage({ type: 'init', wasmUrls: WASM_URLS, modelUrl: SEGMENTER_MODEL_URL });
           });
-          worker.onmessage = (event: MessageEvent<{ type: string; width?: number; height?: number; scores?: Float32Array; message?: string }>) => {
+          worker.onmessage = (event: MessageEvent<{ type: string; width?: number; height?: number; scores?: Float32Array; bitmap?: ImageBitmap; message?: string }>) => {
             const message = event.data;
-            if (message.type === 'mask' && message.scores && cloneSpriteRef.current && videoRef.current) {
-              updateCloneSprite(videoRef.current, { width: message.width || 0, height: message.height || 0, scores: message.scores }, cloneSpriteRef.current);
-              cloneSpriteReadyRef.current = true;
-              segmentationBusy = false;
+            if (message.type === 'mask') {
+              try {
+                if (message.scores && message.bitmap && cloneSpriteRef.current) {
+                  updateCloneSprite(message.bitmap, message.bitmap.width, message.bitmap.height,
+                    { width: message.width || 0, height: message.height || 0, scores: message.scores }, cloneSpriteRef.current);
+                  cloneSpriteReadyRef.current = true;
+                }
+              } finally {
+                message.bitmap?.close();
+                segmentationBusy = false;
+              }
             } else if (message.type === 'error') {
               segmentationBusy = false;
               setCloneStatus('error');
-              setGestureLabel('Shadow Clone segmentation fallback: ' + (message.message || 'worker error'));
+              setGestureLabel('Shadow Clone segmentation error: ' + (message.message || 'worker error'));
             }
           };
         } catch (cause) {
@@ -592,6 +603,7 @@ export default function App() {
           frames++;
           if (now - fpsAt >= 1000) { setFps(Math.round(frames * 1000 / (now - fpsAt))); fpsAt = now; frames = 0; }
           const rawHands = (latest.landmarks ?? []) as Point[][];
+          effectLandmarksRef.current = rawHands;
           const oldHandedness = smoothedHandednessRef.current;
           const previousFilters = oneEuroFiltersRef.current;
           const currentHandedness = latest.handedness?.map((entry, index) => entry[0]?.categoryName ?? `Unknown-${index}`) ?? rawHands.map((_, index) => `Unknown-${index}`);
@@ -703,7 +715,7 @@ export default function App() {
         }
         if (activeRef.current === 'clone') {
           if (!segmenterWorkerRef.current && !segmenterLoading && !segmenterFailed) void loadSegmenter();
-          if (segmenterWorkerRef.current && !segmentationBusy && v.currentTime !== lastSegmentationVideoTime && now - lastSegmentationAt > 125) {
+          if (segmenterWorkerRef.current && !segmentationBusy && v.currentTime !== lastSegmentationVideoTime && now - lastSegmentationAt > 80) {
             lastSegmentationVideoTime = v.currentTime;
             lastSegmentationAt = now;
             segmentationBusy = true;
@@ -722,6 +734,7 @@ export default function App() {
         }
         threeTrackingRef.current = {
           hands: smoothedLandmarksRef.current,
+          effectHands: effectLandmarksRef.current,
           cloneSprite: cloneSpriteReadyRef.current ? cloneSpriteRef.current : null,
           cloneRevision: cloneSpriteRef.current ? Number(cloneSpriteRef.current.dataset.revision ?? 0) : 0,
           cloneVisibleUntil: cloneVisualUntilRef.current,
@@ -800,7 +813,7 @@ export default function App() {
       <section className="intro-row" id="top">
         <div><div className="eyebrow"><span className="eyebrow-line" /> YOUR HIDDEN LEAF TRAINING GROUND</div>
           <h1>Bring chakra<br /><span>to life.</span></h1>
-          <p className="intro-copy">One webcam. Two signature techniques. Build a spinning Rasengan, then summon shadow clones that look like you.</p>
+          <p className="intro-copy">Enter the Hidden Leaf training ground. Charge a Rasengan that locks onto your hand, then summon shadow clones cut from your own image.</p>
         </div>
         <div className="intro-stats">
           <div className="stat-item"><span className="stat-icon"><Hand size={17} /></span><div><b>2 jutsu</b><small>one focused experience</small></div></div>
@@ -849,11 +862,11 @@ export default function App() {
           <div className="jutsu-list">
             <button className={'jutsu-card blue-card ' + (activeJutsu === 'rasengan' ? 'is-active' : '')} onClick={() => preview('rasengan')}>
               <div className="jutsu-art rasengan-art"><span className="orb-core" /><span className="orb-ring ring-one" /><span className="orb-ring ring-two" /><span className="orb-spark s1" /><span className="orb-spark s2" /></div>
-              <div className="jutsu-copy"><div className="jutsu-overline">WIND / CHAKRA</div><h3>Rasengan</h3><p>Show your palm, not the back of your hand · the orb grows into a spinning chakra sphere</p><div className="jutsu-foot"><span className="difficulty easy">BEGINNER</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">01</span>
+              <div className="jutsu-copy"><div className="jutsu-overline">WIND / CHAKRA</div><h3>Rasengan</h3><p>Face your palm forward. The chakra sphere follows your hand and surges as you move.</p><div className="jutsu-foot"><span className="difficulty easy">BEGINNER</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">01</span>
             </button>
             <button className={'jutsu-card violet-card ' + (activeJutsu === 'clone' ? 'is-active' : '')} onClick={() => preview('clone')}>
               <div className="jutsu-art clone-art"><span className="clone-figure figure-one" /><span className="clone-figure figure-two" /><span className="clone-figure figure-three" /><Sparkles className="clone-star" size={17} /></div>
-              <div className="jutsu-copy"><div className="jutsu-overline">NINJUTSU / DECOY</div><h3>Shadow Clone</h3><p>Cross index/middle fingers into a + seal; clones linger for six seconds</p><div className="jutsu-foot"><span className="difficulty advanced">CROSSED SEAL</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">02</span>
+              <div className="jutsu-copy"><div className="jutsu-overline">NINJUTSU / DECOY</div><h3>Shadow Clone</h3><p>Form the crossed-finger seal and summon copies cut from your own live camera image.</p><div className="jutsu-foot"><span className="difficulty advanced">CROSSED SEAL</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">02</span>
             </button>
           </div>
           <div className="detection-card">
