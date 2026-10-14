@@ -119,16 +119,24 @@ export default function ThreeEffects({trackingRef,activeJutsu,sharinganActive,ch
   const iris=valid?face[i===0?468:473]:null;
   const corners=valid?(i===0?[33,133]:[362,263]):null;
   const outer=corners?face[corners[0]]:null,inner=corners?face[corners[1]]:null;
+  const wasVisible=e.visible;
   e.visible=!!(p.sharinganActive&&iris&&outer&&inner);
   if(iris&&outer&&inner){
     const center=xy(iris,w,h);
     const left=xy(outer,w,h),right=xy(inner,w,h);
     const eyeWidth=Math.hypot(right.x-left.x,right.y-left.y);
     const eyeAngle=Math.atan2(right.y-left.y,right.x-left.x);
-    e.position.set(center.x,center.y,40);
-    // Scale the iris overlay from that eye's own width; this avoids a fixed-size sticker drifting over the eyelids.
-    e.scale.setScalar(Math.max(.18,Math.min(1.15,eyeWidth*.38/20)));
-    e.rotation.z=eyeAngle;
+    const targetScale=Math.max(.18,Math.min(1.15,eyeWidth*.38/20));
+    if(!wasVisible){e.position.set(center.x,center.y,40);e.rotation.z=eyeAngle;e.scale.setScalar(targetScale);}
+    else{
+      e.position.x+=(center.x-e.position.x)*.42;
+      e.position.y+=(center.y-e.position.y)*.42;
+      const angleDelta=Math.atan2(Math.sin(eyeAngle-e.rotation.z),Math.cos(eyeAngle-e.rotation.z));
+      e.rotation.z+=angleDelta*.38;
+      e.scale.setScalar(e.scale.x+(targetScale-e.scale.x)*.32);
+    }
+    e.position.z=40;
+    // Scale the iris overlay from that eye's own width and smooth small landmark jumps.
   }
  });
  const recent=(s?.trail??[]).slice(-64),at=trGeo.getAttribute('position') as T.BufferAttribute,arr=at.array as Float32Array;recent.forEach((v,i)=>{const z=xy(v,w,h);arr[i*3]=z.x;arr[i*3+1]=z.y;arr[i*3+2]=8;});at.needsUpdate=true;trGeo.setDrawRange(0,recent.length);trMat.color.setHex(p.activeJutsu==='fireball'?0xff8731:p.activeJutsu==='amaterasu'?0x9a6aff:p.activeJutsu==='wind-scythe'?0x68ffc0:p.activeJutsu==='chidori'||p.activeJutsu==='lightning-burst'?0x74e5ff:0x50bfff);trMat.opacity=p.activeJutsu==='none'?0:.66;
