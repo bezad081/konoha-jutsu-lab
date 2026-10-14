@@ -383,6 +383,8 @@ export default function App() {
 
   const stopCamera = useCallback(() => {
     previewUntilRef.current = 0;
+    if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current);
+    timeoutRef.current = null;
     if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -771,8 +773,10 @@ export default function App() {
       cloneVisualUntilRef.current = castUntilRef.current;
     }
     setGestureLabel(jutsu === 'clone'
-      ? 'Shadow Clone preview · allowing time for the cutout model to load'
-      : 'Preview mode · ' + INFO[jutsu].name);
+      ? cameraState === 'ready'
+        ? 'Shadow Clone preview · loading your cutout'
+        : 'Shadow Clone preview · start the camera to clone your image'
+      : 'Rasengan preview · swirling chakra');
     timeoutRef.current = window.setTimeout(() => {
       previewUntilRef.current = 0;
       if (activeRef.current === jutsu) switchJutsu('none');
