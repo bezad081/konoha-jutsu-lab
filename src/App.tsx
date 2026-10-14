@@ -514,7 +514,6 @@ export default function App() {
             void createHandTracker().then((initialized) => {
               if (streamRef.current !== cameraStream) { initialized.tracker.close(); return; }
               trackerRef.current = initialized.tracker;
-              vision = initialized.vision;
               setTrackingEngine('main-thread');
               void createFaceTracker(initialized.vision).then((faceTracker) => {
                 if (streamRef.current !== cameraStream) { faceTracker.close(); return; }
@@ -541,7 +540,6 @@ export default function App() {
       if (!workerMode) {
         const initialized = await createHandTracker();
         trackerRef.current = initialized.tracker;
-        vision = initialized.vision;
         setTrackingEngine('main-thread');
         setFaceTrackingState('loading');
         void createFaceTracker(initialized.vision).then((faceTracker) => {
