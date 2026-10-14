@@ -331,6 +331,8 @@ export default function App() {
   const smoothedLandmarksRef = useRef<Point[][]>([]);
   const oneEuroFiltersRef = useRef<OneEuroPoint[][]>([]);
   const smoothedHandednessRef = useRef<string[]>([]);
+  // A short rolling vote rejects one-frame gesture flicker without delaying combo-step recognition.
+  const gestureVoteHistoryRef = useRef<Array<{ jutsu: Jutsu; gesture: Gesture; at: number }>>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number | null>(null);
   const timeoutRef = useRef<number | null>(null);
@@ -410,6 +412,7 @@ export default function App() {
     segmenterWorkerRef.current?.terminate(); segmenterWorkerRef.current = null;
     cloneSpriteRef.current = null; cloneSpriteReadyRef.current = false;
     smoothedLandmarksRef.current = []; smoothedHandednessRef.current = []; oneEuroFiltersRef.current = [];
+    gestureVoteHistoryRef.current = [];
     sharinganRef.current = false; setSharinganActive(false); setFaceTrackingState('loading'); setTrackingEngine('idle');
     setCloneStatus('idle');
     comboModeRef.current = false; setComboMode(false); comboCandidateRef.current = 'none';
@@ -687,7 +690,30 @@ export default function App() {
           });
           oneEuroFiltersRef.current = nextFilters;
           smoothedHandednessRef.current = currentHandedness;
-          const detected = readJutsu(latest), count = rawHands.length;
+          const rawDetected = readJutsu(latest), count = rawHands.length;
+          const voteHistory = gestureVoteHistoryRef.current;
+          voteHistory.push({ ...rawDetected, at: now });
+          // Keep only a compact recent window: three matching predictions out of five are
+          // enough to confirm a pose, while old poses expire quickly when the player switches.
+          while (voteHistory.length > 5 || (voteHistory[0] && now - voteHistory[0].at > 320)) voteHistory.shift();
+          let detected = rawDetected;
+          // Combo mode uses the raw gesture because each sequence step has its own hold timer.
+          // Free casting benefits from temporal consensus, like the rolling-vote approach used
+          // in dedicated Naruto hand-seal recognizers.
+          if (!comboModeRef.current) {
+            const votes = new Map<string, { jutsu: Jutsu; gesture: Gesture; count: number }>();
+            for (const sample of voteHistory) {
+              const key = sample.jutsu + ':' + sample.gesture;
+              const vote = votes.get(key);
+              if (vote) vote.count++;
+              else votes.set(key, { jutsu: sample.jutsu, gesture: sample.gesture, count: 1 });
+            }
+            let winner: { jutsu: Jutsu; gesture: Gesture; count: number } | undefined;
+            for (const vote of votes.values()) if (!winner || vote.count > winner.count) winner = vote;
+            detected = winner && winner.count >= 3
+              ? { jutsu: winner.jutsu, gesture: winner.gesture }
+              : { jutsu: 'none', gesture: rawDetected.gesture };
+          }
           setHandCount(count);
           if (!comboModeRef.current && activeRef.current === 'chidori' && now < castUntilRef.current) {
             candidate = 'none'; noPoseAt = 0;
