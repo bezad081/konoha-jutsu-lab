@@ -59,12 +59,45 @@ async function initialize(message: InitMessage) {
 }
 
 function selectPersonMask(masks: Array<{ width: number; height: number; getAsFloat32Array: () => Float32Array; close: () => void }>) {
-  const person = labels.findIndex((label) => /person|foreground|human/i.test(label));
-  if (person >= 0 && person < masks.length) return masks[person];
-  const nonBackground = labels.findIndex((label) => !/background/i.test(label));
-  if (nonBackground >= 0 && nonBackground < masks.length) return masks[nonBackground];
-  // The official SelfieSegmenter model has background at index 0 and person at index 1.
-  return masks[masks.length > 1 ? 1 : 0];
+  // Only trust label metadata when it maps one-to-one to the returned masks.
+  // getLabels() is an empty array for models without a label map.
+  const validLabels = labels.length === masks.length && labels.every((label) => label.trim().length > 0);
+  if (validLabels) {
+    const personIndex = labels.findIndex((label) => /person|foreground|human/i.test(label));
+    if (personIndex >= 0) return masks[personIndex];
+    const backgroundIndex = labels.findIndex((label) => /background/i.test(label));
+    if (backgroundIndex >= 0 && masks.length > 1) {
+      return masks[backgroundIndex === 0 ? 1 : 0];
+    }
+  }
+
+  if (masks.length === 1) return masks[0];
+
+  // If labels are missing, select the most person-like mask: a foreground
+  // mask has much more confidence near the centre than along the frame edges.
+  let best = masks[0];
+  let bestContrast = -Infinity;
+  for (const candidate of masks) {
+    const values = candidate.getAsFloat32Array();
+    const w = candidate.width, h = candidate.height;
+    if (!w || !h || values.length < w * h) continue;
+    let centreSum = 0, centreN = 0, edgeSum = 0, edgeN = 0;
+    const edgeX = Math.max(1, Math.floor(w * 0.09));
+    const edgeY = Math.max(1, Math.floor(h * 0.07));
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const value = values[y * w + x];
+        const edge = x < edgeX || x >= w - edgeX || y < edgeY || y >= h - edgeY;
+        if (edge) { edgeSum += value; edgeN++; }
+        else if (x > w * 0.12 && x < w * 0.88 && y > h * 0.06 && y < h * 0.96) {
+          centreSum += value; centreN++;
+        }
+      }
+    }
+    const contrast = centreSum / Math.max(1, centreN) - edgeSum / Math.max(1, edgeN);
+    if (contrast > bestContrast) { bestContrast = contrast; best = candidate; }
+  }
+  return best;
 }
 
 /** Build a compact, cropped RGBA portrait off the main thread.
@@ -76,16 +109,21 @@ async function createPersonCutout(source: ImageBitmap, scores: Float32Array, mas
   if (!maskWidth || !maskHeight || scores.length < maskWidth * maskHeight) throw new Error('The person mask is empty or has invalid dimensions.');
 
   let minX = maskWidth, minY = maskHeight, maxX = -1, maxY = -1;
-  for (let y = 0; y < maskHeight; y++) {
-    const row = y * maskWidth;
-    for (let x = 0; x < maskWidth; x++) {
-      if (scores[row + x] > 0.38) {
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
+  // Use progressively softer thresholds for dim rooms and low-confidence masks.
+  for (const threshold of [0.38, 0.25, 0.12]) {
+    minX = maskWidth; minY = maskHeight; maxX = -1; maxY = -1;
+    for (let y = 0; y < maskHeight; y++) {
+      const row = y * maskWidth;
+      for (let x = 0; x < maskWidth; x++) {
+        if (scores[row + x] > threshold) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
       }
     }
+    if (maxX >= minX && maxY >= minY) break;
   }
   if (maxX < minX || maxY < minY) {
     throw new Error('No person detected in the segmentation mask. Improve lighting and keep your upper body in frame.');
@@ -151,8 +189,6 @@ function processFrame(message: FrameMessage) {
   const bitmap = message.bitmap;
   if (!segmenter || busy) {
     bitmap.close();
-    // Every submitted frame must release the main thread's busy gate, even if
-    // it arrived during initialization or while an inference was in flight.
     scope.postMessage({ type: 'skipped' });
     return;
   }
@@ -162,24 +198,42 @@ function processFrame(message: FrameMessage) {
   try {
     const timestamp = Math.max(message.timestamp, lastTimestamp + 1);
     lastTimestamp = timestamp;
+
     segmenter.segmentForVideo(bitmap, timestamp, (result) => {
-      void (async () => {
-        try {
-          const masks = result.confidenceMasks ?? [];
-          if (!masks.length) throw new Error('Segmentation returned no confidence masks.');
-          const mask = selectPersonMask(masks);
-          if (!mask) throw new Error('The person mask is missing. Check the loaded segmentation model.');
-          const scores = mask.getAsFloat32Array();
-          const cutout = await createPersonCutout(bitmap, scores, mask.width, mask.height);
+      let scores: Float32Array | null = null;
+      let maskWidth = 0, maskHeight = 0;
+      try {
+        const masks = result.confidenceMasks ?? [];
+        if (!masks.length) throw new Error('Segmentation returned no confidence masks.');
+        const mask = selectPersonMask(masks);
+        if (!mask) throw new Error('The person mask is missing. Check the loaded segmentation model.');
+        // Copy all mask data while inside the callback; MediaPipe documents that
+        // result masks are only valid for the duration of this callback.
+        scores = new Float32Array(mask.getAsFloat32Array());
+        maskWidth = mask.width;
+        maskHeight = mask.height;
+      } catch (cause) {
+        closeMasks(result);
+        bitmap.close();
+        busy = false;
+        scope.postMessage({ type: 'error', message: describe(cause) });
+        return;
+      }
+      closeMasks(result);
+
+      // Canvas work uses the copied scores and is moved to OffscreenCanvas in
+      // this worker; the main UI only receives the finished transparent person.
+      void createPersonCutout(bitmap, scores, maskWidth, maskHeight)
+        .then((cutout) => {
           scope.postMessage({ type: 'cutout', cutout, inferenceMs: performance.now() - startedAt }, [cutout]);
-        } catch (cause) {
+        })
+        .catch((cause) => {
           scope.postMessage({ type: 'error', message: describe(cause) });
-        } finally {
-          closeMasks(result);
+        })
+        .finally(() => {
           bitmap.close();
           busy = false;
-        }
-      })();
+        });
     });
   } catch (cause) {
     bitmap.close();
