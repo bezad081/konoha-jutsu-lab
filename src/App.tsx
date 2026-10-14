@@ -405,7 +405,7 @@ export default function App() {
     trackerRef.current?.close(); trackerRef.current = null;
     visionWorkerRef.current?.terminate(); visionWorkerRef.current = null;
     faceTrackerRef.current?.close(); faceTrackerRef.current = null;
-    segmenterWorkerRef.current?.terminate(); segmenterWorkerRef.current = null; segmenterRef.current = null;
+    segmenterWorkerRef.current?.terminate(); segmenterWorkerRef.current = null;
     cloneSpriteRef.current = null; cloneSpriteReadyRef.current = false;
     smoothedLandmarksRef.current = []; smoothedHandednessRef.current = []; oneEuroFiltersRef.current = [];
     sharinganRef.current = false; setSharinganActive(false); setFaceTrackingState('loading'); setTrackingEngine('idle');
