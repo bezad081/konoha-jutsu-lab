@@ -534,9 +534,18 @@ export default function App() {
             if (message.type === 'cutout' && message.cutout) {
               try {
                 if (cloneSpriteRef.current) {
+                  const firstCutout = !cloneSpriteReadyRef.current;
                   updateCloneSprite(message.cutout, cloneSpriteRef.current);
                   cloneSpriteReadyRef.current = true;
                   setCloneStatus('ready');
+                  // The first segmentation can take longer than the visual's original
+                  // cast timer. Start the six-second clone lifetime when a real image
+                  // exists, not when the hand sign was first recognized.
+                  if (firstCutout && activeRef.current === 'clone') {
+                    const visibleUntil = performance.now() + 6000;
+                    cloneVisualUntilRef.current = Math.max(cloneVisualUntilRef.current, visibleUntil);
+                    castUntilRef.current = Math.max(castUntilRef.current, visibleUntil);
+                  }
                 }
               } catch (cause) {
                 setCloneStatus('error');
@@ -572,6 +581,9 @@ export default function App() {
           segmenterLoading = false;
         }
       };
+      // Warm the person-segmentation model as soon as the camera is ready. The
+      // first Shadow Clone should not spend most of its lifetime loading a model.
+      void loadSegmenter();
       let lastVideoTime = -1;
       let overlayDirty = true;
       let candidate: Jutsu = 'none', candidateAt = 0, noPoseAt = 0, fpsAt = performance.now(), frames = 0;
@@ -656,7 +668,7 @@ export default function App() {
                 if (now - candidateAt > 175) {
                   const next = detected.jutsu;
                   if (next === 'clone') {
-                    castUntilRef.current = now + 6000;
+                    castUntilRef.current = now + 15000;
                     cloneVisualUntilRef.current = castUntilRef.current;
                   }
                   previewUntilRef.current = 0;
@@ -684,8 +696,11 @@ export default function App() {
               candidate = 'none';
               if (!noPoseAt) noPoseAt = now;
               const cloneStillVisible = activeRef.current === 'clone' && now < cloneVisualUntilRef.current;
+              const waitingForClone = activeRef.current === 'clone' && !cloneSpriteReadyRef.current && now < castUntilRef.current && cloneStatus !== 'error';
               const previewStillVisible = now < previewUntilRef.current;
-              if (cloneStillVisible) setGestureLabel('Shadow Clone · afterimages linger for six seconds');
+              if (cloneStillVisible && cloneSpriteReadyRef.current) setGestureLabel('Shadow Clone · your live image is duplicated');
+              else if (waitingForClone) setGestureLabel('Shadow Clone · isolating your image, keep your upper body in frame');
+              else if (cloneStillVisible) setGestureLabel('Shadow Clone · preparing the person cutout');
               else if (previewStillVisible) setGestureLabel(activeRef.current === 'clone' ? 'Shadow Clone preview · loading your cutout' : 'Rasengan preview · building chakra');
               else if (now > castUntilRef.current && now - noPoseAt > 500) {
                 switchJutsu('none'); castUntilRef.current = 0; noPoseAt = 0;
@@ -698,7 +713,7 @@ export default function App() {
             if (now - candidateAt > 175) {
               const next = detected.jutsu;
               if (next === 'clone') {
-                castUntilRef.current = now + 6000;
+                castUntilRef.current = now + 15000;
                 cloneVisualUntilRef.current = castUntilRef.current;
               }
               previewUntilRef.current = 0;
@@ -717,9 +732,10 @@ export default function App() {
             if (now > castUntilRef.current && now - noPoseAt > 700) switchJutsu('none');
           }
         }
-        if (activeRef.current === 'clone') {
-          if (!segmenterWorkerRef.current && !segmenterLoading && !segmenterFailed) void loadSegmenter();
-          if (segmenterReady && segmenterWorkerRef.current && !segmentationBusy && v.currentTime !== lastSegmentationVideoTime && now - lastSegmentationAt > 90) {
+        if (!segmenterWorkerRef.current && !segmenterLoading && !segmenterFailed) void loadSegmenter();
+        if (segmenterReady && segmenterWorkerRef.current && !segmentationBusy && v.currentTime !== lastSegmentationVideoTime) {
+            const targetInterval = activeRef.current === 'clone' ? 100 : cloneSpriteReadyRef.current ? 650 : 220;
+            if (now - lastSegmentationAt >= targetInterval) {
             lastSegmentationVideoTime = v.currentTime;
             lastSegmentationAt = now;
             segmentationBusy = true;
@@ -728,7 +744,7 @@ export default function App() {
               if (!worker) { bitmap.close(); segmentationBusy = false; return; }
               worker.postMessage({ type: 'frame', timestamp: now, bitmap }, [bitmap]);
             }).catch(() => { segmentationBusy = false; });
-          }
+            }
         }
         if (overlayDirty) {
           const ctx = canvas.getContext('2d');
