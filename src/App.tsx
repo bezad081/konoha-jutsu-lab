@@ -227,7 +227,7 @@ function palmOrientationAllowsRasengan(result: HandLandmarkerResult, handIndex: 
   const side = result.handedness?.[handIndex]?.[0]?.categoryName === 'Left' ? 1 : -1;
   return normalZ * side > 0.00002 || normalY * side > 0.00002;
 }
-function readJutsu(result: HandLandmarkerResult | null): { jutsu: Jutsu; gesture: Gesture } {
+function readJutsu(result: HandLandmarkerResult | null): { jutsu: Jutsu; gesture: Gesture; handIndex?: number } {
   const hands = (result?.landmarks ?? []) as Point[][];
   const gestures = hands.map((hand) => classify(hand));
 
@@ -242,7 +242,7 @@ function readJutsu(result: HandLandmarkerResult | null): { jutsu: Jutsu; gesture
   if (openHands.length === 1) {
     const index = openHands[0];
     if (result && palmOrientationAllowsRasengan(result, index)) {
-      return { jutsu: 'rasengan', gesture: 'open' };
+      return { jutsu: 'rasengan', gesture: 'open', handIndex: index };
     }
   }
   if (gestures.includes('fist')) return { jutsu: 'none', gesture: 'fist' };
@@ -292,7 +292,8 @@ export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const threeTrackingRef = useRef<ThreeTrackingState>({ hands: [], effectHands: [], cloneSprite: null, cloneRevision: 0, cloneVisibleUntil: 0 });
+  const threeTrackingRef = useRef<ThreeTrackingState>({ hands: [], effectHands: [], effectHandIndex: 0, cloneSprite: null, cloneRevision: 0, cloneVisibleUntil: 0 });
+  const effectHandIndexRef = useRef(0);
   const trackerRef = useRef<HandLandmarker | null>(null);
   const visionWorkerRef = useRef<Worker | null>(null);
   const segmenterWorkerRef = useRef<Worker | null>(null);
@@ -374,7 +375,7 @@ export default function App() {
     setCloneStatus('idle');
     castUntilRef.current = 0; cloneVisualUntilRef.current = 0;
     if (videoRef.current) videoRef.current.srcObject = null;
-    threeTrackingRef.current = { hands: [], effectHands: [], cloneSprite: null, cloneRevision: 0, cloneVisibleUntil: 0 };
+    threeTrackingRef.current = { hands: [], effectHands: [], effectHandIndex: 0, cloneSprite: null, cloneRevision: 0, cloneVisibleUntil: 0 };
     switchJutsu('none'); setCameraState('idle'); setHandCount(0); setGestureLabel('Camera stopped');
     const ctx = canvasRef.current?.getContext('2d');
     if (ctx && canvasRef.current) ctx.clearRect(0,0,canvasRef.current.width,canvasRef.current.height);
@@ -505,7 +506,7 @@ export default function App() {
             const timer = window.setTimeout(() => reject(new Error('Segmentation worker initialization timed out.')), 45000);
             worker.onmessage = (event: MessageEvent<{ type: string; message?: string }>) => {
               const message = event.data;
-              if (message.type === 'ready') { window.clearTimeout(timer); setCloneStatus('ready'); resolve(); }
+              if (message.type === 'ready') { window.clearTimeout(timer); resolve(); }
               else if (message.type === 'error') {
                 window.clearTimeout(timer);
                 reject(new Error(message.message || 'Segmentation worker initialization failed.'));
@@ -618,6 +619,7 @@ export default function App() {
           oneEuroFiltersRef.current = nextFilters;
           smoothedHandednessRef.current = currentHandedness;
           const rawDetected = readJutsu(latest), count = rawHands.length;
+          if (rawDetected.jutsu === 'rasengan' && rawDetected.handIndex !== undefined) effectHandIndexRef.current = rawDetected.handIndex;
           const voteHistory = gestureVoteHistoryRef.current;
           voteHistory.push({ ...rawDetected, at: now });
           // A short temporal vote suppresses single-frame flicker without adding much lag.
@@ -729,6 +731,7 @@ export default function App() {
         threeTrackingRef.current = {
           hands: smoothedLandmarksRef.current,
           effectHands: effectLandmarksRef.current,
+          effectHandIndex: effectHandIndexRef.current,
           cloneSprite: cloneSpriteReadyRef.current ? cloneSpriteRef.current : null,
           cloneRevision: cloneSpriteRef.current ? Number(cloneSpriteRef.current.dataset.revision ?? 0) : 0,
           cloneVisibleUntil: cloneVisualUntilRef.current,
