@@ -3,7 +3,7 @@ import {
   Activity, Camera, Check, ChevronDown, CircleHelp, CirclePlay, Cpu, Expand,
   Hand, Info, Lightbulb, LoaderCircle, RotateCcw, ShieldCheck, Sparkles, Zap
 } from 'lucide-react';
-import { FilesetResolver, HandLandmarker, type HandLandmarkerResult } from '@mediapipe/tasks-vision';
+import { FilesetResolver, HandLandmarker, ImageSegmenter, type HandLandmarkerResult } from '@mediapipe/tasks-vision';
 import ThreeEffects, { type ThreeTrackingState } from './ThreeEffects';
 
 type Jutsu = 'none' | 'rasengan' | 'clone';
@@ -280,26 +280,38 @@ function createVisionBitmap(video: HTMLVideoElement, maxWidth = 640): Promise<Im
   });
 }
 
-function updateCloneSprite(cutout: ImageBitmap, sprite: HTMLCanvasElement) {
-  if (!cutout.width || !cutout.height) return;
-  // Segmentation and alpha compositing now happen off the UI thread. Only the
-  // compact cropped person sprite crosses back into the main thread.
-  const scale = Math.min(1, 480 / cutout.width, 640 / cutout.height);
-  const width = Math.max(1, Math.round(cutout.width * scale));
-  const height = Math.max(1, Math.round(cutout.height * scale));
-  if (sprite.width !== width || sprite.height !== height) {
-    sprite.width = width;
-    sprite.height = height;
-  }
-  const ctx = sprite.getContext('2d');
-  if (!ctx) return;
-  ctx.clearRect(0, 0, width, height);
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(cutout, 0, 0, width, height);
-  sprite.dataset.revision = String((Number(sprite.dataset.revision) || 0) + 1);
+type CloneMask = { width:number; height:number; getAsFloat32Array():Float32Array; close():void };
+function updateCloneSprite(video:HTMLVideoElement, mask:CloneMask, sprite:HTMLCanvasElement):boolean {
+ const width=mask.width,height=mask.height;
+ if(!width||!height)return false;
+ const scores=new Float32Array(mask.getAsFloat32Array());
+ if(scores.length<width*height)return false;
+ let peak=0;for(let i=0;i<width*height;i++)if(scores[i]>peak)peak=scores[i];
+ if(peak<0.2)return false;
+ let minX=width,minY=height,maxX=-1,maxY=-1;
+ for(const threshold of [0.38,0.27,0.16]){
+  minX=width;minY=height;maxX=-1;maxY=-1;
+  for(let y=0;y<height;y++)for(let x=0;x<width;x++)if(scores[y*width+x]>threshold){minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);}
+  if(maxX>=minX&&maxY>=minY&&(maxX-minX+1)*(maxY-minY+1)>width*height*0.025)break;
+ }
+ if(maxX<minX||maxY<minY)return false;
+ const bw=maxX-minX+1,bh=maxY-minY+1,padX=Math.max(4,Math.round(bw*.1)),padTop=Math.max(3,Math.round(bh*.04)),padBottom=Math.max(3,Math.round(bh*.035));
+ const left=Math.max(0,minX-padX),top=Math.max(0,minY-padTop),right=Math.min(width,maxX+1+padX),bottom=Math.min(height,maxY+1+padBottom);
+ const frame=document.createElement('canvas');frame.width=width;frame.height=height;
+ const fc=frame.getContext('2d',{willReadFrequently:true});if(!fc)return false;
+ fc.drawImage(video,0,0,width,height);
+ const pixels=fc.getImageData(0,0,width,height);
+ for(let i=0;i<width*height;i++){const v=Math.max(0,Math.min(1,(scores[i]-.12)/.58));const a=v*v*(3-2*v);pixels.data[i*4+3]=Math.round(pixels.data[i*4+3]*a);}
+ fc.putImageData(pixels,0,0);
+ const cw=Math.max(1,right-left),ch=Math.max(1,bottom-top);
+ if(sprite.width!==cw||sprite.height!==ch){sprite.width=cw;sprite.height=ch;}
+ const sc=sprite.getContext('2d');if(!sc)return false;
+ sc.clearRect(0,0,cw,ch);sc.imageSmoothingEnabled=true;sc.imageSmoothingQuality='high';sc.drawImage(frame,left,top,cw,ch,0,0,cw,ch);
+ sprite.dataset.revision=String((Number(sprite.dataset.revision)||0)+1);
+ frame.width=1;frame.height=1;return true;
 }
 
+export default function App() {
 export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -308,7 +320,7 @@ export default function App() {
   const effectHandIndexRef = useRef(0);
   const trackerRef = useRef<HandLandmarker | null>(null);
   const visionWorkerRef = useRef<Worker | null>(null);
-  const segmenterWorkerRef = useRef<Worker | null>(null);
+  const segmenterRef = useRef<ImageSegmenter | null>(null);
   const cloneSpriteRef = useRef<HTMLCanvasElement | null>(null);
   const cloneSpriteReadyRef = useRef(false);
   const smoothedLandmarksRef = useRef<Point[][]>([]);
@@ -381,7 +393,7 @@ export default function App() {
     streamRef.current = null;
     trackerRef.current?.close(); trackerRef.current = null;
     visionWorkerRef.current?.terminate(); visionWorkerRef.current = null;
-    segmenterWorkerRef.current?.terminate(); segmenterWorkerRef.current = null;
+    segmenterRef.current?.close(); segmenterRef.current = null;
     cloneSpriteRef.current = null; cloneSpriteReadyRef.current = false;
     smoothedLandmarksRef.current = []; effectLandmarksRef.current = []; smoothedHandednessRef.current = []; oneEuroFiltersRef.current = [];
     gestureVoteHistoryRef.current = [];
@@ -501,97 +513,33 @@ export default function App() {
       }
       setCameraState('ready');
       setGestureLabel('Tracking ready · open palm for Rasengan or cross-finger seal for Shadow Clone');
-      let segmenterLoading = false, segmenterFailed = false, segmenterReady = false, segmentationBusy = false;
-      let lastSegmentationAt = 0, lastSegmentationVideoTime = -1;
-      const cloneSprite = document.createElement('canvas');
-      cloneSpriteRef.current = cloneSprite; cloneSpriteReadyRef.current = false;
-      setCloneStatus('idle');
-      const loadSegmenter = async () => {
-        if (segmenterLoading || segmenterWorkerRef.current || segmenterFailed) return;
-        segmenterLoading = true;
-        setCloneStatus('loading');
-        try {
-          if (typeof Worker === 'undefined' || typeof createImageBitmap !== 'function') {
-            throw new Error('This browser does not support worker-based segmentation.');
-          }
-          const worker = new Worker(new URL('./segmentation.worker.ts', import.meta.url), { type: 'module' });
-          segmenterWorkerRef.current = worker;
-          await new Promise<void>((resolve, reject) => {
-            const timer = window.setTimeout(() => reject(new Error('Segmentation worker initialization timed out.')), 45000);
-            worker.onmessage = (event: MessageEvent<{ type: string; message?: string }>) => {
-              const message = event.data;
-              if (message.type === 'ready') { window.clearTimeout(timer); resolve(); }
-              else if (message.type === 'error') {
-                window.clearTimeout(timer);
-                reject(new Error(message.message || 'Segmentation worker initialization failed.'));
-              }
-            };
-            worker.onerror = (event) => { window.clearTimeout(timer); reject(new Error(event.message || 'Segmentation worker failed.')); };
-            worker.postMessage({ type: 'init', wasmUrls: WASM_URLS, modelUrls: SEGMENTER_MODEL_URLS });
-          });
-          segmenterReady = true;
-          // Install the frame handler only after the model has initialized. This
-          // prevents a pre-ready frame from leaving segmentationBusy stuck true.
-          worker.onmessage = (event: MessageEvent<{ type: string; cutout?: ImageBitmap; inferenceMs?: number; message?: string }>) => {
-            const message = event.data;
-            if (message.type === 'cutout' && message.cutout) {
-              try {
-                if (cloneSpriteRef.current) {
-                  const firstCutout = !cloneSpriteReadyRef.current;
-                  updateCloneSprite(message.cutout, cloneSpriteRef.current);
-                  cloneSpriteReadyRef.current = true;
-                  setCloneStatus('ready');
-                  // The first segmentation can take longer than the visual's original
-                  // cast timer. Start the six-second clone lifetime when a real image
-                  // exists, not when the hand sign was first recognized.
-                  if (firstCutout && activeRef.current === 'clone') {
-                    const visibleUntil = performance.now() + 6000;
-                    cloneVisualUntilRef.current = visibleUntil;
-                    castUntilRef.current = visibleUntil;
-                    if (previewUntilRef.current > 0) previewUntilRef.current = visibleUntil;
-                  }
-                }
-              } catch (cause) {
-                setCloneStatus('error');
-                setGestureLabel('Could not draw the person cutout: ' + describeFailure(cause));
-              } finally {
-                message.cutout.close();
-                segmentationBusy = false;
-              }
-            } else if (message.type === 'skipped') {
-              segmentationBusy = false;
-            } else if (message.type === 'frame-error') {
-              segmentationBusy = false;
-              if (!cloneSpriteReadyRef.current) setGestureLabel('Shadow Clone · retrying person cutout: ' + (message.message || 'frame was unclear'));
-            } else if (message.type === 'error') {
-              segmentationBusy = false;
-              setCloneStatus('error');
-              setGestureLabel('Shadow Clone segmentation error: ' + (message.message || 'worker error'));
-            }
-          };
-          worker.onerror = (event) => {
-            segmentationBusy = false;
-            segmenterReady = false;
-            segmenterFailed = true;
-            setCloneStatus('error');
-            setGestureLabel('Shadow Clone worker stopped: ' + (event.message || 'unknown worker error'));
-            if (segmenterWorkerRef.current === worker) segmenterWorkerRef.current = null;
-            worker.terminate();
-          };
-        } catch (cause) {
-          segmenterFailed = true;
-          segmenterWorkerRef.current?.terminate(); segmenterWorkerRef.current = null;
-          segmenterReady = false;
-          setCloneStatus('error');
-          setGestureLabel('Shadow Clone image cutout unavailable (' + describeFailure(cause) + ')');
-        } finally {
-          segmenterLoading = false;
+      let segmenterLoading=false,segmenterFailed=false,segmenterReady=false,segmentationBusy=false;
+      let lastSegmentationAt=0,lastSegmentationVideoTime=-1;
+      const cloneSprite=document.createElement('canvas');
+      cloneSpriteRef.current=cloneSprite;cloneSpriteReadyRef.current=false;setCloneStatus('loading');
+      const loadSegmenter=async()=>{
+       if(segmenterLoading||segmenterRef.current||segmenterFailed)return;
+       segmenterLoading=true;setCloneStatus('loading');
+       const failures:string[]=[];
+       try{
+        let vision:Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>>|null=null;
+        for(const wasmUrl of WASM_URLS){try{vision=await FilesetResolver.forVisionTasks(wasmUrl);break;}catch(cause){failures.push('WASM '+wasmUrl+': '+describeFailure(cause));}}
+        if(!vision)throw new Error('Could not load MediaPipe vision runtime. '+failures.slice(-2).join(' | '));
+        for(const modelUrl of SEGMENTER_MODEL_URLS)for(const delegate of ['GPU','CPU'] as const){
+         try{
+          const seg=await ImageSegmenter.createFromOptions(vision,{baseOptions:{modelAssetPath:modelUrl,delegate},runningMode:'VIDEO',outputCategoryMask:false,outputConfidenceMasks:true});
+          if(streamRef.current!==cameraStream){seg.close();return;}
+          segmenterRef.current=seg;segmenterReady=true;
+          setGestureLabel('Person segmentation ready · form the crossed-finger Shadow Clone seal');return;
+         }catch(cause){failures.push(delegate+' / '+modelUrl+': '+describeFailure(cause));}
         }
+        throw new Error('Could not initialize person segmentation. '+failures.slice(-4).join(' | '));
+       }catch(cause){
+        if(streamRef.current===cameraStream){segmenterFailed=true;setCloneStatus('error');setGestureLabel('Shadow Clone image cutout unavailable: '+describeFailure(cause));}
+       }finally{segmenterLoading=false;}
       };
-      // Warm the person-segmentation model as soon as the camera is ready. The
-      // first Shadow Clone should not spend most of its lifetime loading a model.
       void loadSegmenter();
-      let lastVideoTime = -1;
+      let lastVideoTime = -1;      let lastVideoTime = -1;
       let overlayDirty = true;
       let candidate: Jutsu = 'none', candidateAt = 0, noPoseAt = 0, fpsAt = performance.now(), frames = 0;
       const frame = () => {
@@ -742,21 +690,39 @@ export default function App() {
             if (now > castUntilRef.current && now - noPoseAt > 700) switchJutsu('none');
           }
         }
-        if (!segmenterWorkerRef.current && !segmenterLoading && !segmenterFailed) void loadSegmenter();
-        if (segmenterReady && segmenterWorkerRef.current && !segmentationBusy && v.currentTime !== lastSegmentationVideoTime) {
-            const targetInterval = activeRef.current === 'clone' ? 100 : cloneSpriteReadyRef.current ? 650 : 220;
-            if (now - lastSegmentationAt >= targetInterval) {
-            lastSegmentationVideoTime = v.currentTime;
-            lastSegmentationAt = now;
-            segmentationBusy = true;
-            void createVisionBitmap(v, 640).then((bitmap) => {
-              const worker = segmenterWorkerRef.current;
-              if (!worker) { bitmap.close(); segmentationBusy = false; return; }
-              worker.postMessage({ type: 'frame', timestamp: now, bitmap }, [bitmap]);
-            }).catch(() => { segmentationBusy = false; });
+        if(!segmenterRef.current&&!segmenterLoading&&!segmenterFailed)void loadSegmenter();
+        const shouldSegment=activeRef.current==='clone'||!cloneSpriteReadyRef.current;
+        if(segmenterReady&&segmenterRef.current&&shouldSegment&&!segmentationBusy&&v.currentTime!==lastSegmentationVideoTime){
+         const interval=activeRef.current==='clone'?125:280;
+         if(now-lastSegmentationAt>=interval){
+          lastSegmentationVideoTime=v.currentTime;lastSegmentationAt=now;segmentationBusy=true;
+          try{
+           const seg=segmenterRef.current;
+           seg.segmentForVideo(v,now,(result)=>{
+            const masks=result.confidenceMasks??[];
+            try{
+             const mask=masks[0];
+             if(mask&&cloneSpriteRef.current){
+              const first=!cloneSpriteReadyRef.current;
+              if(updateCloneSprite(v,mask,cloneSpriteRef.current)){
+               cloneSpriteReadyRef.current=true;setCloneStatus('ready');
+               if(first&&activeRef.current==='clone'){
+                const until=performance.now()+6000;cloneVisualUntilRef.current=until;castUntilRef.current=until;
+                if(previewUntilRef.current>0)previewUntilRef.current=until;
+               }
+              }else if(!cloneSpriteReadyRef.current&&activeRef.current==='clone')setGestureLabel('Shadow Clone · finding your outline, keep your upper body in frame');
+             }
+            }catch(cause){if(!cloneSpriteReadyRef.current)setGestureLabel('Shadow Clone · retrying cutout: '+describeFailure(cause));}
+            finally{
+             for(const mask of masks){try{mask.close();}catch{/* already released */}}
+             try{result.categoryMask?.close();}catch{/* category mask disabled */}
+             segmentationBusy=false;
             }
+           });
+          }catch(cause){segmentationBusy=false;if(!cloneSpriteReadyRef.current&&activeRef.current==='clone')setGestureLabel('Shadow Clone · retrying segmentation: '+describeFailure(cause));}
+         }
         }
-        if (overlayDirty) {
+        if (overlayDirty) {        if (overlayDirty) {
           const ctx = canvas.getContext('2d');
           if (ctx) {
             ctx.clearRect(0, 0, w, h);
@@ -806,7 +772,7 @@ export default function App() {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     trackerRef.current?.close();
     visionWorkerRef.current?.terminate(); visionWorkerRef.current = null;
-    segmenterWorkerRef.current?.terminate(); segmenterWorkerRef.current = null;
+    segmenterRef.current?.close(); segmenterRef.current = null;
     audioRef.current?.close().catch(() => undefined);
   }, []);
 
