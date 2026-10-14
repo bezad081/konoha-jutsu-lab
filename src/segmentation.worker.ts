@@ -17,8 +17,6 @@ const scope = self as unknown as WorkerScope;
 let segmenter: ImageSegmenter | null = null;
 let busy = false;
 let lastTimestamp = 0;
-let activeDelegate: 'GPU' | 'CPU' = 'GPU';
-let activeModelUrl = '';
 let labels: string[] = [];
 
 const describe = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
@@ -47,8 +45,6 @@ async function initialize(message: InitMessage) {
           outputCategoryMask: false,
           outputConfidenceMasks: true,
         });
-        activeDelegate = delegate;
-        activeModelUrl = modelUrl;
         labels = segmenter.getLabels();
         scope.postMessage({ type: 'ready', delegate, modelUrl });
         return;
