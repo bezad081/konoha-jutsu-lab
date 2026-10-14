@@ -5,6 +5,7 @@ export type EffectPoint = { x: number; y: number; z?: number };
 export type ThreeTrackingState = {
   hands: EffectPoint[][];
   effectHands?: EffectPoint[][];
+  effectHandIndex?: number;
   cloneSprite: HTMLCanvasElement | null;
   cloneRevision: number;
   cloneVisibleUntil: number;
@@ -284,7 +285,7 @@ export default function ThreeEffects({ trackingRef, activeJutsu, chargeLevel }: 
 
       if (props.activeJutsu === 'rasengan') {
         const effectHands = state?.effectHands?.length ? state.effectHands : hands;
-        const rawCenter = palmCenter(effectHands[0]);
+        const rawCenter = palmCenter(effectHands[state?.effectHandIndex ?? 0]);
         if (rawCenter) {
           const target = toScreen(rawCenter, width, height);
           if (!anchorReady || previousJutsu !== 'rasengan') {
