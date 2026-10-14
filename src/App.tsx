@@ -543,8 +543,8 @@ export default function App() {
                   // exists, not when the hand sign was first recognized.
                   if (firstCutout && activeRef.current === 'clone') {
                     const visibleUntil = performance.now() + 6000;
-                    cloneVisualUntilRef.current = Math.max(cloneVisualUntilRef.current, visibleUntil);
-                    castUntilRef.current = Math.max(castUntilRef.current, visibleUntil);
+                    cloneVisualUntilRef.current = visibleUntil;
+                    castUntilRef.current = visibleUntil;
                   }
                 }
               } catch (cause) {
@@ -696,7 +696,7 @@ export default function App() {
               candidate = 'none';
               if (!noPoseAt) noPoseAt = now;
               const cloneStillVisible = activeRef.current === 'clone' && now < cloneVisualUntilRef.current;
-              const waitingForClone = activeRef.current === 'clone' && !cloneSpriteReadyRef.current && now < castUntilRef.current && cloneStatus !== 'error';
+              const waitingForClone = activeRef.current === 'clone' && !cloneSpriteReadyRef.current && now < castUntilRef.current && !segmenterFailed;
               const previewStillVisible = now < previewUntilRef.current;
               if (cloneStillVisible && cloneSpriteReadyRef.current) setGestureLabel('Shadow Clone · your live image is duplicated');
               else if (waitingForClone) setGestureLabel('Shadow Clone · isolating your image, keep your upper body in frame');
