@@ -268,6 +268,17 @@ function drawLandmarks(ctx: CanvasRenderingContext2D, hands: Point[][], w: numbe
   }
   ctx.restore();
 }
+function createVisionBitmap(video: HTMLVideoElement, maxWidth = 640): Promise<ImageBitmap> {
+  const sourceWidth = video.videoWidth || maxWidth;
+  const sourceHeight = video.videoHeight || Math.round(maxWidth * 9 / 16);
+  const scale = Math.min(1, maxWidth / sourceWidth);
+  return createImageBitmap(video, {
+    resizeWidth: Math.max(1, Math.round(sourceWidth * scale)),
+    resizeHeight: Math.max(1, Math.round(sourceHeight * scale)),
+    resizeQuality: 'low',
+  });
+}
+
 function updateCloneSprite(cutout: ImageBitmap, sprite: HTMLCanvasElement) {
   if (!cutout.width || !cutout.height) return;
   // Segmentation and alpha compositing now happen off the UI thread. Only the
@@ -576,7 +587,7 @@ export default function App() {
             if (!workerBusy) {
               workerBusy = true;
               const timestamp = now;
-              void createImageBitmap(v).then((bitmap) => {
+              void createVisionBitmap(v, 640).then((bitmap) => {
                 if (visionWorkerRef.current !== worker) { bitmap.close(); workerBusy = false; return; }
                 worker!.postMessage({ type: 'frame', timestamp, bitmap }, [bitmap]);
               }).catch(() => {
@@ -712,7 +723,7 @@ export default function App() {
             lastSegmentationVideoTime = v.currentTime;
             lastSegmentationAt = now;
             segmentationBusy = true;
-            void createImageBitmap(v).then((bitmap) => {
+            void createVisionBitmap(v, 640).then((bitmap) => {
               const worker = segmenterWorkerRef.current;
               if (!worker) { bitmap.close(); segmentationBusy = false; return; }
               worker.postMessage({ type: 'frame', timestamp: now, bitmap }, [bitmap]);
