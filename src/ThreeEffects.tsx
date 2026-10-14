@@ -228,6 +228,7 @@ export default function ThreeEffects({ trackingRef, activeJutsu, chargeLevel }: 
     let pixelRatio = Math.min(window.devicePixelRatio || 1, 1);
     let slowFrames = 0;
     let fastFrames = 0;
+    let targetFrameMs = 1000 / 60;
     let burstStartedAt = -Infinity;
     let burstStrength = 0;
     let burstCenter = new T.Vector3();
@@ -265,8 +266,8 @@ export default function ThreeEffects({ trackingRef, activeJutsu, chargeLevel }: 
     const draw = () => {
       frameId = requestAnimationFrame(draw);
       const now = performance.now();
-      if (now - lastRenderAt < 1000 / 30) return;
-      const deltaMs = lastRenderAt ? now - lastRenderAt : 33;
+      if (now - lastRenderAt < targetFrameMs) return;
+      const deltaMs = lastRenderAt ? now - lastRenderAt : 16.7;
       lastRenderAt = now;
       const time = now / 1000;
       const width = Math.max(1, element.clientWidth);
@@ -347,7 +348,7 @@ export default function ThreeEffects({ trackingRef, activeJutsu, chargeLevel }: 
         cloneEntryAt = now;
         const centers = [-1, 1];
         summonRings.forEach((ringMesh, i) => {
-          ringMesh.position.set(width * centers[i] * 0.23, height * (i === 0 ? -0.005 : 0.005), 14 + i);
+          ringMesh.position.set(width * centers[i] * 0.29, height * (i === 0 ? -0.005 : 0.005), 14 + i);
           ringMesh.scale.setScalar(scale * 0.3);
           ringMesh.visible = true;
         });
@@ -358,15 +359,15 @@ export default function ThreeEffects({ trackingRef, activeJutsu, chargeLevel }: 
 
       const entryProgress = cloneActive ? clamp((now - cloneEntryAt) / 680, 0, 1) : 1;
       const entryEase = 1 - Math.pow(1 - entryProgress, 3);
-      const cloneOffsets = [-0.23, 0.23];
+      const cloneOffsets = [-0.29, 0.29];
       const cloneY = [0.006, -0.004];
-      const cloneAlpha = [0.82, 0.78];
-      const sourceWidth = cloneSource?.width || width;
-      const sourceHeight = cloneSource?.height || height;
-      // Preserve the source camera aspect ratio and match the preview's cover crop.
-      const coverScale = Math.max(width / sourceWidth, height / sourceHeight);
-      const clonePlaneWidth = sourceWidth * coverScale;
-      const clonePlaneHeight = sourceHeight * coverScale;
+      const cloneAlpha = [0.92, 0.88];
+      const sourceWidth = cloneSource?.width || 3;
+      const sourceHeight = cloneSource?.height || 5;
+      // The worker returns a cropped person cutout rather than a full camera frame.
+      // Size each duplicate by height and preserve the actual person's aspect ratio.
+      const clonePlaneHeight = height * 0.84;
+      const clonePlaneWidth = clonePlaneHeight * sourceWidth / sourceHeight;
       clonePlanes.forEach((mesh, i) => {
         mesh.visible = cloneActive && hasCloneTexture;
         const offset = cloneOffsets[i] * (0.28 + 0.72 * entryEase);
@@ -468,21 +469,30 @@ export default function ThreeEffects({ trackingRef, activeJutsu, chargeLevel }: 
         return;
       }
       wasDrawing = true;
-      const renderStarted = performance.now();
       renderer.render(scene, camera);
-      const cost = performance.now() - renderStarted;
-      if (cost > 23) { slowFrames++; fastFrames = 0; }
-      else if (cost < 11) { fastFrames++; slowFrames = 0; }
+      // Count JS scene updates as well as the WebGL submit; adapting only to the
+      // GPU call can miss stalls caused by CPU-side particle and clone updates.
+      const cost = performance.now() - now;
+      if (cost > 21) { slowFrames++; fastFrames = 0; }
+      else if (cost < 10) { fastFrames++; slowFrames = 0; }
       else { slowFrames = 0; fastFrames = 0; }
-      if (slowFrames >= 4 && pixelRatio > 0.75) {
-        pixelRatio = 0.75;
-        renderer.setPixelRatio(pixelRatio);
-        resize();
+      if (slowFrames >= 3) {
+        targetFrameMs = 1000 / 30;
+        if (pixelRatio > 0.72) {
+          pixelRatio = 0.72;
+          renderer.setPixelRatio(pixelRatio);
+          resize();
+        }
         slowFrames = 0;
-      } else if (fastFrames >= 180 && pixelRatio < Math.min(window.devicePixelRatio || 1, 1)) {
-        pixelRatio = Math.min(window.devicePixelRatio || 1, 1);
-        renderer.setPixelRatio(pixelRatio);
-        resize();
+        fastFrames = 0;
+      } else if (fastFrames >= 90) {
+        targetFrameMs = 1000 / 60;
+        const bestRatio = Math.min(window.devicePixelRatio || 1, 1);
+        if (pixelRatio < bestRatio) {
+          pixelRatio = bestRatio;
+          renderer.setPixelRatio(pixelRatio);
+          resize();
+        }
         fastFrames = 0;
       }
     };
