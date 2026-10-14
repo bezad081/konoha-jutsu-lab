@@ -242,3 +242,234 @@ body{background:radial-gradient(ellipse at 7% 0%,rgba(33,123,255,.17),transparen
 @keyframes chakraPulse{0%,100%{filter:brightness(1);text-shadow:0 0 9px rgba(77,200,255,.15)}50%{filter:brightness(1.2);text-shadow:0 0 19px rgba(77,200,255,.3)}}
 .build-chip{animation:chakraPulse 3.2s ease-in-out infinite}
 @media(prefers-reduced-motion:reduce){.build-chip{animation:none}.orb-ring{animation-duration:8s}}
+
+
+/* Hidden Leaf / Naruto pass: keep ink-black and chakra blue, but bring the
+   orange jumpsuit, leaf-green accents, parchment highlights and manga energy forward. */
+:root {
+  --bg:#080a12;
+  --panel:#121722;
+  --panel2:#191f2b;
+  --border:rgba(255,154,58,.22);
+  --muted:#b4b4c0;
+  --soft:#f5e8d4;
+  --cyan:#68ddff;
+  --blue:#378fff;
+  --violet:#bc8bff;
+  --green:#92ef67;
+  --naruto-orange:#ff8b2b;
+  --leaf-green:#8be45f;
+  --sharingan-red:#ff526a;
+  --chakra-blue:#57caff;
+}
+body {
+  background:
+    radial-gradient(ellipse at 8% 4%,rgba(255,117,23,.19),transparent 30%),
+    radial-gradient(ellipse at 91% 10%,rgba(57,143,255,.14),transparent 29%),
+    radial-gradient(ellipse at 58% 91%,rgba(113,218,74,.085),transparent 32%),
+    linear-gradient(135deg,#080a12 0%,#0e1119 48%,#080c16 100%);
+}
+.app-shell {max-width:1540px}
+.topbar {
+  border-bottom:1px solid rgba(255,146,45,.32);
+  box-shadow:0 1px 0 rgba(129,222,94,.07);
+}
+.brand-mark {
+  color:#fff2ce;
+  background:radial-gradient(circle at 25% 22%,rgba(255,169,79,.32),transparent 40%),linear-gradient(145deg,#282018,#121929 70%,#102c37);
+  border:1px solid rgba(255,157,57,.58);
+  box-shadow:0 0 0 3px rgba(255,139,43,.055),0 0 23px rgba(255,139,43,.17),inset 0 0 12px rgba(255,255,255,.06);
+}
+.brand strong {letter-spacing:.075em}
+.brand strong span {
+  background:linear-gradient(90deg,#ffb260,#ff8530 56%,#ffe0a0);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.brand small {color:#c29a72}
+.build-chip {
+  color:#ddf8ce;
+  border-color:rgba(139,228,95,.37);
+  background:linear-gradient(100deg,rgba(255,139,43,.12),rgba(14,22,31,.9) 65%,rgba(89,184,70,.12));
+}
+.status-dot {background:#93ed64;box-shadow:0 0 12px rgba(147,237,100,.85)}
+.intro-row {
+  position:relative;
+  overflow:hidden;
+  margin:12px -16px 20px;
+  padding:31px 24px 27px;
+  border:1px solid rgba(255,149,49,.22);
+  border-left:3px solid #ff8b2b;
+  border-radius:15px;
+  background:
+    linear-gradient(108deg,rgba(255,139,43,.13),rgba(255,139,43,.045) 24%,rgba(12,18,28,.93) 47%,rgba(24,52,70,.65) 100%);
+  box-shadow:inset 0 1px rgba(255,255,255,.045),0 14px 42px rgba(0,0,0,.12);
+}
+.intro-row:after {
+  content:"木ノ葉";
+  position:absolute;right:4%;top:50%;transform:translateY(-53%) rotate(-8deg);
+  pointer-events:none;user-select:none;white-space:nowrap;
+  font-size:clamp(54px,8.6vw,126px);font-weight:900;letter-spacing:.08em;
+  color:rgba(255,163,74,.055);
+  text-shadow:3px 3px 0 rgba(85,194,255,.025);
+}
+.intro-row>div {position:relative;z-index:1}
+.eyebrow {color:#ffc78c}
+.eyebrow-line {height:2px;width:28px;background:linear-gradient(90deg,#ff8b2b,#ffe0a0,#8be45f)}
+.intro-row h1 {text-shadow:0 8px 30px rgba(0,0,0,.32)}
+.intro-row h1 span {
+  background:linear-gradient(100deg,#ff9738 0%,#ffbd68 24%,#fff0d3 42%,#89e65d 64%,#6bd6ff 85%,#69a6ff 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 0 16px rgba(255,137,40,.13));
+}
+.intro-copy {color:#c8c0b5;max-width:570px}
+.stat-item {border-color:rgba(255,160,75,.18)}
+.stat-icon {color:#8be5ff;background:rgba(53,150,255,.14)}
+.stat-icon.violet {color:#d3adff;background:rgba(159,104,255,.15)}
+.stat-icon.green {color:#a5f47c;background:rgba(126,220,73,.12)}
+.stat-item b {color:#fff1de}
+.stat-item small {color:#a79e92}
+.stage-corner {filter:drop-shadow(0 0 5px rgba(255,163,74,.28))}
+.corner-tl,.corner-br {border-color:#ffac55}
+.corner-tr {border-color:#8ce96a}
+.corner-bl {border-color:#6bd7ff}
+.stage-topline svg {color:#ffae5a}
+.camera-stage {
+  border-color:rgba(255,153,55,.34);
+  box-shadow:0 20px 55px rgba(0,0,0,.32),0 0 0 1px rgba(255,153,55,.04),inset 0 0 24px rgba(255,153,55,.025);
+}
+.camera-stage.effect-blue {
+  border-color:rgba(80,199,255,.65);
+  box-shadow:0 0 0 1px rgba(77,192,255,.18),0 0 40px rgba(45,153,255,.16),0 18px 52px rgba(0,0,0,.35);
+}
+.camera-stage.effect-violet {
+  border-color:rgba(171,126,255,.7);
+  box-shadow:0 0 0 1px rgba(168,124,255,.18),0 0 36px rgba(137,74,255,.13),0 18px 52px rgba(0,0,0,.35);
+}
+.primary-button {
+  color:#291300;
+  border:1px solid #ffc174;
+  background:linear-gradient(118deg,#ffe0a1 0%,#ffae49 34%,#ff8128 72%,#ffa53d 100%);
+  box-shadow:0 7px 25px rgba(255,120,27,.23),inset 0 1px rgba(255,255,255,.48);
+}
+.primary-button:hover {
+  background:linear-gradient(118deg,#fff0c6 0%,#ffd078 34%,#ff9b41 72%,#ffc16b 100%);
+  box-shadow:0 9px 32px rgba(255,120,27,.32);
+}
+.secondary-button {
+  border-color:rgba(255,156,63,.23);
+  background:linear-gradient(135deg,rgba(36,31,29,.95),rgba(12,18,28,.98));
+  color:#e2d2bd;
+}
+.secondary-button:hover,.secondary-button.selected {
+  border-color:rgba(111,214,255,.48);color:#e7f9ff;
+  box-shadow:0 0 17px rgba(64,177,255,.08);
+}
+.toggle-pill {background:rgba(255,159,67,.12);color:#ffc080}
+.secondary-button.selected .toggle-pill {background:rgba(136,225,96,.13);color:#b8ff93}
+.jutsu-card {
+  border-color:rgba(255,157,63,.17);
+  background:linear-gradient(120deg,rgba(28,30,38,.98),rgba(12,17,26,.99));
+}
+.jutsu-card:before {
+  content:"";position:absolute;inset:0;pointer-events:none;opacity:0;
+  background:linear-gradient(112deg,rgba(255,140,43,.12),transparent 44%,rgba(90,199,255,.08) 80%,rgba(142,231,92,.06));
+  transition:opacity .2s;
+}
+.jutsu-card:hover:before,.jutsu-card.is-active:before {opacity:1}
+.jutsu-card.blue-card,.blue-card {
+  border-color:rgba(77,190,255,.37);
+  background:linear-gradient(118deg,rgba(17,42,68,.98),rgba(13,20,31,.99) 62%,rgba(25,37,42,.99));
+}
+.jutsu-card.violet-card,.violet-card {
+  border-color:rgba(255,151,66,.32);
+  background:linear-gradient(118deg,rgba(54,31,31,.92),rgba(18,20,29,.99) 64%,rgba(27,36,28,.98));
+}
+.blue-card .jutsu-art {
+  background:radial-gradient(circle at 50% 46%,rgba(38,165,255,.38),rgba(5,16,36,.88));
+}
+.violet-card .jutsu-art {
+  background:radial-gradient(circle at 50% 45%,rgba(255,139,43,.23),rgba(21,15,29,.92) 62%,rgba(48,66,34,.38));
+  border-color:rgba(255,159,75,.21);
+}
+.violet-card .jutsu-overline {color:#ffc07b}
+.violet-card .clone-figure {
+  border-color:#ffbd77;background:rgba(255,142,56,.15);
+  box-shadow:0 0 12px rgba(255,127,46,.45);
+}
+.violet-card .clone-figure:before {background:#4a2d37;border-color:#ffe1af}
+.violet-card .clone-star {color:#a7f779;filter:drop-shadow(0 0 7px rgba(130,235,86,.56))}
+.jutsu-card.blue-card.is-active,.blue-card:hover,.blue-card.is-active {
+  border-color:rgba(89,217,255,.9);
+  box-shadow:0 0 0 1px rgba(77,197,255,.17),0 0 27px rgba(36,145,255,.14),0 12px 34px rgba(16,61,122,.2);
+}
+.jutsu-card.violet-card.is-active,.violet-card:hover,.violet-card.is-active {
+  border-color:rgba(255,170,81,.84);
+  box-shadow:0 0 0 1px rgba(255,148,59,.16),0 0 26px rgba(255,113,32,.12),0 12px 34px rgba(16,30,32,.22);
+}
+.jutsu-overline {color:#ffd09b}
+.difficulty {color:#b8eeff;background:rgba(56,164,255,.12)}
+.difficulty.advanced {color:#ffe0a7;background:rgba(255,143,47,.12)}
+.detection-card,.bottom-card {
+  border-color:rgba(255,157,63,.15);
+  background:linear-gradient(137deg,rgba(24,25,32,.96),rgba(10,15,24,.98));
+}
+.detection-heading>svg {color:#ffb65f}
+.readout-row strong.signal-active {color:#8de5ff;text-shadow:0 0 12px rgba(71,202,255,.2)}
+.signal-track {background:rgba(115,111,102,.18)}
+.signal-track span {background:linear-gradient(90deg,#ff8b2b,#ffdf81 36%,#8be45f 62%,#58caff)}
+.bottom-icon {border-color:rgba(255,164,74,.26);background:rgba(255,139,43,.1);color:#ffba6c}
+.green-icon {color:#99f06c;border-color:rgba(139,228,95,.23);background:rgba(102,201,67,.1)}
+.privacy-check {color:#91eb69}
+.footer {border-color:rgba(255,157,63,.2)}
+.footer-mark {color:#ff9d43}
+.help-panel {
+  border-color:rgba(255,156,63,.34);
+  background:linear-gradient(105deg,rgba(255,139,43,.12),rgba(15,27,38,.96) 45%,rgba(101,193,67,.07));
+  color:#ffe0b8;
+}
+.help-panel strong {color:#ffe3bd}
+.text-button {color:#ffb563}
+.chakra-charge-hud {
+  border-color:rgba(81,218,255,.5);
+  background:linear-gradient(130deg,rgba(4,20,43,.93),rgba(18,32,59,.88) 58%,rgba(14,46,49,.8));
+  box-shadow:0 8px 30px rgba(0,0,0,.3),0 0 20px rgba(44,157,255,.12),inset 0 0 25px rgba(65,160,255,.13);
+}
+.charge-hud-track span {background:linear-gradient(90deg,#358aff,#59eaff 40%,#a1f16e 72%,#ffb956);box-shadow:0 0 12px rgba(75,206,255,.44)}
+.clone-summon-hud {
+  border-color:rgba(255,154,63,.52);
+  background:linear-gradient(130deg,rgba(49,22,22,.94),rgba(13,19,30,.95) 54%,rgba(23,50,31,.9));
+  box-shadow:0 8px 30px rgba(0,0,0,.3),0 0 26px rgba(255,115,42,.1),inset 0 0 20px rgba(105,224,88,.08);
+  color:#ffe6c1;
+}
+.clone-summon-hud svg {color:#9cf077;filter:drop-shadow(0 0 7px rgba(151,238,104,.62))}
+.clone-summon-hud small {color:#ffbd83}
+.camera-orb {
+  color:#ffbd7a;border-color:rgba(255,155,61,.46);
+  background:radial-gradient(circle at 25% 20%,rgba(255,141,44,.24),rgba(48,80,147,.1));
+  box-shadow:0 0 42px rgba(255,131,38,.12);
+}
+.stage-corner.corner-tr {border-color:#8be45f}
+.stage-corner.corner-bl {border-color:#63d5ff}
+@keyframes hiddenLeafRush {
+  0% {background-position:0% 50%;filter:saturate(1)}
+  50% {background-position:100% 50%;filter:saturate(1.16)}
+  100% {background-position:0% 50%;filter:saturate(1)}
+}
+.brand-mark {animation:hiddenLeafRush 6s ease-in-out infinite;background-size:180% 180%}
+.jutsu-card.is-active {animation:cardChakraPop .32s ease-out}
+@keyframes cardChakraPop {
+  0% {transform:scale(.985)}
+  65% {transform:scale(1.008)}
+  100% {transform:scale(1)}
+}
+@media(max-width:850px) {
+  .intro-row {margin:4px 0 18px;padding:26px 18px 22px}
+  .intro-row:after {right:0;opacity:.65}
+}
+@media(max-width:560px) {
+  .intro-row {padding:23px 14px 19px;margin:2px 0 16px}
+  .intro-row:after {font-size:53px;right:1%;top:23%}
+}
+@media(prefers-reduced-motion:reduce) {
+  .brand-mark,.jutsu-card.is-active {animation:none}
+}
