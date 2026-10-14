@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Activity, Camera, Check, ChevronDown, CircleHelp, CirclePlay, Cpu, Expand, Eye, Flame,
+  Activity, Camera, Check, ChevronDown, CircleHelp, CirclePlay, Cpu, Expand,
   Hand, Info, Lightbulb, LoaderCircle, RotateCcw, ShieldCheck, Sparkles, Zap
 } from 'lucide-react';
 import { FaceLandmarker, FilesetResolver, HandLandmarker, type FaceLandmarkerResult, type HandLandmarkerResult } from '@mediapipe/tasks-vision';
@@ -348,7 +348,6 @@ export default function App() {
   const [cameraState, setCameraState] = useState<'idle'|'loading'|'ready'|'camera-only'|'error'>('idle');
   const [error, setError] = useState('');
   const [activeJutsu, setActiveJutsu] = useState<Jutsu>('none');
-  const [activeTool, setActiveTool] = useState<NinjaTool>('none');
   const [chargeLevel, setChargeLevel] = useState(0);
   const [gestureLabel, setGestureLabel] = useState('Waiting for hands');
   const [handCount, setHandCount] = useState(0);
@@ -358,7 +357,7 @@ export default function App() {
   const [fps, setFps] = useState(0);
   const [trackingEngine, setTrackingEngine] = useState<'idle'|'starting'|'worker-gpu'|'worker-cpu'|'main-thread'|'unavailable'>('idle');
   const [cloneStatus, setCloneStatus] = useState<'idle'|'loading'|'ready'|'error'>('idle');
-  const [faceTrackingState, setFaceTrackingState] = useState<'loading'|'ready'|'unavailable'>('loading');
+  const [, setFaceTrackingState] = useState<'loading'|'ready'|'unavailable'>('loading');
   const [sharinganActive, setSharinganActive] = useState(false);
   const [sharinganEnabled, setSharinganEnabled] = useState(false);
   const [sequenceType, setSequenceType] = useState<SequenceKind>('chidori');
@@ -956,25 +955,7 @@ export default function App() {
     }, 2200);
   };
   const activeInfo = activeJutsu === 'none' ? null : INFO[activeJutsu];
-  const displayedSequenceSteps = sequenceType === 'fireball' ? FIREBALL_STEPS : COMBO_STEPS;
-  const toggleCombo = (requestedType: SequenceKind = sequenceTypeRef.current) => {
-    if (comboModeRef.current) {
-      comboModeRef.current = false; setComboMode(false); comboCandidateRef.current = 'none';
-      setComboFeedback('Sequence cancelled. Start again whenever you are ready.');
-      return;
-    }
-    if (cameraState !== 'ready') {
-      setComboFeedback('Start the camera before beginning a live technique sequence.');
-      return;
-    }
-    sequenceTypeRef.current = requestedType; setSequenceType(requestedType);
-    comboModeRef.current = true; comboProgressRef.current = 0;
-    comboCandidateRef.current = 'none'; comboCandidateAtRef.current = 0;
-    comboStepStartedAtRef.current = performance.now();
-    setComboProgress(0); setComboHoldProgress(0); setComboMode(true); switchJutsu('none');
-    setComboFeedback(requestedType === 'fireball' ? `Step 1: ${FIREBALL_STEPS[0].instruction}.` : `Step 1: ${COMBO_STEPS[0].instruction}.`);
-    setGestureLabel(requestedType === 'fireball' ? 'Uchiha Fire sequence · step 1 of 3' : 'Chidori sequence · step 1 of 2');
-  };
+
 
   return (
     <main className="app-shell">
@@ -1015,7 +996,7 @@ export default function App() {
             <div className="video-wrap">
               <video ref={videoRef} className="camera-video" autoPlay playsInline muted aria-label="Mirrored webcam preview" />
               <canvas ref={canvasRef} className="effects-canvas" />
-              {(activeJutsu !== 'none' || sharinganActive || (cameraState === 'ready' && (activeTool !== 'none' || thrownToolsRef.current.length > 0))) && <ThreeEffects trackingRef={threeTrackingRef} activeJutsu={activeJutsu} sharinganActive={sharinganActive} chargeLevel={chargeLevel} />}
+              {activeJutsu !== 'none' && <ThreeEffects trackingRef={threeTrackingRef} activeJutsu={activeJutsu} sharinganActive={false} chargeLevel={chargeLevel} />}
               {cameraState !== 'ready' && cameraState !== 'camera-only' && <div className="camera-placeholder">
                 {cameraState === 'loading' ? <LoaderCircle className="spin" size={38} /> : cameraState === 'error' ? <Camera size={35} /> : <div className="camera-orb"><Camera size={28} /></div>}
                 <strong>{cameraState === 'loading' ? 'Warming up the chakra flow' : cameraState === 'error' ? (error.includes('hand tracking') ? 'Hand tracking unavailable' : 'Camera not ready') : 'Your training space awaits'}</strong>
