@@ -145,3 +145,40 @@ body{background:radial-gradient(ellipse at 9% 4%,rgba(255,145,48,.12),transparen
 /* Optional blink-triggered Sharingan control */
 .camera-controls .sharingan-toggle.selected{border-color:rgba(202,112,255,.48);color:#ead9ff;background:rgba(100,49,137,.2)}
 .camera-controls .sharingan-toggle.selected .toggle-pill{background:rgba(177,104,255,.18);color:#d7a9ff}
+
+
+/* Focused two-technique experience: make the core actions the visual center. */
+.jutsu-list{grid-template-columns:1fr;gap:13px}
+.jutsu-card{min-height:172px;padding:14px 38px 14px 14px;gap:16px;border-radius:14px}
+.jutsu-art{width:112px;flex-basis:112px;height:116px;border-radius:11px}
+.jutsu-copy h3{font-size:19px;letter-spacing:-.025em}
+.jutsu-copy p{font-size:11px;line-height:1.65;min-height:0;max-width:42ch}
+.jutsu-overline{font-size:9px;letter-spacing:.13em}
+.jutsu-foot{margin-top:12px}
+.card-number{font-size:10px;top:13px;right:13px}
+.blue-card{border-color:rgba(98,201,255,.23);background:linear-gradient(125deg,rgba(16,39,66,.97),rgba(11,18,34,.98))}
+.violet-card{border-color:rgba(161,131,255,.24);background:linear-gradient(125deg,rgba(38,26,65,.93),rgba(11,18,34,.98))}
+.blue-card:hover,.blue-card.is-active{border-color:rgba(98,201,255,.78);box-shadow:0 0 0 1px rgba(98,201,255,.13),0 12px 35px rgba(31,105,183,.16)}
+.violet-card:hover,.violet-card.is-active{border-color:rgba(173,143,255,.78);box-shadow:0 0 0 1px rgba(173,143,255,.13),0 12px 35px rgba(104,71,183,.16)}
+.camera-controls{grid-template-columns:repeat(2,minmax(0,1fr));}
+.camera-controls .primary-button{grid-column:span 2}
+.intro-row h1{letter-spacing:-.055em}
+.detection-card{margin-top:15px}
+@media(max-width:850px){
+  .jutsu-list{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .jutsu-card{display:flex;flex-direction:column;align-items:stretch;min-height:250px;padding:10px;gap:10px}
+  .jutsu-art{width:100%;height:104px;flex-basis:auto}
+  .jutsu-copy h3{font-size:16px}
+  .jutsu-copy p{font-size:10px}
+  .jutsu-foot{align-items:flex-start;flex-direction:column;gap:7px}
+  .card-number{right:9px;top:9px}
+}
+@media(max-width:560px){
+  .jutsu-list{grid-template-columns:1fr}
+  .jutsu-card{flex-direction:row;align-items:center;min-height:140px;padding:11px 31px 11px 11px;gap:12px}
+  .jutsu-art{width:82px;height:94px;flex:0 0 82px}
+  .jutsu-copy h3{font-size:17px}
+  .jutsu-copy p{font-size:9px;line-height:1.5;margin-bottom:7px}
+  .jutsu-foot{flex-direction:row;align-items:center;gap:8px;margin-top:8px}
+  .camera-controls{grid-template-columns:1fr 1fr}
+}
