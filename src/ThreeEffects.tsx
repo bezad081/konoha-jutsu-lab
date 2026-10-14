@@ -4,6 +4,7 @@ import * as T from 'three';
 export type EffectPoint = { x: number; y: number; z?: number };
 export type ThreeTrackingState = {
   hands: EffectPoint[][];
+  effectHands?: EffectPoint[][];
   cloneSprite: HTMLCanvasElement | null;
   cloneRevision: number;
   cloneVisibleUntil: number;
@@ -173,8 +174,8 @@ export default function ThreeEffects({ trackingRef, activeJutsu, chargeLevel }: 
       new T.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: T.DoubleSide }),
     ];
     const glowMaterials = [
-      new T.MeshBasicMaterial({ color: 0x5f78ff, transparent: true, opacity: 0, blending: additive, depthWrite: false, side: T.DoubleSide }),
-      new T.MeshBasicMaterial({ color: 0xb18cff, transparent: true, opacity: 0, blending: additive, depthWrite: false, side: T.DoubleSide }),
+      new T.MeshBasicMaterial({ color: 0x39bfff, transparent: true, opacity: 0, blending: additive, depthWrite: false, side: T.DoubleSide }),
+      new T.MeshBasicMaterial({ color: 0xffa64d, transparent: true, opacity: 0, blending: additive, depthWrite: false, side: T.DoubleSide }),
     ];
     const glowPlanes = glowMaterials.map((material) => {
       const mesh = new T.Mesh(cloneGeometry, material);
@@ -189,8 +190,8 @@ export default function ThreeEffects({ trackingRef, activeJutsu, chargeLevel }: 
       return mesh;
     });
     const summonRings = [
-      new T.Mesh(new T.TorusGeometry(18, 1.2, 7, 56), basic(0xeffbff, 0.8)),
-      new T.Mesh(new T.TorusGeometry(18, 1.2, 7, 56), basic(0xbca0ff, 0.8)),
+      new T.Mesh(new T.TorusGeometry(18, 1.2, 7, 56), basic(0x65e2ff, 0.8)),
+      new T.Mesh(new T.TorusGeometry(18, 1.2, 7, 56), basic(0xffb45e, 0.8)),
     ];
     summonRings.forEach((mesh) => { mesh.visible = false; scene.add(mesh); });
 
@@ -232,6 +233,9 @@ export default function ThreeEffects({ trackingRef, activeJutsu, chargeLevel }: 
     let burstCenter = new T.Vector3();
     let anchor = new T.Vector3();
     let anchorReady = false;
+    let lastObservedTarget = new T.Vector3();
+    let lastObservedTargetAt = 0;
+    let trackedMotionSpeed = 0;
 
     const resize = () => {
       const width = Math.max(1, element.clientWidth);
@@ -278,16 +282,31 @@ export default function ThreeEffects({ trackingRef, activeJutsu, chargeLevel }: 
       const charge = clamp(props.chargeLevel / 100, 0, 1);
 
       if (props.activeJutsu === 'rasengan') {
-        const rawCenter = palmCenter(hands[0]);
+        const effectHands = state?.effectHands?.length ? state.effectHands : hands;
+        const rawCenter = palmCenter(effectHands[0]);
         if (rawCenter) {
           const target = toScreen(rawCenter, width, height);
           if (!anchorReady || previousJutsu !== 'rasengan') {
             anchor.copy(target);
+            lastObservedTarget.copy(target);
+            lastObservedTargetAt = now;
+            trackedMotionSpeed = 0;
             anchorReady = true;
           } else {
-            const movement = anchor.distanceTo(target);
-            const follow = clamp(0.34 + movement / Math.max(1, minDimension) * 4.8, 0.34, 0.92);
-            anchor.lerp(target, 1 - Math.exp(-follow * Math.max(0.5, deltaMs / 33)));
+            // Estimate velocity from the live hand target, not the trailing effect.
+            // Fast movement raises the follow rate and keeps the orb attached to the palm.
+            const observedDelta = target.distanceTo(lastObservedTarget);
+            if (observedDelta > 0.75) {
+              const elapsed = Math.max(0.016, (now - lastObservedTargetAt) / 1000);
+              trackedMotionSpeed = observedDelta / Math.max(1, minDimension) / elapsed;
+              lastObservedTarget.copy(target);
+              lastObservedTargetAt = now;
+            } else {
+              trackedMotionSpeed *= Math.exp(-deltaMs / 140);
+            }
+            const followRate = clamp(44 + trackedMotionSpeed * 9, 44, 105);
+            const follow = 1 - Math.exp(-followRate * Math.max(0.008, deltaMs / 1000));
+            anchor.lerp(target, follow);
           }
         }
       }
@@ -341,19 +360,25 @@ export default function ThreeEffects({ trackingRef, activeJutsu, chargeLevel }: 
       const entryEase = 1 - Math.pow(1 - entryProgress, 3);
       const cloneOffsets = [-0.23, 0.23];
       const cloneY = [0.006, -0.004];
-      const cloneAlpha = [0.78, 0.74];
+      const cloneAlpha = [0.82, 0.78];
+      const sourceWidth = cloneSource?.width || width;
+      const sourceHeight = cloneSource?.height || height;
+      // Preserve the source camera aspect ratio and match the preview's cover crop.
+      const coverScale = Math.max(width / sourceWidth, height / sourceHeight);
+      const clonePlaneWidth = sourceWidth * coverScale;
+      const clonePlaneHeight = sourceHeight * coverScale;
       clonePlanes.forEach((mesh, i) => {
         mesh.visible = cloneActive && hasCloneTexture;
         const offset = cloneOffsets[i] * (0.28 + 0.72 * entryEase);
         const bob = Math.sin(time * (1.4 + i * 0.15) + i) * 0.006;
         mesh.position.set(width * offset, -height * (cloneY[i] + bob), 10.2 + i * 0.01);
         const cloneScale = 0.84 + 0.12 * entryEase;
-        mesh.scale.set(width * cloneScale, height * cloneScale, 1);
+        mesh.scale.set(clonePlaneWidth * cloneScale, clonePlaneHeight * cloneScale, 1);
         cloneMaterials[i].opacity = cloneAlpha[i] * (0.12 + 0.88 * entryEase);
         glowPlanes[i].visible = mesh.visible;
         glowPlanes[i].position.copy(mesh.position);
         glowPlanes[i].position.z = 9.8 + i * 0.01;
-        glowPlanes[i].scale.copy(mesh.scale).multiplyScalar(1.025);
+        glowPlanes[i].scale.copy(mesh.scale).multiplyScalar(1.035);
         glowMaterials[i].opacity = 0.2 * (0.12 + 0.88 * entryEase);
       });
       summonRings.forEach((ringMesh, i) => {
@@ -404,20 +429,21 @@ export default function ThreeEffects({ trackingRef, activeJutsu, chargeLevel }: 
         rasengan.innerCore.scale.setScalar(0.88 + charge * 0.42 + Math.sin(time * 8.4) * 0.08);
         rasengan.rings.forEach((ringMesh, i) => {
           const direction = i % 2 ? -1 : 1;
-          ringMesh.rotation.x = time * (0.45 + i * 0.13) + i * 0.7;
-          ringMesh.rotation.y = time * direction * (0.62 + charge * 1.45 + i * 0.14);
-          ringMesh.rotation.z = time * (direction * (1.05 + charge * 1.7)) + i * 1.3;
+          const motionBoost = 1 + clamp(trackedMotionSpeed * 0.7, 0, 1.3);
+          ringMesh.rotation.x = time * (0.45 + i * 0.13) * motionBoost + i * 0.7;
+          ringMesh.rotation.y = time * direction * (0.62 + charge * 1.45 + i * 0.14) * motionBoost;
+          ringMesh.rotation.z = time * (direction * (1.05 + charge * 1.7)) * motionBoost + i * 1.3;
           ringMesh.scale.setScalar(0.7 + charge * 0.35 + Math.sin(time * 6 + i) * 0.035);
           (ringMesh.material as T.MeshBasicMaterial).opacity = 0.36 + charge * 0.45;
         });
         rasengan.spirals.forEach((spiral, i) => {
-          spiral.rotation.z = time * (i % 2 ? -2.3 : 2.0) * (0.68 + charge * 0.62);
+          spiral.rotation.z = time * (i % 2 ? -2.3 : 2.0) * (0.68 + charge * 0.62) * (1 + clamp(trackedMotionSpeed * 0.65, 0, 1.2));
           spiral.rotation.x = Math.sin(time * 1.3 + i) * 0.28;
           (spiral.material as T.LineBasicMaterial).opacity = 0.5 + charge * 0.43;
         });
         const particles = rasengan.particles;
-        particles.rotation.z = -time * (0.45 + charge * 1.2);
-        particles.rotation.y = time * (0.35 + charge * 0.5);
+        particles.rotation.z = -time * (0.45 + charge * 1.2) * (1 + clamp(trackedMotionSpeed * 0.7, 0, 1.3));
+        particles.rotation.y = time * (0.35 + charge * 0.5) * (1 + clamp(trackedMotionSpeed * 0.45, 0, 0.9));
         (particles.material as T.PointsMaterial).opacity = 0.34 + charge * 0.52 + Math.sin(time * 9) * 0.05;
         const particlePositions = particles.geometry.getAttribute('position') as T.BufferAttribute;
         const particleArray = particlePositions.array as Float32Array;
