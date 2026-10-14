@@ -105,9 +105,17 @@ function dist(a: Point, b: Point) {
 }
 function fingerExtended(points: Point[], tip: number, pip: number, mcp: number) {
   if (points.length < 21) return false;
-  const wrist = points[0];
-  return dist(points[tip], wrist) > dist(points[pip], wrist) * 1.1
-    && dist(points[tip], points[mcp]) > dist(points[pip], points[mcp]) * 1.06;
+  const dip = points[tip - 1];
+  const base = points[mcp], joint = points[pip];
+  // Prefer the PIP bend angle over wrist-distance alone. This better separates a
+  // two-finger Wind Fang seal from an open-palm Rasengan when the hand is rotated.
+  const ax = base.x - joint.x, ay = base.y - joint.y, az = (base.z - joint.z) * 0.35;
+  const bx = dip.x - joint.x, by = dip.y - joint.y, bz = (dip.z - joint.z) * 0.35;
+  const la = Math.hypot(ax, ay, az), lb = Math.hypot(bx, by, bz);
+  if (la < 1e-5 || lb < 1e-5) return false;
+  const cosine = Math.max(-1, Math.min(1, (ax * bx + ay * by + az * bz) / (la * lb)));
+  const angle = Math.acos(cosine) * 180 / Math.PI;
+  return angle > 148 && dist(points[tip], points[mcp]) > dist(points[pip], points[mcp]) * 1.08;
 }
 function classify(points: Point[]): Gesture {
   if (points.length < 21) return 'none';
@@ -456,7 +464,7 @@ export default function App() {
     stopCamera(); setCameraState('loading'); setError(''); setGestureLabel('Loading hand-tracking model…');
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false, video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } }
+        audio: false, video: { facingMode: 'user', width: { ideal: 960 }, height: { ideal: 540 }, frameRate: { ideal: 30, max: 30 } }
       });
       streamRef.current = stream;
       const video = videoRef.current;
@@ -525,7 +533,7 @@ export default function App() {
         const now = performance.now();
         if (v.currentTime !== lastVideoTime) {
           lastVideoTime = v.currentTime; latest = model.detectForVideo(v, now);
-          if (faceTrackerRef.current && now - lastFaceDetectAt > 42) { lastFaceDetectAt = now; try { const fr = faceTrackerRef.current.detectForVideo(v, now); latestFace = fr; const cats = fr.faceBlendshapes?.[0]?.categories ?? []; const left = cats.find((c) => c.categoryName === 'eyeBlinkLeft')?.score ?? 0, right = cats.find((c) => c.categoryName === 'eyeBlinkRight')?.score ?? 0, closed = left > .48 && right > .48; if (closed && !eyesClosed) eyeClosedAt = now; if (!closed && eyesClosed) { const duration = now - eyeClosedAt; if (duration >= 55 && duration <= 720 && now - lastBlinkAt > 950) { lastBlinkAt = now; sharinganRef.current = !sharinganRef.current; setSharinganActive(sharinganRef.current); setGestureLabel(sharinganRef.current ? 'Sharingan awakened · blink again to seal the eye' : 'Sharingan sealed · blink to awaken'); } } eyesClosed = closed; } catch { faceTrackerRef.current?.close(); faceTrackerRef.current = null; setFaceTrackingState('unavailable'); } }
+          if (faceTrackerRef.current && now - lastFaceDetectAt > 66) { lastFaceDetectAt = now; try { const fr = faceTrackerRef.current.detectForVideo(v, now); latestFace = fr; const cats = fr.faceBlendshapes?.[0]?.categories ?? []; const left = cats.find((c) => c.categoryName === 'eyeBlinkLeft')?.score ?? 0, right = cats.find((c) => c.categoryName === 'eyeBlinkRight')?.score ?? 0, closed = left > .48 && right > .48; if (closed && !eyesClosed) eyeClosedAt = now; if (!closed && eyesClosed) { const duration = now - eyeClosedAt; if (duration >= 55 && duration <= 720 && now - lastBlinkAt > 950) { lastBlinkAt = now; sharinganRef.current = !sharinganRef.current; setSharinganActive(sharinganRef.current); setGestureLabel(sharinganRef.current ? 'Sharingan awakened · blink again to seal the eye' : 'Sharingan sealed · blink to awaken'); } } eyesClosed = closed; } catch { faceTrackerRef.current?.close(); faceTrackerRef.current = null; setFaceTrackingState('unavailable'); } }
           const rawHands = (latest.landmarks ?? []) as Point[][];
           const previousHands = smoothedLandmarksRef.current;
           const oldHandedness = smoothedHandednessRef.current;
@@ -539,7 +547,7 @@ export default function App() {
               const prior = previous[pointIndex];
               const speed = Math.hypot(point.x - prior.x, point.y - prior.y);
               // Smooth slow jitter, but let fast gestures respond quickly enough for throwing.
-              const alpha = Math.min(0.88, 0.28 + speed * 7.5);
+              const alpha = Math.min(0.94, 0.48 + speed * 8);
               return {
                 x: prior.x + (point.x - prior.x) * alpha,
                 y: prior.y + (point.y - prior.y) * alpha,
@@ -550,27 +558,51 @@ export default function App() {
           smoothedHandednessRef.current = currentHandedness;
           const detected = readJutsu(latest), count = rawHands.length;
           setHandCount(count);
-          if (!comboModeRef.current && activeRef.current !== 'none') {
-            // Lock the current technique while either hand remains in frame. Intermediate poses cannot trigger a different jutsu.
-            candidate = 'none';
+          if (!comboModeRef.current && activeRef.current === 'chidori' && now < castUntilRef.current) {
+            candidate = 'none'; noPoseAt = 0;
+            setGestureLabel('Chidori released · lightning surrounds your hand!');
+          } else if (!comboModeRef.current && activeRef.current !== 'none') {
             if (count > 0) {
               noPoseAt = 0;
-              if (activeRef.current === 'clone' && detected.gesture === 'clone-seal') cloneVisualUntilRef.current = now + 6000;
-              setGestureLabel(`${INFO[activeRef.current].name} active · move both hands out of frame to switch techniques`);
+              if (detected.jutsu !== 'none' && detected.jutsu !== activeRef.current) {
+                if (candidate !== detected.jutsu) { candidate = detected.jutsu; candidateAt = now; }
+                if (now - candidateAt > 240) {
+                  if (detected.gesture === 'clone-seal') { castUntilRef.current = now + 6000; cloneVisualUntilRef.current = now + 6000; }
+                  const next = detected.jutsu;
+                  switchJutsu(next); candidate = 'none'; candidateAt = 0;
+                  setGestureLabel(detected.gesture === 'hare-seal'
+                    ? 'Wind Fang detected · sweep your hand to drive the crescent slash'
+                    : detected.gesture === 'clone-seal'
+                      ? 'Shadow Clone · clones stay for six seconds'
+                      : detected.gesture === 'two-open'
+                        ? 'Raiton Pulse · two palms detected'
+                        : detected.gesture === 'open'
+                          ? 'Rasengan · open palm detected'
+                          : detected.gesture === 'fist'
+                            ? 'Amaterasu · closed fist detected'
+                            : INFO[next].name + ' activated');
+                } else {
+                  setGestureLabel('Switch pose detected · hold steady to change to ' + INFO[detected.jutsu].name);
+                }
+              } else {
+                candidate = 'none'; candidateAt = 0;
+                if (activeRef.current === 'clone' && detected.gesture === 'clone-seal') cloneVisualUntilRef.current = now + 6000;
+                setGestureLabel(detected.jutsu === activeRef.current
+                  ? INFO[activeRef.current].name + ' active'
+                  : INFO[activeRef.current].name + ' active · form a different jutsu gesture to switch');
+              }
             } else {
+              candidate = 'none';
               if (!noPoseAt) noPoseAt = now;
               const cloneStillVisible = activeRef.current === 'clone' && now < cloneVisualUntilRef.current;
               if (cloneStillVisible) setGestureLabel('Shadow Clone · afterimages linger for six seconds');
-              else if (now > castUntilRef.current && now - noPoseAt > 650) {
+              else if (now > castUntilRef.current && now - noPoseAt > 500) {
                 switchJutsu('none'); castUntilRef.current = 0; noPoseAt = 0;
-                setGestureLabel('Hands out of frame · ready for the next jutsu');
+                setGestureLabel('Ready · show a hand sign to cast');
               }
             }
-          } else if (!comboModeRef.current && activeRef.current === 'chidori' && now < castUntilRef.current) {
-            candidate = 'none'; noPoseAt = 0;
-            setGestureLabel('Chidori released · lightning surrounds your hand!');
           } else if (comboModeRef.current) {
-            const steps = sequenceTypeRef.current === 'fireball' ? FIREBALL_STEPS : COMBO_STEPS;
+                        const steps = sequenceTypeRef.current === 'fireball' ? FIREBALL_STEPS : COMBO_STEPS;
             let expected = steps[comboProgressRef.current], timedOut = false;
             candidate = 'none'; noPoseAt = 0;
             if (comboStepStartedAtRef.current && now - comboStepStartedAtRef.current > 6500) {
@@ -613,7 +645,7 @@ export default function App() {
           } else if (detected.jutsu !== 'none') {
             noPoseAt = 0;
             if (candidate !== detected.jutsu) { candidate = detected.jutsu; candidateAt = now; }
-            if (now - candidateAt > 420) {
+            if (now - candidateAt > 240) {
               if (detected.gesture === 'clone-seal') { castUntilRef.current = now + 6000; cloneVisualUntilRef.current = now + 6000; }
               switchJutsu(detected.jutsu);
               setGestureLabel(
@@ -666,7 +698,9 @@ export default function App() {
             lastWrist = { ...first[0] }; lastWristAt = now;
           } else { lastWrist = null; lastWristAt = 0; }
         }
-        if (activeRef.current === 'clone') {
+        frames++;
+          if (now - fpsAt >= 1000) { setFps(Math.round(frames * 1000 / (now - fpsAt))); fpsAt = now; frames = 0; }
+          if (activeRef.current === 'clone') {
           if (!segmenterRef.current && !segmenterLoading && !segmenterFailed) void loadSegmenter();
           if (segmenterRef.current && v.currentTime !== lastSegmentationVideoTime && now - lastSegmentationAt > 125) {
             lastSegmentationVideoTime = v.currentTime;
@@ -727,8 +761,6 @@ export default function App() {
           thrownTools: thrownToolsRef.current,
           trail: energyTrail,
         };
-        frames++;
-        if (now - fpsAt >= 1000) { setFps(Math.round(frames*1000/(now-fpsAt))); fpsAt=now; frames=0; }
         rafRef.current = requestAnimationFrame(frame);
       };
       rafRef.current = requestAnimationFrame(frame);
@@ -833,7 +865,7 @@ export default function App() {
           <div className="stat-item"><span className="stat-icon green"><ShieldCheck size={17} /></span><div><b>No upload</b><small>video stays local</small></div></div>
         </div>
       </section>
-      {helpOpen && <section className="help-panel"><Info size={18} /><div><strong>Quick start · How to cast</strong><p><b>1.</b> Start the camera. <b>2. Rasengan:</b> show one open palm. <b>3. Chidori:</b> press Start Chidori, bring both closed fists close together in front of your upper chest, then thrust one fist toward the camera while pulling the other back by your shoulder. <b>4. Uchiha Fire:</b> use the guided sequence: hare sign, fists close to focus chakra, then separate them to release fire from your mouth. <b>5. Amaterasu:</b> show one closed fist. <b>6. Shadow Clone:</b> cross the index/middle fingers of both hands into a plus (+) shape. <b>7. Wind Fang:</b> raise the index and middle fingers of one hand while curling the ring and little fingers. Move that hand to sweep the green wind blade. Once a jutsu activates, it stays locked while your hands remain in frame; move both hands fully out of frame to reset. Clones linger for six seconds after the seal is released. Video is processed in your browser.</p></div><button className="text-button" onClick={() => setHelpOpen(false)}>Got it</button></section>}
+      {helpOpen && <section className="help-panel"><Info size={18} /><div><strong>Quick start · How to cast</strong><p><b>1.</b> Start the camera. <b>2. Rasengan:</b> show one open palm. <b>3. Chidori:</b> press Start Chidori, bring both closed fists close together in front of your upper chest, then thrust one fist toward the camera while pulling the other back by your shoulder. <b>4. Uchiha Fire:</b> use the guided sequence: hare sign, fists close to focus chakra, then separate them to release fire from your mouth. <b>5. Amaterasu:</b> show one closed fist. <b>6. Shadow Clone:</b> cross the index/middle fingers of both hands into a plus (+) shape. <b>7. Wind Fang:</b> raise the index and middle fingers of one hand while curling the ring and little fingers. Move that hand to sweep the green wind blade. You can switch techniques directly: hold the next hand sign briefly and the old effect transitions to the new one without taking both hands out of frame. Clones linger for six seconds after the seal is released. Video is processed in your browser.</p></div><button className="text-button" onClick={() => setHelpOpen(false)}>Got it</button></section>}
       <section className="workspace">
         <div className="camera-column">
           <div className="panel-heading"><div><span className="section-kicker">01 / LIVE INPUT</span><h2>Chakra viewport</h2></div>
@@ -850,7 +882,7 @@ export default function App() {
             <div className="video-wrap">
               <video ref={videoRef} className="camera-video" autoPlay playsInline muted aria-label="Mirrored webcam preview" />
               <canvas ref={canvasRef} className="effects-canvas" />
-              <ThreeEffects trackingRef={threeTrackingRef} activeJutsu={activeJutsu} sharinganActive={sharinganActive} chargeLevel={chargeLevel} />
+              {(activeJutsu !== 'none' || sharinganActive || activeTool !== 'none' || thrownToolsRef.current.length > 0) && <ThreeEffects trackingRef={threeTrackingRef} activeJutsu={activeJutsu} sharinganActive={sharinganActive} chargeLevel={chargeLevel} />}
               {cameraState !== 'ready' && cameraState !== 'camera-only' && <div className="camera-placeholder">
                 {cameraState === 'loading' ? <LoaderCircle className="spin" size={38} /> : cameraState === 'error' ? <Camera size={35} /> : <div className="camera-orb"><Camera size={28} /></div>}
                 <strong>{cameraState === 'loading' ? 'Warming up the chakra flow' : cameraState === 'error' ? (error.includes('hand tracking') ? 'Hand tracking unavailable' : 'Camera not ready') : 'Your training space awaits'}</strong>
@@ -950,7 +982,7 @@ export default function App() {
         </aside>
       </section>
       <section className="bottom-grid">
-        <div className="bottom-card mission-card"><div className="bottom-icon"><Lightbulb size={18} /></div><div><div className="section-kicker">YOUR FIRST MISSION</div><h3>Land your first clean cast</h3><p>Move into frame and hold a single open palm steady to cast Rasengan. For Shadow Clone, keep both open hands visible while the browser loads body segmentation. Try two open palms together to cast Raiton Pulse, two closed fists apart for Fireball, one closed fist for Amaterasu, or the two-finger hare seal for Wind Fang. Show your palm—not the back of your hand—for Rasengan. Move both hands out of frame before switching jutsu.</p></div><ChevronDown size={18} className="muted-chevron" /></div>
+        <div className="bottom-card mission-card"><div className="bottom-icon"><Lightbulb size={18} /></div><div><div className="section-kicker">YOUR FIRST MISSION</div><h3>Land your first clean cast</h3><p>Move into frame and hold a single open palm steady to cast Rasengan. For Shadow Clone, keep both open hands visible while the browser loads body segmentation. Try two open palms together to cast Raiton Pulse, two closed fists apart for Fireball, one closed fist for Amaterasu, or the two-finger hare seal for Wind Fang. Show your palm—not the back of your hand—for Rasengan. For Wind Fang, keep only index and middle fingers extended; hold a new sign briefly to switch techniques.</p></div><ChevronDown size={18} className="muted-chevron" /></div>
         <div className="bottom-card privacy-card"><div className="bottom-icon green-icon"><ShieldCheck size={18} /></div><div><div className="section-kicker">PRIVACY BY DESIGN</div><h3>Your video stays on your device</h3><p>Hand landmarks are processed in the browser. The model is fetched from a public CDN the first time; camera footage is not sent to a server by this prototype.</p></div><Check size={18} className="privacy-check" /></div>
       </section>
       <section className="shinobi-strip" aria-label="Featured shinobi">
@@ -966,7 +998,7 @@ export default function App() {
           </a>
         </div>
       </section>
-      <footer className="footer"><div><span className="footer-mark">木ノ葉</span><span> KONOHA JUTSU LAB</span><span className="footer-dim"> · Early access prototype</span></div><div><span className="footer-dim">Built with MediaPipe · React · Canvas</span><a href="https://github.com/FavorPan/naruto" target="_blank" rel="noreferrer">Inspired by open-source experiments <Expand size={12} /></a></div></footer>
+      <footer className="footer"><div><span className="footer-mark">木ノ葉</span><span> KONOHA JUTSU LAB</span><span className="footer-dim"> · Early access prototype</span></div><div><span className="footer-dim">Built with MediaPipe · Three.js · WebGL</span><a href="https://github.com/FavorPan/naruto" target="_blank" rel="noreferrer">Inspired by open-source experiments <Expand size={12} /></a></div></footer>
     </main>
   );
 }
