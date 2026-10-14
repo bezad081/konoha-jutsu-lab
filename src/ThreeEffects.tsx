@@ -86,7 +86,7 @@ export default function ThreeEffects({trackingRef,activeJutsu,sharinganActive,ch
  useEffect(()=>{const el=host.current;if(!el)return;let renderer:T.WebGLRenderer;try{renderer=new T.WebGLRenderer({alpha:true,antialias:false,powerPreference:'default',premultipliedAlpha:false});}catch{el.dataset.renderer='unavailable';return;}
  renderer.setClearColor(0,0);renderer.setPixelRatio(Math.min(devicePixelRatio||1,1));renderer.outputColorSpace=T.SRGBColorSpace;renderer.domElement.className='three-effects-canvas';el.appendChild(renderer.domElement);
  const scene=new T.Scene(),camera=new T.OrthographicCamera(-1,1,1,-1,.1,1000);camera.position.z=300;scene.add(new T.AmbientLight(0xffffff,.8));
- const names=['rasengan','chidori','lightning-burst','fireball','amaterasu','wind-scythe'],fx:Record<string,FX>={};names.forEach(n=>fx[n]=effect(scene,n));
+ const names=['rasengan'],fx:Record<string,FX>={};names.forEach(n=>fx[n]=effect(scene,n));
  const heldS=tool('shuriken'),heldK=tool('kunai');scene.add(heldS,heldK);heldS.visible=heldK.visible=false;const poolS:T.Group[]=[],poolK:T.Group[]=[];for(let i=0;i<12;i++){const s=heldS.clone(true),k=heldK.clone(true);s.visible=k.visible=false;scene.add(s,k);poolS.push(s);poolK.push(k);}
  const eyes=[eye(),eye()];eyes.forEach(e=>{e.visible=false;scene.add(e);});
  const cloneGhosts=[cloneGhost(0x9b79ff),cloneGhost(0x70dcff)];cloneGhosts.forEach(g=>{g.visible=false;scene.add(g);});
