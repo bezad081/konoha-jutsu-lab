@@ -114,7 +114,23 @@ export default function ThreeEffects({trackingRef,activeJutsu,sharinganActive,ch
  cloneGhosts.forEach((ghost,i)=>{ghost.visible=cloneActive&&!cloneTexture;ghost.position.set(w*cloneOffsets[i],-h*.025,6+i*.01);ghost.scale.setScalar(Math.min(w,h)/275);});
  const activeTool=s?.activeTool??'none';heldS.visible=activeTool==='shuriken'&&hands.length>0;heldK.visible=activeTool==='kunai'&&hands.length>0;if(heldS.visible||heldK.visible){const m=activeTool==='shuriken'?heldS:heldK;m.position.copy(xy(a,w,h));m.position.z=24;m.scale.setScalar(scale*.75);m.rotation.z=Math.atan2((hands[0]?.[8]?.y??a.y)-(hands[0]?.[5]?.y??a.y-.1),(hands[0]?.[8]?.x??a.x)-(hands[0]?.[5]?.x??a.x))+Math.PI/2;if(activeTool==='shuriken')m.rotation.y=t*2;}
  const usedS=new Set<number>(),usedK=new Set<number>();(s?.thrownTools??[]).forEach(v=>{const pool=v.kind==='shuriken'?poolS:poolK,used=v.kind==='shuriken'?usedS:usedK;let i=0;while(used.has(i)&&i<pool.length)i++;if(i>=pool.length)return;used.add(i);const m=pool[i];m.visible=true;m.position.copy(xy(v,w,h));m.position.z=28;m.scale.setScalar(scale*.75);m.rotation.z=v.spin+(now-v.born)*.014;});poolS.forEach((m,i)=>{if(!usedS.has(i))m.visible=false;});poolK.forEach((m,i)=>{if(!usedK.has(i))m.visible=false;});
- eyes.forEach((e,i)=>{const v=face.length>=478?face[i===0?468:473]:null;e.visible=p.sharinganActive&&!!v;if(v){e.position.copy(xy(v,w,h));e.position.z=40;e.scale.setScalar(scale*.78);e.rotation.z=t*.22;}});
+ eyes.forEach((e,i)=>{
+  const valid=face.length>=478;
+  const iris=valid?face[i===0?468:473]:null;
+  const corners=valid?(i===0?[33,133]:[362,263]):null;
+  const outer=corners?face[corners[0]]:null,inner=corners?face[corners[1]]:null;
+  e.visible=!!(p.sharinganActive&&iris&&outer&&inner);
+  if(iris&&outer&&inner){
+    const center=xy(iris,w,h);
+    const left=xy(outer,w,h),right=xy(inner,w,h);
+    const eyeWidth=Math.hypot(right.x-left.x,right.y-left.y);
+    const eyeAngle=Math.atan2(right.y-left.y,right.x-left.x);
+    e.position.set(center.x,center.y,40);
+    // Scale the iris overlay from that eye's own width; this avoids a fixed-size sticker drifting over the eyelids.
+    e.scale.setScalar(Math.max(.18,Math.min(1.15,eyeWidth*.38/20)));
+    e.rotation.z=eyeAngle;
+  }
+ });
  const recent=(s?.trail??[]).slice(-64),at=trGeo.getAttribute('position') as T.BufferAttribute,arr=at.array as Float32Array;recent.forEach((v,i)=>{const z=xy(v,w,h);arr[i*3]=z.x;arr[i*3+1]=z.y;arr[i*3+2]=8;});at.needsUpdate=true;trGeo.setDrawRange(0,recent.length);trMat.color.setHex(p.activeJutsu==='fireball'?0xff8731:p.activeJutsu==='amaterasu'?0x9a6aff:p.activeJutsu==='wind-scythe'?0x68ffc0:p.activeJutsu==='chidori'||p.activeJutsu==='lightning-burst'?0x74e5ff:0x50bfff);trMat.opacity=p.activeJutsu==='none'?0:.66;
  const renderStarted=performance.now();renderer.render(scene,camera);const cost=performance.now()-renderStarted;if(cost>23){slowFrames++;fastFrames=0;}else if(cost<11){fastFrames++;slowFrames=0;}else{slowFrames=0;fastFrames=0;}if(slowFrames>=4&&renderRatio>.75){renderRatio=.75;renderer.setPixelRatio(renderRatio);resize();slowFrames=0;}else if(fastFrames>=180&&renderRatio<Math.min(devicePixelRatio||1,1)){renderRatio=Math.min(devicePixelRatio||1,1);renderer.setPixelRatio(renderRatio);resize();fastFrames=0;}
  };
