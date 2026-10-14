@@ -722,7 +722,7 @@ export default function App() {
           }catch(cause){segmentationBusy=false;if(!cloneSpriteReadyRef.current&&activeRef.current==='clone')setGestureLabel('Shadow Clone · retrying segmentation: '+describeFailure(cause));}
          }
         }
-        if (overlayDirty) {        if (overlayDirty) {
+        if (overlayDirty) {
           const ctx = canvas.getContext('2d');
           if (ctx) {
             ctx.clearRect(0, 0, w, h);
