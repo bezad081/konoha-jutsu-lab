@@ -358,12 +358,10 @@ export default function App() {
   const [trackingEngine, setTrackingEngine] = useState<'idle'|'starting'|'worker-gpu'|'worker-cpu'|'main-thread'|'unavailable'>('idle');
   const [cloneStatus, setCloneStatus] = useState<'idle'|'loading'|'ready'|'error'>('idle');
   const [, setFaceTrackingState] = useState<'loading'|'ready'|'unavailable'>('loading');
-  const [sharinganActive, setSharinganActive] = useState(false);
-  const [sharinganEnabled, setSharinganEnabled] = useState(false);
-  const [sequenceType, setSequenceType] = useState<SequenceKind>('chidori');
-  const [comboMode, setComboMode] = useState(false);
-  const [comboProgress, setComboProgress] = useState(0);
-  const [comboHoldProgress, setComboHoldProgress] = useState(0);
+  const [, setSharinganActive] = useState(false);
+  const [, setComboMode] = useState(false);
+  const [, setComboProgress] = useState(0);
+  const [, setComboHoldProgress] = useState(0);
   const [comboFeedback, setComboFeedback] = useState('Start Chidori, bring both fists close together, then thrust one fist forward while pulling the other back.');
   const comboModeRef = useRef(false);
   const sequenceTypeRef = useRef<SequenceKind>('chidori');
