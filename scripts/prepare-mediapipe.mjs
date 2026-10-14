@@ -5,6 +5,10 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const modelPath = path.join(root, 'public', 'models', 'hand_landmarker.task');
+const segmenterModelPath = path.join(root, 'public', 'models', 'selfie_segmenter_landscape.tflite');
+const segmenterModelSources = [
+  'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter_landscape/float16/latest/selfie_segmenter_landscape.tflite',
+];
 const wasmSource = path.join(root, 'node_modules', '@mediapipe', 'tasks-vision', 'wasm');
 const wasmTarget = path.join(root, 'public', 'mediapipe', 'wasm');
 
@@ -75,6 +79,54 @@ async function prepareModel() {
 }
 
 
+async function validLocalSegmenterModel() {
+  try {
+    const bytes = await readFile(segmenterModelPath);
+    return bytes.length > 100_000 && bytes.length < 15_000_000 && bytes.toString('ascii', 4, 8) === 'TFL3';
+  } catch {
+    return false;
+  }
+}
+
+async function prepareSegmenterModel() {
+  await mkdir(path.dirname(segmenterModelPath), { recursive: true });
+  if (await validLocalSegmenterModel()) {
+    console.log('Using local MediaPipe selfie-segmentation model.');
+    return;
+  }
+
+  const errors = [];
+  for (const url of segmenterModelSources) {
+    try {
+      console.log(`Downloading MediaPipe selfie-segmentation model from ${new URL(url).host}…`);
+      const response = await fetch(url, {
+        redirect: 'follow',
+        signal: AbortSignal.timeout(90_000),
+        headers: { 'user-agent': 'Konoha-Jutsu-Lab-build/1.0' },
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
+      const bytes = Buffer.from(await response.arrayBuffer());
+      if (bytes.length < 100_000 || bytes.length > 15_000_000 || bytes.toString('ascii', 4, 8) !== 'TFL3') {
+        throw new Error(`download does not look like a valid TFLite model (${bytes.length} bytes)`);
+      }
+      const temporaryPath = `${segmenterModelPath}.download`;
+      await writeFile(temporaryPath, bytes);
+      await rename(temporaryPath, segmenterModelPath);
+      console.log(`Saved local selfie-segmentation model (${(bytes.length / 1_000_000).toFixed(2)} MB).`);
+      return;
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      errors.push(`${new URL(url).host}: ${message}`);
+      console.warn(`Selfie-segmentation model source failed: ${errors[errors.length - 1]}`);
+    }
+  }
+
+  // Keep the build usable if the model mirror is temporarily unreachable:
+  // the browser worker also retains the official HTTPS model URL as fallback.
+  console.warn('Local selfie-segmentation model unavailable; the app will try its official HTTPS fallback. ' + errors.join(' | '));
+}
+
+
 async function prepareWasm() {
   const sourceFiles = await readdir(wasmSource);
   if (!sourceFiles.some((file) => file === 'vision_wasm_internal.js') ||
@@ -91,4 +143,5 @@ async function prepareWasm() {
 }
 
 await prepareModel();
+await prepareSegmenterModel();
 await prepareWasm();
