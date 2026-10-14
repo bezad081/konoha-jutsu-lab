@@ -312,7 +312,6 @@ function updateCloneSprite(video:HTMLVideoElement, mask:CloneMask, sprite:HTMLCa
 }
 
 export default function App() {
-export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -539,7 +538,7 @@ export default function App() {
        }finally{segmenterLoading=false;}
       };
       void loadSegmenter();
-      let lastVideoTime = -1;      let lastVideoTime = -1;
+      let lastVideoTime = -1;
       let overlayDirty = true;
       let candidate: Jutsu = 'none', candidateAt = 0, noPoseAt = 0, fpsAt = performance.now(), frames = 0;
       const frame = () => {
