@@ -442,6 +442,7 @@ export default function App() {
       await video.play();
       if (stageRef.current && video.videoWidth && video.videoHeight) stageRef.current.style.aspectRatio = video.videoWidth + ' / ' + video.videoHeight;
       setGestureLabel('Camera is on · starting the background vision worker…');
+      const cameraStream = stream;
       let vision: Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>> | null = null;
       let worker: Worker | null = null;
       let workerMode = false;
@@ -502,7 +503,25 @@ export default function App() {
           };
           activeWorker.onerror = () => {
             workerBusy = false;
-            setGestureLabel('Background tracker had a hiccup · attempting to recover');
+            if (visionWorkerRef.current !== activeWorker) return;
+            visionWorkerRef.current = null;
+            activeWorker.terminate();
+            workerMode = false;
+            setGestureLabel('Background worker stopped · starting compatibility tracking');
+            void createHandTracker().then((initialized) => {
+              if (streamRef.current !== cameraStream) { initialized.tracker.close(); return; }
+              trackerRef.current = initialized.tracker;
+              vision = initialized.vision;
+              void createFaceTracker(initialized.vision).then((faceTracker) => {
+                if (streamRef.current !== cameraStream) { faceTracker.close(); return; }
+                faceTrackerRef.current = faceTracker; setFaceTrackingState('ready');
+              }).catch(() => setFaceTrackingState('unavailable'));
+              setGestureLabel('Compatibility tracking active · show a hand sign to cast');
+            }).catch((cause) => {
+              setCameraState('camera-only');
+              setFaceTrackingState('unavailable');
+              setError('Background tracking failed and the compatibility tracker could not start: ' + describeFailure(cause));
+            });
           };
         } catch (workerCause) {
           worker?.terminate();
@@ -518,17 +537,14 @@ export default function App() {
         const initialized = await createHandTracker();
         trackerRef.current = initialized.tracker;
         vision = initialized.vision;
-        const cameraStream = stream;
         setFaceTrackingState('loading');
         void createFaceTracker(initialized.vision).then((faceTracker) => {
           if (streamRef.current !== cameraStream) { faceTracker.close(); return; }
           faceTrackerRef.current = faceTracker; setFaceTrackingState('ready');
         }).catch(() => setFaceTrackingState('unavailable'));
       }
-      const cameraStream = stream;
       setCameraState('ready');
       setGestureLabel(workerMode ? 'Background tracking active · show a hand sign to cast' : 'Rasengan: open palm · Chidori: two closed-fist moves · Fireball: two fists apart · Amaterasu: one fist');
-      setGestureLabel('Rasengan: open palm · Chidori: two closed-fist moves · Fireball: two fists apart · Amaterasu: one fist');
       let segmenterLoading = false, segmenterFailed = false, personMaskIndex = 0;
       let lastSegmentationAt = 0, lastSegmentationVideoTime = -1;
       const cloneSprite = document.createElement('canvas');
