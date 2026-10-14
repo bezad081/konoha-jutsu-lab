@@ -362,7 +362,7 @@ export default function App() {
   const [, setComboMode] = useState(false);
   const [, setComboProgress] = useState(0);
   const [, setComboHoldProgress] = useState(0);
-  const [comboFeedback, setComboFeedback] = useState('Start Chidori, bring both fists close together, then thrust one fist forward while pulling the other back.');
+  const [, setComboFeedback] = useState('');
   const comboModeRef = useRef(false);
   const sequenceTypeRef = useRef<SequenceKind>('chidori');
   const comboProgressRef = useRef(0);
