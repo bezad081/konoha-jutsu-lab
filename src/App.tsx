@@ -6,14 +6,11 @@ import {
 import { FilesetResolver, HandLandmarker, type HandLandmarkerResult } from '@mediapipe/tasks-vision';
 import ThreeEffects, { type ThreeTrackingState } from './ThreeEffects';
 
-type Jutsu = 'none' | 'rasengan' | 'chidori' | 'clone' | 'lightning-burst' | 'fireball' | 'amaterasu' | 'wind-scythe';
-type Gesture = 'none' | 'open' | 'fist' | 'two-open' | 'two-fist' | 'clone-seal' | 'ox-seal' | 'hare-seal' | 'monkey-seal';
+type Jutsu = 'none' | 'rasengan' | 'clone';
+type Gesture = 'none' | 'open' | 'fist' | 'clone-seal';
 type Point = { x: number; y: number; z: number };
 type OneEuroAxis = { raw: number; filtered: number; derivative: number; at: number };
 type OneEuroPoint = { x: OneEuroAxis; y: OneEuroAxis; z: OneEuroAxis };
-type NinjaTool = 'none' | 'shuriken' | 'kunai';
-type SequenceKind = 'chidori' | 'fireball';
-type ThrownTool = { kind: Exclude<NinjaTool, 'none'>; x: number; y: number; vx: number; vy: number; born: number; spin: number };
 type WorkerHandPayload = { landmarks: Point[][]; handedness?: Array<Array<{ categoryName: string }>>; worldLandmarks?: Point[][] };
 type VisionWorkerOutput =
   | { type: 'ready'; delegate: string }
@@ -89,23 +86,8 @@ const LINKS: Array<[number, number]> = [
 ];
 const INFO: Record<Exclude<Jutsu, 'none'>, { name: string; color: string }> = {
   rasengan: { name: 'Rasengan', color: 'blue' },
-  chidori: { name: 'Chidori', color: 'cyan' },
   clone: { name: 'Shadow Clone', color: 'violet' },
-  'lightning-burst': { name: 'Raiton Pulse', color: 'violet' },
-  fireball: { name: 'Fire Style: Fireball Jutsu', color: 'orange' },
-  amaterasu: { name: 'Amaterasu · Black Flames', color: 'black' },
-  'wind-scythe': { name: 'Wind Fang · Gale Slash', color: 'green' }
 };
-
-const COMBO_STEPS: Array<{ gesture: Gesture; title: string; instruction: string }> = [
-  { gesture: 'ox-seal', title: 'Charge · Set your stance', instruction: 'Bring both closed fists close together in front of your upper chest — do not press them into your body' },
-  { gesture: 'two-fist', title: 'Release · Lightning thrust', instruction: 'Keep both fists closed; drive one fist forward toward the camera while pulling the other back beside your shoulder' },
-];
-const FIREBALL_STEPS: Array<{ gesture: Gesture; title: string; instruction: string }> = [
-  { gesture: 'hare-seal', title: 'Weave · Gather chakra', instruction: 'Raise the index and middle fingers of one hand; curl the other fingers and hold the sign steady' },
-  { gesture: 'ox-seal', title: 'Focus · Compress chakra', instruction: 'Bring both closed fists close together in front of your chest' },
-  { gesture: 'two-fist', title: 'Release · Uchiha Fire', instruction: 'Separate both fists; fire streams from your mouth and forms a great fireball' },
-];
 
 function dist(a: Point, b: Point) {
   return Math.hypot(a.x - b.x, a.y - b.y, (a.z - b.z) * 0.5);
@@ -187,43 +169,49 @@ function isShadowCloneSeal(hands: Point[][]) {
   return angle > 24 && tipsNear;
 }
 function playJutsuCue(audio: AudioContext, jutsu: Exclude<Jutsu, 'none'>) {
-  const now = audio.currentTime, master = audio.createGain();
-  master.gain.value = jutsu === 'chidori' ? 0.78 : 0.58; master.connect(audio.destination);
-  const chirp = (start: number, frequency: number, duration: number, volume: number) => {
-    const osc = audio.createOscillator(), gain = audio.createGain(); osc.type = 'sine';
-    osc.frequency.setValueAtTime(frequency, start);
-    osc.frequency.exponentialRampToValueAtTime(frequency * (1.2 + Math.random() * .45), start + duration * .38);
-    osc.frequency.exponentialRampToValueAtTime(frequency * (.55 + Math.random() * .22), start + duration);
-    gain.gain.setValueAtTime(.0001, start); gain.gain.exponentialRampToValueAtTime(volume, start + .009);
-    gain.gain.exponentialRampToValueAtTime(.0001, start + duration);
-    osc.connect(gain); gain.connect(master); osc.start(start); osc.stop(start + duration + .01);
-  };
-  if (jutsu === 'chidori') {
-    // Short, layered "thousand birds" chirps plus an electric crackle — no spoken voice.
-    for (let i = 0; i < 13; i++) chirp(now + i * .027, 1750 + (i % 5) * 330, .095, .12 + (i % 3) * .025);
-    const buffer = audio.createBuffer(1, Math.floor(audio.sampleRate * .22), audio.sampleRate), data = buffer.getChannelData(0);
-    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
-    const source = audio.createBufferSource(), filter = audio.createBiquadFilter(), gain = audio.createGain();
-    source.buffer = buffer; filter.type = 'bandpass'; filter.frequency.value = 2700; filter.Q.value = .8;
-    gain.gain.setValueAtTime(.0001, now); gain.gain.exponentialRampToValueAtTime(.22, now + .018); gain.gain.exponentialRampToValueAtTime(.0001, now + .23);
-    source.connect(filter); filter.connect(gain); gain.connect(master); source.start(now); source.stop(now + .24);
-  } else if (jutsu === 'rasengan') {
-    const osc = audio.createOscillator(), gain = audio.createGain(); osc.type = 'sine';
-    osc.frequency.setValueAtTime(260, now); osc.frequency.exponentialRampToValueAtTime(75, now + .42);
-    gain.gain.setValueAtTime(.0001, now); gain.gain.exponentialRampToValueAtTime(.23, now + .045); gain.gain.exponentialRampToValueAtTime(.0001, now + .45);
-    osc.connect(gain); gain.connect(master); osc.start(now); osc.stop(now + .46);
+  const now = audio.currentTime;
+  const master = audio.createGain();
+  master.gain.value = 0.34;
+  master.connect(audio.destination);
+  if (jutsu === 'rasengan') {
+    const oscillator = audio.createOscillator();
+    const overtone = audio.createOscillator();
+    const filter = audio.createBiquadFilter();
+    const gain = audio.createGain();
+    oscillator.type = 'sine';
+    overtone.type = 'triangle';
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(720, now);
+    filter.frequency.exponentialRampToValueAtTime(190, now + 0.55);
+    oscillator.frequency.setValueAtTime(180, now);
+    oscillator.frequency.exponentialRampToValueAtTime(62, now + 0.56);
+    overtone.frequency.setValueAtTime(360, now);
+    overtone.frequency.exponentialRampToValueAtTime(124, now + 0.52);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.42, now + 0.06);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.58);
+    oscillator.connect(filter); overtone.connect(filter); filter.connect(gain); gain.connect(master);
+    oscillator.start(now); overtone.start(now);
+    oscillator.stop(now + 0.6); overtone.stop(now + 0.6);
   } else {
-    const duration = jutsu === 'fireball' ? .32 : .2;
-    const buffer = audio.createBuffer(1, Math.floor(audio.sampleRate * duration), audio.sampleRate), data = buffer.getChannelData(0);
-    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, jutsu === 'fireball' ? 1.8 : 2.8);
-    const source = audio.createBufferSource(), filter = audio.createBiquadFilter(), gain = audio.createGain();
-    source.buffer = buffer; filter.type = 'lowpass'; filter.frequency.setValueAtTime(jutsu === 'fireball' ? 1300 : 2100, now); filter.frequency.exponentialRampToValueAtTime(180, now + duration);
-    gain.gain.setValueAtTime(.0001, now); gain.gain.exponentialRampToValueAtTime(jutsu === 'fireball' ? .34 : .24, now + .02); gain.gain.exponentialRampToValueAtTime(.0001, now + duration);
-    source.connect(filter); filter.connect(gain); gain.connect(master); source.start(now); source.stop(now + duration);
-    if (jutsu === 'lightning-burst') for (let i = 0; i < 5; i++) chirp(now + i * .026, 900 + i * 380, .07, .11);
+    const duration = 0.34;
+    const buffer = audio.createBuffer(1, Math.floor(audio.sampleRate * duration), audio.sampleRate);
+    const samples = buffer.getChannelData(0);
+    for (let i = 0; i < samples.length; i++) samples[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / samples.length, 2.1);
+    const source = audio.createBufferSource();
+    const lowpass = audio.createBiquadFilter();
+    const gain = audio.createGain();
+    source.buffer = buffer;
+    lowpass.type = 'lowpass';
+    lowpass.frequency.setValueAtTime(1500, now);
+    lowpass.frequency.exponentialRampToValueAtTime(240, now + duration);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.3, now + 0.035);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+    source.connect(lowpass); lowpass.connect(gain); gain.connect(master);
+    source.start(now); source.stop(now + duration);
   }
 }
-
 function palmOrientationAllowsRasengan(result: HandLandmarkerResult, handIndex: number): boolean {
   const world = (result.worldLandmarks?.[handIndex] ?? []) as Point[];
   if (world.length < 21) return false;
@@ -307,7 +295,7 @@ export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const threeTrackingRef = useRef<ThreeTrackingState>({ hands: [], face: [], move: { x: 0, y: 0 }, activeTool: 'none', thrownTools: [], trail: [], cloneSprite: null, cloneRevision: 0, cloneVisibleUntil: 0 });
+  const threeTrackingRef = useRef<ThreeTrackingState>({ hands: [], cloneSprite: null, cloneRevision: 0, cloneVisibleUntil: 0 });
   const trackerRef = useRef<HandLandmarker | null>(null);
   const visionWorkerRef = useRef<Worker | null>(null);
   const segmenterWorkerRef = useRef<Worker | null>(null);
@@ -327,8 +315,7 @@ export default function App() {
   const castUntilRef = useRef(0);
   const cloneVisualUntilRef = useRef(0);
   const soundRef = useRef(false);
-  const activeToolRef = useRef<NinjaTool>('none');
-  const thrownToolsRef = useRef<ThrownTool[]>([]);
+  const previewUntilRef = useRef(0);
   const landmarksRef = useRef(true);
   const [cameraState, setCameraState] = useState<'idle'|'loading'|'ready'|'camera-only'|'error'>('idle');
   const [error, setError] = useState('');
@@ -342,17 +329,6 @@ export default function App() {
   const [fps, setFps] = useState(0);
   const [trackingEngine, setTrackingEngine] = useState<'idle'|'starting'|'worker-gpu'|'worker-cpu'|'main-thread'|'unavailable'>('idle');
   const [cloneStatus, setCloneStatus] = useState<'idle'|'loading'|'ready'|'error'>('idle');
-  const [, setComboMode] = useState(false);
-  const [, setComboProgress] = useState(0);
-  const [, setComboHoldProgress] = useState(0);
-  const [, setComboFeedback] = useState('');
-  const comboModeRef = useRef(false);
-  const sequenceTypeRef = useRef<SequenceKind>('chidori');
-  const comboProgressRef = useRef(0);
-  const comboCandidateRef = useRef<Gesture>('none');
-  const comboCandidateAtRef = useRef(0);
-  const comboStepStartedAtRef = useRef(0);
-  const comboProgressUiAtRef = useRef(0);
   useEffect(() => { soundRef.current=soundEnabled; if(soundEnabled)try{const a=audioRef.current??new window.AudioContext();audioRef.current=a;void a.resume();}catch{/* optional */} }, [soundEnabled]);
   useEffect(() => { landmarksRef.current = showLandmarks; }, [showLandmarks]);
   useEffect(() => {
@@ -394,10 +370,9 @@ export default function App() {
     gestureVoteHistoryRef.current = [];
     setTrackingEngine('idle');
     setCloneStatus('idle');
-    comboModeRef.current = false; setComboMode(false); comboCandidateRef.current = 'none';
     castUntilRef.current = 0; cloneVisualUntilRef.current = 0;
     if (videoRef.current) videoRef.current.srcObject = null;
-    threeTrackingRef.current = { hands: [], face: [], move: { x: 0, y: 0 }, activeTool: 'none', thrownTools: [], trail: [], cloneSprite: null, cloneRevision: 0, cloneVisibleUntil: 0 };
+    threeTrackingRef.current = { hands: [], cloneSprite: null, cloneRevision: 0, cloneVisibleUntil: 0 };
     switchJutsu('none'); setCameraState('idle'); setHandCount(0); setGestureLabel('Camera stopped');
     const ctx = canvasRef.current?.getContext('2d');
     if (ctx && canvasRef.current) ctx.clearRect(0,0,canvasRef.current.width,canvasRef.current.height);
