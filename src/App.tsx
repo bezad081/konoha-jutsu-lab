@@ -280,19 +280,6 @@ function drawLandmarks(ctx: CanvasRenderingContext2D, hands: Point[][], w: numbe
   }
   ctx.restore();
 }
-function drawCloneEcho(ctx: CanvasRenderingContext2D, w: number, h: number, t: number) {
-  ctx.save(); ctx.globalCompositeOperation='screen';
-  for(let i=0;i<3;i++) {
-    const x=w*.5+Math.sin(t*2.5+i*2)*w*.025+(i-1)*w*.14, y=h*.52;
-    ctx.globalAlpha=.1+.04*Math.sin(t*4+i); ctx.fillStyle=i%2?'#bd9aff':'#75dfff';
-    ctx.shadowColor=ctx.fillStyle; ctx.shadowBlur=28;
-    ctx.beginPath(); ctx.ellipse(x,y-h*.12,w*.035,h*.075,0,0,Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.roundRect(x-w*.036,y-h*.03,w*.072,h*.22,w*.025); ctx.fill();
-    ctx.strokeStyle='rgba(180,225,255,.45)'; ctx.lineWidth=1.1; ctx.stroke();
-  }
-  ctx.restore();
-}
-
 type ConfidenceMask = { width: number; height: number; getAsFloat32Array(): Float32Array };
 
 function updateCloneSprite(
@@ -319,65 +306,14 @@ function updateCloneSprite(
     pixels.data[i * 4 + 3] = Math.round(pixels.data[i * 4 + 3] * soft);
   }
   ctx.putImageData(pixels, 0, 0);
-}
-
-function drawSegmentedClones(
-  ctx: CanvasRenderingContext2D,
-  sprite: HTMLCanvasElement,
-  w: number,
-  h: number,
-  t: number,
-) {
-  ctx.save();
-  ctx.globalCompositeOperation = 'source-over';
-  const echoes = [
-    { x: -0.23 + Math.sin(t * 1.4) * 0.012, y: 0.006, scale: 0.96, alpha: 0.76, hue: 135 },
-    { x: 0.23 + Math.sin(t * 1.7 + 1) * 0.012, y: -0.004, scale: 0.94, alpha: 0.72, hue: 205 },
-  ];
-  for (const [index, echo] of echoes.entries()) {
-    const cloneX = w * (0.5 + echo.x);
-    const cloneY = h * (0.72 + echo.y);
-    const smokePulse = Math.pow(Math.max(0, Math.sin(t * 3.4 + index * 2.15)), 2);
-    if (smokePulse > 0.02) {
-      ctx.save();
-      ctx.globalAlpha = smokePulse * 0.19;
-      ctx.filter = 'blur(7px)';
-      ctx.fillStyle = '#dff7ff';
-      for (let puff = 0; puff < 7; puff++) {
-        const angle = puff * Math.PI * 2 / 7 + t * 0.7;
-        const drift = h * (0.012 + smokePulse * 0.018);
-        ctx.beginPath();
-        ctx.ellipse(
-          cloneX + Math.cos(angle) * (w * 0.018 + drift),
-          cloneY - smokePulse * h * 0.025 + Math.sin(angle) * drift,
-          w * (0.012 + smokePulse * 0.009),
-          h * (0.014 + smokePulse * 0.01),
-          angle * 0.4, 0, Math.PI * 2,
-        );
-        ctx.fill();
-      }
-      ctx.restore();
-    }
-    ctx.save();
-    ctx.globalAlpha = echo.alpha;
-    ctx.filter = 'drop-shadow(0 0 13px rgba(130,205,255,.62))';
-    ctx.drawImage(
-      sprite,
-      w * echo.x + (w - w * echo.scale) / 2,
-      h * echo.y + (h - h * echo.scale) / 2,
-      w * echo.scale,
-      h * echo.scale,
-    );
-    ctx.restore();
-  }
-  ctx.restore();
+  sprite.dataset.revision = String((Number(sprite.dataset.revision) || 0) + 1);
 }
 
 export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const threeTrackingRef = useRef<ThreeTrackingState>({ hands: [], face: [], move: { x: 0, y: 0 }, activeTool: 'none', thrownTools: [], trail: [] });
+  const threeTrackingRef = useRef<ThreeTrackingState>({ hands: [], face: [], move: { x: 0, y: 0 }, activeTool: 'none', thrownTools: [], trail: [], cloneSprite: null, cloneRevision: 0, cloneVisibleUntil: 0 });
   const trackerRef = useRef<HandLandmarker | null>(null);
   const segmenterRef = useRef<ImageSegmenter | null>(null);
   const cloneSpriteRef = useRef<HTMLCanvasElement | null>(null);
@@ -468,7 +404,7 @@ export default function App() {
     comboModeRef.current = false; setComboMode(false); comboCandidateRef.current = 'none';
     castUntilRef.current = 0; cloneVisualUntilRef.current = 0;
     if (videoRef.current) videoRef.current.srcObject = null;
-    threeTrackingRef.current = { hands: [], face: [], move: { x: 0, y: 0 }, activeTool: 'none', thrownTools: [], trail: [] };
+    threeTrackingRef.current = { hands: [], face: [], move: { x: 0, y: 0 }, activeTool: 'none', thrownTools: [], trail: [], cloneSprite: null, cloneRevision: 0, cloneVisibleUntil: 0 };
     switchJutsu('none'); setCameraState('idle'); setHandCount(0); setGestureLabel('Camera stopped');
     const ctx = canvasRef.current?.getContext('2d');
     if (ctx && canvasRef.current) ctx.clearRect(0,0,canvasRef.current.width,canvasRef.current.height);
@@ -755,13 +691,6 @@ export default function App() {
           }
           while (energyTrail.length && now - energyTrail[0].at > 520) energyTrail.shift();
           if (activeRef.current === 'none') energyTrail.length = 0;
-          if (activeRef.current === 'clone' && now < cloneVisualUntilRef.current) {
-            const cloneFade = Math.min(1, Math.max(0, (cloneVisualUntilRef.current - now) / 550));
-            ctx.save(); ctx.globalAlpha = cloneFade;
-            if (cloneSpriteReadyRef.current && cloneSpriteRef.current) drawSegmentedClones(ctx,cloneSpriteRef.current,w,h,now/1000);
-            else drawCloneEcho(ctx,w,h,now/1000);
-            ctx.restore();
-          }
           const dt = Math.min(.05, Math.max(0, (now - lastProjectileFrameAt) / 1000));
           lastProjectileFrameAt = now;
           thrownToolsRef.current.forEach((projectile) => {
@@ -780,6 +709,9 @@ export default function App() {
           activeTool: activeToolRef.current,
           thrownTools: thrownToolsRef.current,
           trail: energyTrail,
+          cloneSprite: cloneSpriteReadyRef.current ? cloneSpriteRef.current : null,
+          cloneRevision: cloneSpriteRef.current ? Number(cloneSpriteRef.current.dataset.revision ?? 0) : 0,
+          cloneVisibleUntil: cloneVisualUntilRef.current,
         };
         rafRef.current = requestAnimationFrame(frame);
       };
@@ -815,23 +747,6 @@ export default function App() {
     segmenterRef.current?.close();
     audioRef.current?.close().catch(() => undefined);
   }, []);
-
-  useEffect(() => {
-    if (cameraState === 'ready' || activeJutsu !== 'clone' || !canvasRef.current) return;
-    const canvas = canvasRef.current, rect = canvas.getBoundingClientRect();
-    const w = Math.max(1, Math.round(rect.width * window.devicePixelRatio));
-    const h = Math.max(1, Math.round(rect.height * window.devicePixelRatio));
-    canvas.width = w; canvas.height = h;
-    const ctx = canvas.getContext('2d'); if (!ctx) return;
-    let id = 0;
-    const draw = (t: number) => {
-      ctx.clearRect(0,0,w,h);
-      drawCloneEcho(ctx,w,h,t/1000);
-      id = requestAnimationFrame(draw);
-    };
-    id = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(id);
-  }, [cameraState, activeJutsu]);
 
   const preview = (jutsu: Exclude<Jutsu, 'none'>) => {
     if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current);

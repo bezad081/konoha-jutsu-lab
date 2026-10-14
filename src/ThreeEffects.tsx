@@ -4,7 +4,7 @@ import * as T from 'three';
 export type EffectPoint={x:number;y:number;z?:number};
 export type EffectTool='none'|'shuriken'|'kunai';
 export type EffectProjectile={kind:Exclude<EffectTool,'none'>;x:number;y:number;vx:number;vy:number;born:number;spin:number};
-export type ThreeTrackingState={hands:EffectPoint[][];face:EffectPoint[];move:{x:number;y:number};activeTool:EffectTool;thrownTools:EffectProjectile[];trail:Array<{x:number;y:number;at:number}>};
+export type ThreeTrackingState={hands:EffectPoint[][];face:EffectPoint[];move:{x:number;y:number};activeTool:EffectTool;thrownTools:EffectProjectile[];trail:Array<{x:number;y:number;at:number}>;cloneSprite:HTMLCanvasElement|null;cloneRevision:number;cloneVisibleUntil:number};
 type Props={trackingRef:RefObject<ThreeTrackingState>;activeJutsu:string;sharinganActive:boolean;chargeLevel:number};
 type FX={root:T.Group;spin:T.Group;rings:T.Mesh[];flames:T.Mesh[];bolts:T.LineSegments|null;dust:T.Points;energy:T.Mesh|null};
 const additive=T.AdditiveBlending;
@@ -72,6 +72,14 @@ function tool(kind:'shuriken'|'kunai'){
  else{const s=new T.Shape();s.moveTo(0,25);s.lineTo(6,2);s.lineTo(4,-11);s.lineTo(0,-16);s.lineTo(-4,-11);s.lineTo(-6,2);s.closePath();g.add(new T.Mesh(new T.ExtrudeGeometry(s,{depth:2.5,bevelEnabled:true,bevelSize:.6,bevelThickness:.4,bevelSegments:1}),edge));const h=new T.Mesh(new T.CylinderGeometry(1.5,2,15,8),metal);h.position.y=-23;g.add(h);const loop=new T.Mesh(new T.TorusGeometry(3,1,6,18),edge);loop.position.y=-31;g.add(loop);}
  return g;
 }
+function cloneGhost(color:number):T.Group{
+ const g=new T.Group(),m=new T.MeshBasicMaterial({color,transparent:true,opacity:.32,blending:additive,depthWrite:false,side:T.DoubleSide});
+ const head=new T.Mesh(new T.SphereGeometry(8,14,10),m);head.position.y=31;g.add(head);
+ const torso=new T.Mesh(new T.SphereGeometry(13,14,10),m);torso.scale.set(.9,1.55,.62);torso.position.y=6;g.add(torso);
+ const armGeometry=new T.CylinderGeometry(3.2,4.2,27,7),legGeometry=new T.CylinderGeometry(4,5,29,7);
+ for(const side of [-1,1]){const arm=new T.Mesh(armGeometry,m);arm.position.set(side*15,7,0);arm.rotation.z=side*.42;g.add(arm);const leg=new T.Mesh(legGeometry,m);leg.position.set(side*6,-21,0);g.add(leg);}
+ return g;
+}
 function eye(){const g=new T.Group();g.add(new T.Mesh(new T.CircleGeometry(10,32),new T.MeshBasicMaterial({color:0xc91532,transparent:true,opacity:.95})),new T.Mesh(new T.TorusGeometry(10,1.1,6,32),new T.MeshBasicMaterial({color:0x30050d})));const p=new T.Mesh(new T.CircleGeometry(2.7,18),new T.MeshBasicMaterial({color:0x08050a}));p.position.z=1.5;g.add(p);for(let i=0;i<3;i++){const t=new T.Group(),d=new T.Mesh(new T.CircleGeometry(1.7,12),new T.MeshBasicMaterial({color:0x08050a}));d.position.set(0,5.8,1.4);t.add(d);t.rotation.z=i*Math.PI*2/3;g.add(t);}return g;}
 export default function ThreeEffects({trackingRef,activeJutsu,sharinganActive,chargeLevel}:Props){
  const host=useRef<HTMLDivElement>(null),latest=useRef({activeJutsu,sharinganActive,chargeLevel});latest.current={activeJutsu,sharinganActive,chargeLevel};
@@ -80,17 +88,30 @@ export default function ThreeEffects({trackingRef,activeJutsu,sharinganActive,ch
  const scene=new T.Scene(),camera=new T.OrthographicCamera(-1,1,1,-1,.1,1000);camera.position.z=300;scene.add(new T.AmbientLight(0xffffff,.8));
  const names=['rasengan','chidori','lightning-burst','fireball','amaterasu','wind-scythe'],fx:Record<string,FX>={};names.forEach(n=>fx[n]=effect(scene,n));
  const heldS=tool('shuriken'),heldK=tool('kunai');scene.add(heldS,heldK);heldS.visible=heldK.visible=false;const poolS:T.Group[]=[],poolK:T.Group[]=[];for(let i=0;i<12;i++){const s=heldS.clone(true),k=heldK.clone(true);s.visible=k.visible=false;scene.add(s,k);poolS.push(s);poolK.push(k);}
- const eyes=[eye(),eye()];eyes.forEach(e=>{e.visible=false;scene.add(e);});const trPos=new Float32Array(192),trGeo=new T.BufferGeometry();trGeo.setAttribute('position',new T.BufferAttribute(trPos,3));const trMat=new T.LineBasicMaterial({color:0x69dfff,transparent:true,opacity:.7,blending:additive,depthWrite:false}),trLine=new T.Line(trGeo,trMat);trLine.frustumCulled=false;scene.add(trLine);
+ const eyes=[eye(),eye()];eyes.forEach(e=>{e.visible=false;scene.add(e);});
+ const cloneGhosts=[cloneGhost(0x9b79ff),cloneGhost(0x70dcff)];cloneGhosts.forEach(g=>{g.visible=false;scene.add(g);});
+ const cloneGeometry=new T.PlaneGeometry(1,1);
+ const cloneMaterials=[new T.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false,side:T.DoubleSide}),new T.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false,side:T.DoubleSide})];
+ const clonePlanes=cloneMaterials.map(m=>{const mesh=new T.Mesh(cloneGeometry,m);mesh.visible=false;scene.add(mesh);return mesh;});
+ let cloneTexture:T.CanvasTexture|null=null,cloneSource:HTMLCanvasElement|null=null,lastCloneRevision=-1;const trPos=new Float32Array(192),trGeo=new T.BufferGeometry();trGeo.setAttribute('position',new T.BufferAttribute(trPos,3));const trMat=new T.LineBasicMaterial({color:0x69dfff,transparent:true,opacity:.7,blending:additive,depthWrite:false}),trLine=new T.Line(trGeo,trMat);trLine.frustumCulled=false;scene.add(trLine);
  const resize=()=>{const w=Math.max(1,el.clientWidth),h=Math.max(1,el.clientHeight);camera.left=-w/2;camera.right=w/2;camera.top=h/2;camera.bottom=-h/2;camera.updateProjectionMatrix();renderer.setSize(w,h,false);};const ro=typeof ResizeObserver!=='undefined'?new ResizeObserver(resize):null;ro?.observe(el);resize();
  const xy=(p:EffectPoint,w:number,h:number)=>new T.Vector3((p.x-.5)*w,(.5-p.y)*h,0),clock=new T.Clock();let raf=0,lastRenderAt=0,wasDrawing=false,windAngle=0,renderRatio=Math.min(devicePixelRatio||1,1),slowFrames=0,fastFrames=0;
  const draw=()=>{raf=requestAnimationFrame(draw);const now=performance.now();if(now-lastRenderAt<1000/30)return;lastRenderAt=now;const t=clock.getElapsedTime(),w=Math.max(1,el.clientWidth),h=Math.max(1,el.clientHeight),s=trackingRef.current,p=latest.current,hands=s?.hands??[],face=s?.face??[];
  const toolNow=s?.activeTool??'none',projectileNow=s?.thrownTools??[],needsEyes=p.sharinganActive&&face.length>=478,needsTrail=(s?.trail?.length??0)>1;
- const shouldDraw=p.activeJutsu!=='none'||needsEyes||(toolNow!=='none'&&hands.length>0)||projectileNow.length>0||needsTrail;
+ const shouldDraw=p.activeJutsu!=='none'||needsEyes||(toolNow!=='none'&&hands.length>0)||projectileNow.length>0||needsTrail||(s?.cloneSprite!==null&&s?.cloneSprite!==undefined);
  if(!shouldDraw){if(wasDrawing){renderer.clear();wasDrawing=false;}return;}wasDrawing=true;
  const palm=(a:EffectPoint[]|undefined)=>a&&a.length>=21?{x:[0,5,9,13,17].reduce((v,i)=>v+a[i].x/5,0),y:[0,5,9,13,17].reduce((v,i)=>v+a[i].y/5,0)}:{x:.5,y:.54};
  const a=palm(hands[0]),b=hands[1]?palm(hands[1]):null,mouth=face.length>14?{x:(face[13].x+face[14].x)/2,y:(face[13].y+face[14].y)/2}:null,focus=p.activeJutsu==='fireball'&&mouth?mouth:p.activeJutsu==='lightning-burst'&&b?{x:(a.x+b.x)/2,y:(a.y+b.y)/2}:a,pos=xy(focus,w,h),scale=Math.min(w,h)/360,q=Math.max(.2,Math.min(1.25,p.chargeLevel/100||.2));
  if(p.activeJutsu==='wind-scythe'){const mv=s?.move??{x:0,y:0};if(Math.hypot(mv.x,mv.y)>.0008){const target=Math.atan2(mv.y,mv.x);windAngle+=Math.atan2(Math.sin(target-windAngle),Math.cos(target-windAngle))*.25;}pos.x+=Math.cos(windAngle)*20*scale;pos.y+=Math.sin(windAngle)*20*scale;}
  Object.entries(fx).forEach(([name,f])=>{f.root.visible=p.activeJutsu===name;if(!f.root.visible)return;f.root.position.copy(pos);f.root.scale.setScalar(scale*(name==='wind-scythe'?1.05:name==='fireball'?1.12+q*.18:name==='rasengan'?.88+q*.2:.86+q*.12));if(name==='wind-scythe'){f.spin.rotation.y=0;f.spin.rotation.z=t*.42;f.root.rotation.z=windAngle;}else{f.spin.rotation.y=t*1.6;f.spin.rotation.z=t*(name==='rasengan'?2.3:1.5);}if(f.energy){(f.energy.material as T.ShaderMaterial).uniforms.uTime.value=t;}f.rings.forEach((r,i)=>{r.rotation.x+=.009;r.rotation.y+=.013+i*.002;r.rotation.z+=(i%2?-1:1)*.02;});f.flames.forEach((m,i)=>{const base=Number(m.userData.base||1),v=.8+Math.sin(t*13+i*2)*.2;m.scale.set(base*v,base*(.8+v*.35),1);m.rotation.z+=Math.sin(t*4+i)*.009;});if(f.bolts){const at=f.bolts.geometry.getAttribute('position') as T.BufferAttribute,arr=at.array as Float32Array;for(let i=0;i<18;i++){const ang=i/18*Math.PI*2+t*.5+Math.sin(t*3+i)*.04,len=28+(i*17)%24,x1=Math.cos(ang+Math.sin(t*28+i)*.2)*len*.4,y1=Math.sin(ang+Math.sin(t*25+i)*.2)*len*.4,x2=Math.cos(ang+.22)*len*.7,y2=Math.sin(ang+.22)*len*.7,x3=Math.cos(ang-.08)*len,y3=Math.sin(ang-.08)*len,k=i*18;arr[k]=0;arr[k+1]=0;arr[k+2]=0;arr[k+3]=x1;arr[k+4]=y1;arr[k+5]=2;arr[k+6]=x1;arr[k+7]=y1;arr[k+8]=2;arr[k+9]=x2;arr[k+10]=y2;arr[k+11]=-3;arr[k+12]=x2;arr[k+13]=y2;arr[k+14]=-3;arr[k+15]=x3;arr[k+16]=y3;arr[k+17]=3;}at.needsUpdate=true;}f.dust.rotation.z=-t*.9;f.dust.rotation.y=t*.7;(f.dust.material as T.PointsMaterial).opacity=.58+Math.sin(t*7)*.2;});
+ const cloneUntil=s?.cloneVisibleUntil??0,cloneActive=p.activeJutsu==='clone'&&(cloneUntil===0||now<cloneUntil);
+ const cloneCanvas=s?.cloneSprite??null;
+ if(cloneCanvas&&cloneCanvas!==cloneSource){cloneTexture?.dispose();cloneSource=cloneCanvas;cloneTexture=new T.CanvasTexture(cloneCanvas);cloneTexture.colorSpace=T.SRGBColorSpace;cloneMaterials.forEach(m=>{m.map=cloneTexture;m.needsUpdate=true;});lastCloneRevision=-1;}
+ if(cloneTexture&&(s?.cloneRevision??0)!==lastCloneRevision){cloneTexture.needsUpdate=true;lastCloneRevision=s?.cloneRevision??0;}
+ const cloneFade=cloneUntil===0?1:Math.max(0,Math.min(1,(cloneUntil-now)/550));
+ const cloneOffsets=[-.23+Math.sin(t*1.4)*.012,.23+Math.sin(t*1.7+1)*.012],cloneY=[.006,-.004],cloneScale=[.96,.94],cloneAlpha=[.76,.72];
+ clonePlanes.forEach((mesh,i)=>{mesh.visible=cloneActive&&!!cloneTexture;mesh.position.set(w*cloneOffsets[i],-h*cloneY[i],10+i*.01);mesh.scale.set(w*cloneScale[i],h*cloneScale[i],1);cloneMaterials[i].opacity=cloneAlpha[i]*cloneFade;});
+ cloneGhosts.forEach((ghost,i)=>{ghost.visible=cloneActive&&!cloneTexture;ghost.position.set(w*cloneOffsets[i],-h*.025,6+i*.01);ghost.scale.setScalar(Math.min(w,h)/275);});
  const activeTool=s?.activeTool??'none';heldS.visible=activeTool==='shuriken'&&hands.length>0;heldK.visible=activeTool==='kunai'&&hands.length>0;if(heldS.visible||heldK.visible){const m=activeTool==='shuriken'?heldS:heldK;m.position.copy(xy(a,w,h));m.position.z=24;m.scale.setScalar(scale*.75);m.rotation.z=Math.atan2((hands[0]?.[8]?.y??a.y)-(hands[0]?.[5]?.y??a.y-.1),(hands[0]?.[8]?.x??a.x)-(hands[0]?.[5]?.x??a.x))+Math.PI/2;if(activeTool==='shuriken')m.rotation.y=t*2;}
  const usedS=new Set<number>(),usedK=new Set<number>();(s?.thrownTools??[]).forEach(v=>{const pool=v.kind==='shuriken'?poolS:poolK,used=v.kind==='shuriken'?usedS:usedK;let i=0;while(used.has(i)&&i<pool.length)i++;if(i>=pool.length)return;used.add(i);const m=pool[i];m.visible=true;m.position.copy(xy(v,w,h));m.position.z=28;m.scale.setScalar(scale*.75);m.rotation.z=v.spin+(now-v.born)*.014;});poolS.forEach((m,i)=>{if(!usedS.has(i))m.visible=false;});poolK.forEach((m,i)=>{if(!usedK.has(i))m.visible=false;});
  eyes.forEach((e,i)=>{const v=face.length>=478?face[i===0?468:473]:null;e.visible=p.sharinganActive&&!!v;if(v){e.position.copy(xy(v,w,h));e.position.z=40;e.scale.setScalar(scale*.78);e.rotation.z=t*.22;}});
@@ -98,7 +119,7 @@ export default function ThreeEffects({trackingRef,activeJutsu,sharinganActive,ch
  const renderStarted=performance.now();renderer.render(scene,camera);const cost=performance.now()-renderStarted;if(cost>23){slowFrames++;fastFrames=0;}else if(cost<11){fastFrames++;slowFrames=0;}else{slowFrames=0;fastFrames=0;}if(slowFrames>=4&&renderRatio>.75){renderRatio=.75;renderer.setPixelRatio(renderRatio);resize();slowFrames=0;}else if(fastFrames>=180&&renderRatio<Math.min(devicePixelRatio||1,1)){renderRatio=Math.min(devicePixelRatio||1,1);renderer.setPixelRatio(renderRatio);resize();fastFrames=0;}
  };
  raf=requestAnimationFrame(draw);
- return()=>{cancelAnimationFrame(raf);ro?.disconnect();scene.traverse(o=>{const m=o as T.Mesh;if(m.geometry)m.geometry.dispose();const z=m.material;if(z){if(Array.isArray(z))z.forEach(a=>a.dispose());else z.dispose();}});renderer.dispose();renderer.domElement.remove();};
+ return()=>{cancelAnimationFrame(raf);ro?.disconnect();scene.traverse(o=>{const m=o as T.Mesh;if(m.geometry)m.geometry.dispose();const z=m.material;if(z){if(Array.isArray(z))z.forEach(a=>a.dispose());else z.dispose();}});cloneTexture?.dispose();renderer.dispose();renderer.domElement.remove();};
  },[trackingRef]);
  return <div ref={host} className="three-effects-layer" aria-hidden="true"/>;
 }

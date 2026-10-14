@@ -14,7 +14,7 @@ A React + TypeScript + Vite prototype for webcam-based hand tracking and Naruto-
 - Uchiha Fire Style / Great Fireball: a face-anchored stream of turbulent flames starts at the detected mouth and is followed by a swirling fireball. The original hand-position fireball remains as fallback if face tracking is unavailable.\n- Sharingan eye effect: blink both eyes to toggle a red iris with three black tomoe marks; the overlay follows face/iris landmarks and has a manual toggle.
 - Raiton Pulse: two open palms trigger a blue lightning burst.
 - Three.js/WebGL now drives the live Rasengan, Chidori, Raiton Pulse, Fireball, Amaterasu, Wind Fang, Sharingan and ninja-weapon visuals. The transparent renderer uses procedural 3D geometry, GPU-animated shader cores, additive glow layers, animated particles, merged electric branches and extruded metallic tools.
-- Canvas remains for hand-landmark guides and segmentation-based Shadow Clone cutouts, where pixel-level compositing is still the right tool. The primary live technique effects have moved out of the old 2D drawing routines. The WebGL layer is lazy-mounted, targets 30 FPS, shares weapon geometry, combines lightning branches into a single line draw call, caps render resolution, and lowers pixel ratio automatically if rendering is costly.
+- Canvas remains only for the hand-landmark guide and for preparing the alpha-masked live-subject texture; Three.js now composites clone echoes as transparent texture planes. The primary live technique effects have moved out of the old 2D drawing routines. The WebGL layer is lazy-mounted, targets 30 FPS, shares weapon geometry, combines lightning branches into a single line draw call, caps render resolution, and lowers pixel ratio automatically if rendering is costly.
 - The sound toggle plays a sample when enabled, making it easy to check the audio before casting.
 - Preview controls when camera access is unavailable.
 - Responsive UI, camera permission errors, camera cleanup, and optional generated sound.
@@ -63,7 +63,7 @@ The production build downloads and checksum-verifies the hand model, attempts to
 
 - React, TypeScript, Vite and CSS for a browser-first UI.
 - `@mediapipe/tasks-vision` for hand landmarks and on-demand selfie segmentation.
-- Three.js/WebGL for the main live technique effects, particle systems, weapon meshes and eye overlays; Canvas remains for landmarks and segmentation-based clone compositing.
+- Three.js/WebGL for the main live technique effects, particle systems, weapon meshes and eye overlays; Canvas remains for landmarks and preparing the alpha-masked subject texture; clone echoes are rendered in Three.js.
 - Relative Vite base path to support subpath hosting.
 
 ## GitHub Pages deployment
