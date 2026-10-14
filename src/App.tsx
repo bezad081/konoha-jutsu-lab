@@ -327,6 +327,7 @@ export default function App() {
   const cloneSpriteReadyRef = useRef(false);
   const faceTrackerRef = useRef<FaceLandmarker | null>(null);
   const sharinganRef = useRef(false);
+  const sharinganEnabledRef = useRef(false);
   const smoothedLandmarksRef = useRef<Point[][]>([]);
   const oneEuroFiltersRef = useRef<OneEuroPoint[][]>([]);
   const smoothedHandednessRef = useRef<string[]>([]);
@@ -357,6 +358,7 @@ export default function App() {
   const [cloneStatus, setCloneStatus] = useState<'idle'|'loading'|'ready'|'error'>('idle');
   const [faceTrackingState, setFaceTrackingState] = useState<'loading'|'ready'|'unavailable'>('loading');
   const [sharinganActive, setSharinganActive] = useState(false);
+  const [sharinganEnabled, setSharinganEnabled] = useState(false);
   const [sequenceType, setSequenceType] = useState<SequenceKind>('chidori');
   const [comboMode, setComboMode] = useState(false);
   const [comboProgress, setComboProgress] = useState(0);
@@ -442,13 +444,13 @@ export default function App() {
       if (stageRef.current && video.videoWidth && video.videoHeight) stageRef.current.style.aspectRatio = video.videoWidth + ' / ' + video.videoHeight;
       setGestureLabel('Camera is on · starting the background vision worker…');
       const cameraStream = stream;
-      let vision: Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>> | null = null;
       let worker: Worker | null = null;
       let workerMode = false;
       let workerBusy = false;
       let inferencePending = false;
       let latest: HandLandmarkerResult | null = null;
       let latestFace: FaceLandmarkerResult | null = null;
+      let faceUpdatedPending = false;
       let earlyFaceStatus: boolean | null = null;
       let workerDelegate = 'GPU';
 
@@ -489,6 +491,7 @@ export default function App() {
             if (message.type === 'result') {
               latest = message.hands as unknown as HandLandmarkerResult;
               if (message.faceUpdated) {
+                faceUpdatedPending = true;
                 latestFace = message.face
                   ? message.face as unknown as FaceLandmarkerResult
                   : { faceLandmarks: [], faceBlendshapes: [] } as unknown as FaceLandmarkerResult;
@@ -628,23 +631,33 @@ export default function App() {
               lastFaceDetectAt = now;
               try {
                 const fr = faceTrackerRef.current.detectForVideo(v, now); latestFace = fr;
-                const cats = fr.faceBlendshapes?.[0]?.categories ?? [];
-                const left = cats.find((c) => c.categoryName === 'eyeBlinkLeft')?.score ?? 0;
-                const right = cats.find((c) => c.categoryName === 'eyeBlinkRight')?.score ?? 0;
-                const closed = left > .48 && right > .48;
-                if (closed && !eyesClosed) eyeClosedAt = now;
-                if (!closed && eyesClosed) {
-                  const duration = now - eyeClosedAt;
-                  if (duration >= 55 && duration <= 720 && now - lastBlinkAt > 950) {
-                    lastBlinkAt = now; sharinganRef.current = !sharinganRef.current;
-                    setSharinganActive(sharinganRef.current);
-                    setGestureLabel(sharinganRef.current ? 'Sharingan awakened · blink again to seal the eye' : 'Sharingan sealed · blink to awaken');
-                  }
-                }
-                eyesClosed = closed;
+                faceUpdatedPending = true;
               } catch { faceTrackerRef.current?.close(); faceTrackerRef.current = null; setFaceTrackingState('unavailable'); }
             }
             inferencePending = true;
+          }
+        }
+        if (faceUpdatedPending) {
+          faceUpdatedPending = false;
+          const categories = latestFace?.faceBlendshapes?.[0]?.categories ?? [];
+          const leftBlink = categories.find((category) => category.categoryName === 'eyeBlinkLeft')?.score ?? 0;
+          const rightBlink = categories.find((category) => category.categoryName === 'eyeBlinkRight')?.score ?? 0;
+          // Require both eyes to close, then reopen; a short cooldown prevents double triggers.
+          const closed = leftBlink > 0.62 && rightBlink > 0.62;
+          if (!sharinganEnabledRef.current) {
+            eyesClosed = false;
+          } else {
+            if (closed && !eyesClosed) eyeClosedAt = now;
+            if (!closed && eyesClosed) {
+              const duration = now - eyeClosedAt;
+              if (duration >= 85 && duration <= 520 && now - lastBlinkAt > 1100) {
+                lastBlinkAt = now;
+                sharinganRef.current = !sharinganRef.current;
+                setSharinganActive(sharinganRef.current);
+                setGestureLabel(sharinganRef.current ? 'Sharingan awakened · blink to seal' : 'Sharingan sealed · blink to awaken');
+              }
+            }
+            eyesClosed = closed;
           }
         }
         if (inferencePending && latest) {
@@ -988,6 +1001,15 @@ export default function App() {
               <button className="primary-button" onClick={startCamera} disabled={cameraState === 'loading'}>{cameraState === 'loading' ? <LoaderCircle className="spin" size={17} /> : <Camera size={17} />}{cameraState === 'loading' ? 'Starting camera…' : 'Start camera'}</button>}
             <button className={'secondary-button ' + (showLandmarks ? 'selected' : '')} onClick={() => setShowLandmarks((v) => !v)}><Hand size={16} /> Landmark overlay <span className="toggle-pill">{showLandmarks ? 'ON' : 'OFF'}</span></button>
             <button className={'secondary-button ' + (soundEnabled ? 'selected' : '')} onClick={() => { const next = !soundEnabled; setSoundEnabled(next); if (next) { try { const audio = audioRef.current ?? new window.AudioContext(); audioRef.current = audio; void audio.resume().then(() => playJutsuCue(audio, 'chidori')); } catch { /* optional audio */ } } }} title="Tap to turn on and hear a sample; tap again to turn off"><Zap size={16} /> Jutsu sound · test <span className="toggle-pill">{soundEnabled ? 'ON' : 'OFF'}</span></button>
+            <button className={'secondary-button sharingan-toggle ' + (sharinganEnabled ? 'selected' : '')} onClick={() => {
+              const next = !sharinganEnabled;
+              sharinganEnabledRef.current = next;
+              setSharinganEnabled(next);
+              sharinganRef.current = false;
+              setSharinganActive(false);
+              if (!next) setGestureLabel('Sharingan trigger disabled');
+              else setGestureLabel(faceTrackingState === 'ready' ? 'Sharingan armed · close and reopen both eyes to awaken' : 'Sharingan armed · face tracking is still loading');
+            }} aria-pressed={sharinganEnabled} title="Enable blink-to-awaken Sharingan; blink again to turn it off"><Eye size={16} /> Sharingan <span className="toggle-pill">{sharinganEnabled ? 'ARMED' : 'OFF'}</span></button>
             <button className="reset-button" onClick={() => { switchJutsu('none'); setGestureLabel('Effects cleared'); }} title="Clear current effect"><RotateCcw size={16} /></button>
           </div>
           <div className="ninja-tool-controls" aria-label="Ninja tool selection">
@@ -1065,7 +1087,7 @@ export default function App() {
           <div className="detection-card">
             <div className="detection-heading"><div><span className="section-kicker">LIVE READOUT</span><h3>Detection status</h3></div><Activity size={17} /></div>
             <div className="readout-row"><span>Current signal</span><strong className={activeJutsu !== 'none' ? 'signal-active' : ''}>{activeJutsu === 'none' ? 'No active jutsu' : INFO[activeJutsu].name}</strong></div>
-            <div className="readout-row"><span>Face / eye tracking</span><strong>{faceTrackingState === "ready" ? (sharinganActive ? "Sharingan active" : "Ready · blink to awaken") : faceTrackingState === "loading" ? "Loading model…" : "Unavailable · manual toggle"}</strong></div><div className="readout-row"><span>Hand landmarks</span><strong>{cameraState === 'ready' ? (handCount ? handCount + ' hand' + (handCount === 1 ? '' : 's') + ' tracked' : 'Searching…') : 'Not connected'}</strong></div>
+            <div className="readout-row"><span>Face / eye tracking</span><strong>{faceTrackingState === "ready" ? (sharinganActive ? "Sharingan active" : sharinganEnabled ? "Armed · blink to awaken" : "Disabled") : faceTrackingState === "loading" ? "Loading model…" : "Unavailable · face model failed"}</strong></div><div className="readout-row"><span>Hand landmarks</span><strong>{cameraState === 'ready' ? (handCount ? handCount + ' hand' + (handCount === 1 ? '' : 's') + ' tracked' : 'Searching…') : 'Not connected'}</strong></div>
             <div className="readout-row"><span>Inference engine</span><strong>{trackingEngine === 'worker-gpu' ? 'Web Worker · GPU' : trackingEngine === 'worker-cpu' ? 'Web Worker · CPU' : trackingEngine === 'main-thread' ? 'Compatibility fallback' : trackingEngine === 'starting' ? 'Initializing…' : trackingEngine === 'unavailable' ? 'Unavailable' : 'Idle'}</strong></div>
             <div className="readout-row"><span>Gesture classifier</span><strong>{cameraState === 'ready' ? 'Running locally' : 'Awaiting camera'}</strong></div>
             <div className="readout-row"><span>Clone cutout</span><strong>{cloneStatus === 'ready' ? 'Segmentation ready' : cloneStatus === 'loading' ? 'Loading model…' : cloneStatus === 'error' ? 'Visual fallback' : 'Loads on first clone'}</strong></div>
