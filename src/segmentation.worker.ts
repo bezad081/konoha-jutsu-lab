@@ -5,7 +5,7 @@ type FrameMessage = { type: 'frame'; timestamp: number; bitmap: ImageBitmap };
 type Incoming = InitMessage | FrameMessage;
 type Outgoing =
   | { type: 'ready'; delegate: 'GPU' | 'CPU' }
-  | { type: 'mask'; width: number; height: number; scores: Float32Array }
+  | { type: 'mask'; width: number; height: number; scores: Float32Array; bitmap: ImageBitmap }
   | { type: 'error'; message: string };
 type WorkerScope = {
   onmessage: ((event: MessageEvent<Incoming>) => void) | null;
@@ -54,6 +54,7 @@ function processFrame(message: FrameMessage) {
   const bitmap = message.bitmap;
   if (!segmenter || busy) { bitmap.close(); return; }
   busy = true;
+  let bitmapReturned = false;
   try {
     const timestamp = Math.max(message.timestamp, lastTimestamp + 1);
     lastTimestamp = timestamp;
@@ -83,18 +84,21 @@ function processFrame(message: FrameMessage) {
         // much history that a moving arm leaves a visible ghost trail.
         if (previousScores && previousWidth === mask.width && previousHeight === mask.height && previousScores.length === scores.length) {
           for (let i = 0; i < scores.length; i++) {
-            scores[i] = scores[i] * 0.78 + previousScores[i] * 0.22;
+            scores[i] = scores[i] * 0.9 + previousScores[i] * 0.1;
           }
         }
         previousScores = new Float32Array(scores);
         previousWidth = mask.width;
         previousHeight = mask.height;
-        scope.postMessage({ type: 'mask', width: mask.width, height: mask.height, scores }, [scores.buffer]);
+        // Return the exact source frame alongside its confidence mask, avoiding
+        // silhouette drift when inference takes longer than one display frame.
+        scope.postMessage({ type: 'mask', width: mask.width, height: mask.height, scores, bitmap }, [scores.buffer, bitmap]);
+        bitmapReturned = true;
       } catch (cause) {
         scope.postMessage({ type: 'error', message: 'Could not serialize person mask: ' + describe(cause) });
       } finally {
         busy = false;
-        bitmap.close();
+        if (!bitmapReturned) { try { bitmap.close(); } catch { /* already transferred */ } }
       }
     });
   } catch (cause) {
