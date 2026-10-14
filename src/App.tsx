@@ -3,7 +3,7 @@ import {
   Activity, Camera, Check, ChevronDown, CircleHelp, CirclePlay, Cpu, Expand, Eye, Flame,
   Hand, Info, Lightbulb, LoaderCircle, RotateCcw, ShieldCheck, Sparkles, Zap
 } from 'lucide-react';
-import { FaceLandmarker, FilesetResolver, HandLandmarker, ImageSegmenter, type FaceLandmarkerResult, type HandLandmarkerResult } from '@mediapipe/tasks-vision';
+import { FaceLandmarker, FilesetResolver, HandLandmarker, type FaceLandmarkerResult, type HandLandmarkerResult } from '@mediapipe/tasks-vision';
 import ThreeEffects, { type ThreeTrackingState } from './ThreeEffects';
 
 type Jutsu = 'none' | 'rasengan' | 'chidori' | 'clone' | 'lightning-burst' | 'fireball' | 'amaterasu' | 'wind-scythe';
@@ -288,11 +288,9 @@ function drawLandmarks(ctx: CanvasRenderingContext2D, hands: Point[][], w: numbe
   }
   ctx.restore();
 }
-type ConfidenceMask = { width: number; height: number; getAsFloat32Array(): Float32Array };
-
 function updateCloneSprite(
   video: HTMLVideoElement,
-  mask: ConfidenceMask,
+  mask: { width: number; height: number; scores: Float32Array },
   sprite: HTMLCanvasElement,
 ) {
   const width = mask.width, height = mask.height;
@@ -306,7 +304,7 @@ function updateCloneSprite(
   ctx.clearRect(0, 0, width, height);
   ctx.drawImage(video, 0, 0, width, height);
   const pixels = ctx.getImageData(0, 0, width, height);
-  const scores = mask.getAsFloat32Array();
+  const scores = mask.scores;
   const count = Math.min(scores.length, width * height);
   for (let i = 0; i < count; i++) {
     const confidence = Math.max(0, Math.min(1, (scores[i] - 0.18) / 0.58));
@@ -324,7 +322,7 @@ export default function App() {
   const threeTrackingRef = useRef<ThreeTrackingState>({ hands: [], face: [], move: { x: 0, y: 0 }, activeTool: 'none', thrownTools: [], trail: [], cloneSprite: null, cloneRevision: 0, cloneVisibleUntil: 0 });
   const trackerRef = useRef<HandLandmarker | null>(null);
   const visionWorkerRef = useRef<Worker | null>(null);
-  const segmenterRef = useRef<ImageSegmenter | null>(null);
+  const segmenterWorkerRef = useRef<Worker | null>(null);
   const cloneSpriteRef = useRef<HTMLCanvasElement | null>(null);
   const cloneSpriteReadyRef = useRef(false);
   const faceTrackerRef = useRef<FaceLandmarker | null>(null);
@@ -407,7 +405,7 @@ export default function App() {
     trackerRef.current?.close(); trackerRef.current = null;
     visionWorkerRef.current?.terminate(); visionWorkerRef.current = null;
     faceTrackerRef.current?.close(); faceTrackerRef.current = null;
-    segmenterRef.current?.close(); segmenterRef.current = null;
+    segmenterWorkerRef.current?.terminate(); segmenterWorkerRef.current = null; segmenterRef.current = null;
     cloneSpriteRef.current = null; cloneSpriteReadyRef.current = false;
     smoothedLandmarksRef.current = []; smoothedHandednessRef.current = []; oneEuroFiltersRef.current = [];
     sharinganRef.current = false; setSharinganActive(false); setFaceTrackingState('loading'); setTrackingEngine('idle');
@@ -553,49 +551,50 @@ export default function App() {
       }
       setCameraState('ready');
       setGestureLabel(workerMode ? 'Background tracking active · show a hand sign to cast' : 'Rasengan: open palm · Chidori: two closed-fist moves · Fireball: two fists apart · Amaterasu: one fist');
-      let segmenterLoading = false, segmenterFailed = false, personMaskIndex = 0;
+      let segmenterLoading = false, segmenterFailed = false, segmentationBusy = false;
       let lastSegmentationAt = 0, lastSegmentationVideoTime = -1;
       const cloneSprite = document.createElement('canvas');
       cloneSpriteRef.current = cloneSprite; cloneSpriteReadyRef.current = false;
       setCloneStatus('idle');
       const loadSegmenter = async () => {
-        if (segmenterLoading || segmenterRef.current || segmenterFailed) return;
+        if (segmenterLoading || segmenterWorkerRef.current || segmenterFailed) return;
         segmenterLoading = true;
         setCloneStatus('loading');
         try {
-          let currentVision = vision;
-          if (!currentVision) {
-            const failures: string[] = [];
-            for (const wasmUrl of WASM_URLS) {
-              try { currentVision = await FilesetResolver.forVisionTasks(wasmUrl); break; }
-              catch (cause) { failures.push(describeFailure(cause)); }
+          if (typeof Worker === 'undefined' || typeof createImageBitmap !== 'function') {
+            throw new Error('This browser does not support worker-based segmentation.');
+          }
+          const worker = new Worker(new URL('./segmentation.worker.ts', import.meta.url), { type: 'module' });
+          segmenterWorkerRef.current = worker;
+          await new Promise<void>((resolve, reject) => {
+            const timer = window.setTimeout(() => reject(new Error('Segmentation worker initialization timed out.')), 45000);
+            worker.onmessage = (event: MessageEvent<{ type: string; message?: string }>) => {
+              const message = event.data;
+              if (message.type === 'ready') { window.clearTimeout(timer); setCloneStatus('ready'); resolve(); }
+              else if (message.type === 'error' && !segmentationBusy) {
+                setGestureLabel('Shadow Clone segmentation: ' + (message.message || 'worker error'));
+              }
+            };
+            worker.onerror = (event) => { window.clearTimeout(timer); reject(new Error(event.message || 'Segmentation worker failed.')); };
+            worker.postMessage({ type: 'init', wasmUrls: WASM_URLS, modelUrl: SEGMENTER_MODEL_URL });
+          });
+          worker.onmessage = (event: MessageEvent<{ type: string; width?: number; height?: number; scores?: Float32Array; message?: string }>) => {
+            const message = event.data;
+            if (message.type === 'mask' && message.scores && cloneSpriteRef.current && videoRef.current) {
+              updateCloneSprite(videoRef.current, { width: message.width || 0, height: message.height || 0, scores: message.scores }, cloneSpriteRef.current);
+              cloneSpriteReadyRef.current = true;
+              segmentationBusy = false;
+            } else if (message.type === 'error') {
+              segmentationBusy = false;
+              setCloneStatus('error');
+              setGestureLabel('Shadow Clone segmentation fallback: ' + (message.message || 'worker error'));
             }
-            if (!currentVision) throw new Error('Could not initialize a segmentation runtime: ' + failures.slice(-3).join(' | '));
-            vision = currentVision;
-          }
-          let loaded: ImageSegmenter;
-          try {
-            loaded = await ImageSegmenter.createFromOptions(currentVision, {
-              baseOptions: { modelAssetPath: SEGMENTER_MODEL_URL, delegate: 'GPU' },
-              runningMode: 'VIDEO', outputCategoryMask: false, outputConfidenceMasks: true,
-            });
-          } catch {
-            loaded = await ImageSegmenter.createFromOptions(currentVision, {
-              baseOptions: { modelAssetPath: SEGMENTER_MODEL_URL, delegate: 'CPU' },
-              runningMode: 'VIDEO', outputCategoryMask: false, outputConfidenceMasks: true,
-            });
-          }
-          segmenterRef.current = loaded;
-          const labels = loaded.getLabels();
-          const personLabel = labels.findIndex((label) => /person|foreground|human/i.test(label));
-          const nonBackgroundLabel = labels.findIndex((label) => !/background/i.test(label));
-          // Some model builds label the background last; never assume the final mask is the person.
-          personMaskIndex = personLabel >= 0 ? personLabel : nonBackgroundLabel >= 0 ? nonBackgroundLabel : 0;
-          setCloneStatus('ready');
-        } catch {
+          };
+        } catch (cause) {
           segmenterFailed = true;
+          segmenterWorkerRef.current?.terminate(); segmenterWorkerRef.current = null;
           setCloneStatus('error');
-          setGestureLabel('Shadow Clone cutout unavailable; using the visual fallback');
+          setGestureLabel('Shadow Clone cutout unavailable; using the visual fallback (' + describeFailure(cause) + ')');
         } finally {
           segmenterLoading = false;
         }
@@ -819,22 +818,16 @@ export default function App() {
           } else { lastWrist = null; lastWristAt = 0; }
         }
         if (activeRef.current === 'clone') {
-          if (!segmenterRef.current && !segmenterLoading && !segmenterFailed) void loadSegmenter();
-          if (segmenterRef.current && v.currentTime !== lastSegmentationVideoTime && now - lastSegmentationAt > 125) {
+          if (!segmenterWorkerRef.current && !segmenterLoading && !segmenterFailed) void loadSegmenter();
+          if (segmenterWorkerRef.current && !segmentationBusy && v.currentTime !== lastSegmentationVideoTime && now - lastSegmentationAt > 125) {
             lastSegmentationVideoTime = v.currentTime;
             lastSegmentationAt = now;
-            try {
-              segmenterRef.current.segmentForVideo(v, now, (result) => {
-                const masks = result.confidenceMasks ?? [];
-                const personMask = masks[personMaskIndex] ?? masks[0];
-                if (personMask && cloneSpriteRef.current) {
-                  updateCloneSprite(v, personMask, cloneSpriteRef.current);
-                  cloneSpriteReadyRef.current = true;
-                }
-              });
-            } catch {
-              setCloneStatus('error');
-            }
+            segmentationBusy = true;
+            void createImageBitmap(v).then((bitmap) => {
+              const worker = segmenterWorkerRef.current;
+              if (!worker) { bitmap.close(); segmentationBusy = false; return; }
+              worker.postMessage({ type: 'frame', timestamp: now, bitmap }, [bitmap]);
+            }).catch(() => { segmentationBusy = false; });
           }
         }
         const ctx = canvas.getContext('2d');
@@ -909,7 +902,7 @@ export default function App() {
     trackerRef.current?.close();
     visionWorkerRef.current?.terminate(); visionWorkerRef.current = null;
     faceTrackerRef.current?.close(); faceTrackerRef.current = null;
-    segmenterRef.current?.close();
+    segmenterWorkerRef.current?.terminate(); segmenterWorkerRef.current = null;
     audioRef.current?.close().catch(() => undefined);
   }, []);
 
