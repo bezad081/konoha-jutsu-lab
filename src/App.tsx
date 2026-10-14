@@ -689,7 +689,8 @@ export default function App() {
               } else {
                 candidate = 'none'; candidateAt = 0;
                 if (activeRef.current === 'clone' && detected.gesture === 'clone-seal') {
-                  cloneVisualUntilRef.current = now + 6000;
+                  const cloneWindow = cloneSpriteReadyRef.current ? 6000 : 15000;
+                  cloneVisualUntilRef.current = now + cloneWindow;
                   castUntilRef.current = cloneVisualUntilRef.current;
                 }
                 setGestureLabel(detected.jutsu === activeRef.current
