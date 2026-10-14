@@ -4,6 +4,7 @@ import {
   Hand, Info, Lightbulb, LoaderCircle, RotateCcw, ShieldCheck, Sparkles, Zap
 } from 'lucide-react';
 import { FaceLandmarker, FilesetResolver, HandLandmarker, ImageSegmenter, type FaceLandmarkerResult, type HandLandmarkerResult } from '@mediapipe/tasks-vision';
+import ThreeEffects, { type ThreeTrackingState } from './ThreeEffects';
 
 type Jutsu = 'none' | 'rasengan' | 'chidori' | 'clone' | 'lightning-burst' | 'fireball' | 'amaterasu' | 'wind-scythe';
 type Gesture = 'none' | 'open' | 'fist' | 'two-open' | 'two-fist' | 'clone-seal' | 'ox-seal' | 'hare-seal' | 'monkey-seal';
@@ -238,138 +239,6 @@ async function createFaceTracker(vision: Awaited<ReturnType<typeof FilesetResolv
   }
   throw new Error(`Face tracking could not initialize: ${failures.slice(-3).join(' | ')}`);
 }
-const toolImageCache: Partial<Record<'shuriken'|'kunai', HTMLImageElement>> = {};
-function getToolImage(tool: 'shuriken'|'kunai'): HTMLImageElement | null {
-  if (typeof Image === 'undefined') return null;
-  if (!toolImageCache[tool]) { const image = new Image(); image.src = new URL(`assets/${tool}.svg`, document.baseURI).href; toolImageCache[tool] = image; }
-  return toolImageCache[tool] ?? null;
-}
-function drawEnergyTrail(
-  ctx: CanvasRenderingContext2D,
-  points: Array<{ x: number; y: number; at: number }>,
-  w: number,
-  h: number,
-  now: number,
-  color: string,
-) {
-  if (points.length < 2) return;
-  ctx.save();
-  ctx.globalCompositeOperation = 'screen';
-  ctx.lineCap = 'round';
-  for (let i = 1; i < points.length; i++) {
-    const a = points[i - 1], b = points[i];
-    const age = Math.max(0, now - b.at);
-    const fade = Math.max(0, 1 - age / 520) * (i / points.length);
-    if (fade <= 0) continue;
-    ctx.beginPath();
-    ctx.moveTo(a.x * w, a.y * h);
-    ctx.quadraticCurveTo(
-      (a.x + b.x) * w * 0.5 + Math.sin(now * 0.012 + i) * 2,
-      (a.y + b.y) * h * 0.5 + Math.cos(now * 0.01 + i) * 2,
-      b.x * w, b.y * h,
-    );
-    ctx.strokeStyle = color;
-    ctx.globalAlpha = fade * 0.72;
-    ctx.lineWidth = 1 + fade * 5;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 8 + fade * 17;
-    ctx.stroke();
-    if (i % 3 === 0) {
-      const px = b.x * w, py = b.y * h;
-      ctx.globalAlpha = fade * 0.8;
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(px, py, 1 + fade * 2.2, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-  ctx.restore();
-}
-
-
-function drawHeldTool(ctx: CanvasRenderingContext2D, hand: Point[], tool: Exclude<NinjaTool, 'none'>, w: number, h: number, t: number) {
-  if (hand.length < 21) return;
-  const p = palm(hand), x = p.x * w, y = p.y * h;
-  const angle = Math.atan2(hand[8].y - hand[5].y, hand[8].x - hand[5].x) + Math.PI / 2;
-  const size = Math.min(w, h) * (tool === 'shuriken' ? 0.055 : 0.075);
-  ctx.save(); ctx.translate(x, y); ctx.rotate(angle);
-  ctx.globalCompositeOperation = 'screen'; ctx.shadowColor = '#bdeeff'; ctx.shadowBlur = 12;
-  const image = getToolImage(tool); if (image?.complete && image.naturalWidth > 0) { ctx.globalCompositeOperation = 'source-over'; ctx.shadowColor = '#a9dfff'; ctx.shadowBlur = 13; ctx.drawImage(image, -size * (tool === 'shuriken' ? 1.02 : .58), -size * (tool === 'shuriken' ? 1.02 : 1.32), size * (tool === 'shuriken' ? 2.04 : 1.16), size * (tool === 'shuriken' ? 2.04 : 2.64)); ctx.restore(); return; }
-  if (tool === 'shuriken') {
-    ctx.rotate(t * 0.55);
-    const metal = ctx.createLinearGradient(-size, -size, size, size);
-    metal.addColorStop(0, '#f8ffff'); metal.addColorStop(.45, '#8da9c4'); metal.addColorStop(1, '#eaf8ff');
-    ctx.beginPath();
-    for (let i = 0; i < 16; i++) {
-      const a = -Math.PI / 2 + i * Math.PI / 8, radius = i % 2 === 0 ? size : size * .34;
-      const px = Math.cos(a) * radius, py = Math.sin(a) * radius;
-      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-    }
-    ctx.closePath(); ctx.fillStyle = metal; ctx.fill();
-    ctx.lineWidth = Math.max(1.5, size * .055); ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.stroke();
-    ctx.beginPath(); ctx.arc(0, 0, size * .16, 0, Math.PI * 2); ctx.fillStyle = '#263c54'; ctx.fill();
-  } else {
-    ctx.beginPath(); ctx.moveTo(0, -size * 1.25); ctx.lineTo(size * .23, -size * .52);
-    ctx.lineTo(size * .18, size * .48); ctx.lineTo(0, size * .7);
-    ctx.lineTo(-size * .18, size * .48); ctx.lineTo(-size * .23, -size * .52); ctx.closePath();
-    const metal = ctx.createLinearGradient(-size * .3, 0, size * .3, 0);
-    metal.addColorStop(0, '#6e8aa5'); metal.addColorStop(.45, '#f1fbff'); metal.addColorStop(1, '#7795b1');
-    ctx.fillStyle = metal; ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.92)'; ctx.lineWidth = 1.5; ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, size * .68); ctx.lineTo(0, size * 1.2);
-    ctx.strokeStyle = '#c9a77c'; ctx.lineWidth = Math.max(2, size * .11); ctx.stroke();
-    ctx.beginPath(); ctx.arc(0, size * 1.22, size * .13, 0, Math.PI * 2);
-    ctx.strokeStyle = '#d8e7f4'; ctx.lineWidth = Math.max(1.5, size * .07); ctx.stroke();
-  }
-  ctx.restore();
-}
-
-function drawSharinganEyes(ctx: CanvasRenderingContext2D, face: Point[], w: number, h: number, t: number) {
-  if(face.length<478)return;const eyes=[{center:468,contour:[33,160,158,133,153,144],corners:[33,133]},{center:473,contour:[362,385,387,263,373,380],corners:[362,263]}];ctx.save();ctx.globalCompositeOperation='source-over';
-  for(const eye of eyes){const c={x:face[eye.center].x*w,y:face[eye.center].y*h},ew=Math.hypot((face[eye.corners[0]].x-face[eye.corners[1]].x)*w,(face[eye.corners[0]].y-face[eye.corners[1]].y)*h),r=Math.max(3,ew*.255);ctx.save();ctx.beginPath();eye.contour.forEach((id,i)=>{const p=face[id];if(!i)ctx.moveTo(p.x*w,p.y*h);else ctx.lineTo(p.x*w,p.y*h);});ctx.closePath();ctx.clip();const glow=ctx.createRadialGradient(c.x,c.y,r*.1,c.x,c.y,r*1.8);glow.addColorStop(0,'rgba(255,25,40,.54)');glow.addColorStop(1,'rgba(255,0,22,0)');ctx.fillStyle=glow;ctx.beginPath();ctx.arc(c.x,c.y,r*1.8,0,Math.PI*2);ctx.fill();const iris=ctx.createRadialGradient(c.x-r*.24,c.y-r*.3,r*.08,c.x,c.y,r);iris.addColorStop(0,'#ff7777');iris.addColorStop(.34,'#e7192e');iris.addColorStop(.78,'#a90017');iris.addColorStop(1,'#3b0612');ctx.fillStyle=iris;ctx.beginPath();ctx.arc(c.x,c.y,r,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#190007';ctx.lineWidth=Math.max(1,r*.12);ctx.beginPath();ctx.arc(c.x,c.y,r*.9,0,Math.PI*2);ctx.stroke();ctx.strokeStyle='rgba(40,0,7,.72)';ctx.lineWidth=Math.max(.8,r*.045);for(let ray=0;ray<18;ray++){const a=ray*Math.PI/9+t*.025;ctx.beginPath();ctx.moveTo(c.x+Math.cos(a)*r*.28,c.y+Math.sin(a)*r*.28);ctx.lineTo(c.x+Math.cos(a)*r*.82,c.y+Math.sin(a)*r*.82);ctx.stroke();}for(let m=0;m<3;m++){const a=m*Math.PI*2/3-Math.PI/2,mx=c.x+Math.cos(a)*r*.59,my=c.y+Math.sin(a)*r*.59;ctx.save();ctx.translate(mx,my);ctx.rotate(a+Math.PI/2);ctx.fillStyle='#160208';ctx.beginPath();ctx.arc(0,0,r*.19,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.moveTo(r*.04,r*.13);ctx.quadraticCurveTo(r*.37,r*.08,r*.24,-r*.25);ctx.quadraticCurveTo(r*.18,-r*.04,r*.04,r*.13);ctx.fill();ctx.restore();}ctx.fillStyle='#100107';ctx.beginPath();ctx.arc(c.x,c.y,r*.22,0,Math.PI*2);ctx.fill();ctx.fillStyle='rgba(255,255,255,.9)';ctx.beginPath();ctx.arc(c.x-r*.25,c.y-r*.28,Math.max(1,r*.11),0,Math.PI*2);ctx.fill();ctx.restore();}ctx.restore();
-}
-
-function drawThrownTools(ctx: CanvasRenderingContext2D, projectiles: ThrownTool[], w: number, h: number, now: number) {
-  for (const projectile of projectiles) {
-    const age = (now - projectile.born) / 1000;
-    const fade = Math.max(0, Math.min(1, (1.8 - age) / .28));
-    const x = projectile.x * w, y = projectile.y * h;
-    const size = Math.min(w, h) * (projectile.kind === 'shuriken' ? .035 : .047);
-    ctx.save();
-    ctx.globalAlpha = fade * .78; ctx.globalCompositeOperation = 'screen';
-    ctx.beginPath();
-    ctx.moveTo((projectile.x - projectile.vx * .065) * w, (projectile.y - projectile.vy * .065) * h);
-    ctx.lineTo(x, y);
-    ctx.strokeStyle = projectile.kind === 'shuriken' ? 'rgba(195,242,255,.82)' : 'rgba(167,211,255,.8)';
-    ctx.lineWidth = Math.max(2, size * .18); ctx.shadowColor = '#9edfff'; ctx.shadowBlur = 13; ctx.stroke();
-    ctx.translate(x, y);
-    ctx.rotate(projectile.spin + age * (projectile.kind === 'shuriken' ? 18 : 8));
-    ctx.globalAlpha = fade; ctx.globalCompositeOperation = 'screen';
-    ctx.shadowColor = '#9edfff'; ctx.shadowBlur = 16;
-    const image = getToolImage(projectile.kind); if (image?.complete && image.naturalWidth > 0) { ctx.globalCompositeOperation = 'source-over'; ctx.shadowColor = '#b7e6ff'; ctx.shadowBlur = 13; ctx.drawImage(image, -size * (projectile.kind === 'shuriken' ? .95 : .54), -size * (projectile.kind === 'shuriken' ? .95 : 1.24), size * (projectile.kind === 'shuriken' ? 1.9 : 1.08), size * (projectile.kind === 'shuriken' ? 1.9 : 2.48)); ctx.restore(); continue; }
-    if (projectile.kind === 'shuriken') {
-      ctx.beginPath();
-      for (let i = 0; i < 16; i++) {
-        const a = -Math.PI / 2 + i * Math.PI / 8, radius = i % 2 === 0 ? size : size * .32;
-        const px = Math.cos(a) * radius, py = Math.sin(a) * radius;
-        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-      }
-      ctx.closePath(); ctx.fillStyle = '#dff7ff'; ctx.fill();
-      ctx.lineWidth = Math.max(1, size * .08); ctx.strokeStyle = '#ffffff'; ctx.stroke();
-      ctx.beginPath(); ctx.arc(0, 0, size * .15, 0, Math.PI * 2); ctx.fillStyle = '#526b82'; ctx.fill();
-    } else {
-      ctx.beginPath(); ctx.moveTo(0, -size * 1.35); ctx.lineTo(size * .25, -size * .42);
-      ctx.lineTo(size * .16, size * .52); ctx.lineTo(0, size * .72);
-      ctx.lineTo(-size * .16, size * .52); ctx.lineTo(-size * .25, -size * .42); ctx.closePath();
-      const metal = ctx.createLinearGradient(-size * .3, 0, size * .3, 0);
-      metal.addColorStop(0, '#7896b3'); metal.addColorStop(.5, '#f7ffff'); metal.addColorStop(1, '#7896b3');
-      ctx.fillStyle = metal; ctx.fill(); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.2; ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(0, size * .7); ctx.lineTo(0, size * 1.25);
-      ctx.strokeStyle = '#c7a078'; ctx.lineWidth = Math.max(2, size * .11); ctx.stroke();
-    }
-    ctx.restore();
-  }
-}
-
 function drawLandmarks(ctx: CanvasRenderingContext2D, hands: Point[][], w: number, h: number) {
   ctx.save(); ctx.lineWidth = Math.max(1.5, w * 0.002); ctx.lineCap = 'round';
   for (const hand of hands) {
@@ -385,217 +254,6 @@ function drawLandmarks(ctx: CanvasRenderingContext2D, hands: Point[][], w: numbe
   }
   ctx.restore();
 }
-function drawRasengan(
-  ctx: CanvasRenderingContext2D,
-  p: {x:number;y:number},
-  w: number,
-  h: number,
-  t: number,
-  charge = 0.72,
-) {
-  const x = p.x * w, y = p.y * h;
-  const pulse = 1 + Math.sin(t * 5.2) * 0.035 + charge * 0.035;
-  const r = Math.min(w, h) * (0.027 + charge * 0.073) * pulse;
-  ctx.save();
-  ctx.globalCompositeOperation = 'screen';
-
-  // Soft spill light first, then a bright, dense chakra core.
-  const halo = ctx.createRadialGradient(x, y, r * 0.12, x, y, r * 2.15);
-  halo.addColorStop(0, 'rgba(245,255,255,.98)');
-  halo.addColorStop(0.16, 'rgba(105,225,255,.82)');
-  halo.addColorStop(0.47, 'rgba(37,146,255,.34)');
-  halo.addColorStop(1, 'rgba(20,105,255,0)');
-  ctx.fillStyle = halo;
-  ctx.beginPath(); ctx.arc(x, y, r * 2.15, 0, Math.PI * 2); ctx.fill();
-
-  const core = ctx.createRadialGradient(x - r * 0.22, y - r * 0.25, r * 0.03, x, y, r * 0.77);
-  core.addColorStop(0, '#ffffff');
-  core.addColorStop(0.22, '#d8fbff');
-  core.addColorStop(0.55, '#5bcfff');
-  core.addColorStop(0.83, '#197eff');
-  core.addColorStop(1, 'rgba(20,86,255,.08)');
-  ctx.shadowColor = '#38bfff'; ctx.shadowBlur = 30 + charge * 22;
-  ctx.fillStyle = core; ctx.beginPath(); ctx.arc(x, y, r * 0.78, 0, Math.PI * 2); ctx.fill();
-  ctx.shadowBlur = 0;
-
-  // Multiple counter-rotating, incomplete energy ribbons create the turbulent spinning look.
-  for (let ring = 0; ring < 7; ring++) {
-    const direction = ring % 2 ? -1 : 1;
-    const rotation = t * (1.25 + ring * 0.17) * direction + ring * 1.37;
-    ctx.beginPath();
-    ctx.ellipse(x, y, r * (0.43 + ring * 0.095), r * (0.25 + ring * 0.072), rotation, 0.22 + ring * 0.08, Math.PI * (1.18 + (ring % 3) * 0.2));
-    ctx.strokeStyle = ring % 3 === 0 ? 'rgba(247,255,255,.92)' : ring % 2 ? 'rgba(65,170,255,.72)' : 'rgba(113,224,255,.86)';
-    ctx.lineWidth = Math.max(1, r * (ring % 2 ? 0.026 : 0.04));
-    ctx.shadowColor = '#5bcfff'; ctx.shadowBlur = 8 + charge * 9; ctx.stroke();
-  }
-  ctx.shadowBlur = 0;
-
-  // Curled filaments spiral inward instead of making the effect look like static concentric circles.
-  for (let strand = 0; strand < 5; strand++) {
-    const phase = t * (1.9 + strand * 0.18) + strand * Math.PI * 0.4;
-    ctx.beginPath();
-    for (let i = 0; i <= 28; i++) {
-      const k = i / 28;
-      const a = phase + k * Math.PI * 2.2;
-      const rr = r * (0.12 + k * (0.62 + 0.04 * Math.sin(t * 3 + strand)));
-      const px = x + Math.cos(a) * rr;
-      const py = y + Math.sin(a) * rr * (0.8 + 0.15 * Math.sin(a * 2 + strand));
-      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-    }
-    ctx.strokeStyle = strand % 2 ? 'rgba(255,255,255,.64)' : 'rgba(73,193,255,.78)';
-    ctx.lineWidth = Math.max(1, r * 0.022); ctx.stroke();
-  }
-
-  for (let i = 0; i < 34; i++) {
-    const a = t * (2.5 + (i % 4) * 0.3) + i * Math.PI * 2 / 34;
-    const rr = r * (0.22 + 0.63 * ((Math.sin(t * 2.1 + i * 2.17) + 1) / 2));
-    const size = Math.max(1, r * (i % 6 === 0 ? 0.045 : 0.021));
-    ctx.fillStyle = i % 4 === 0 ? '#ffffff' : i % 2 ? '#75e2ff' : '#368dff';
-    ctx.shadowColor = '#8beaff'; ctx.shadowBlur = i % 4 === 0 ? 12 : 5;
-    ctx.beginPath(); ctx.arc(x + Math.cos(a) * rr, y + Math.sin(a) * rr * 0.86, size, 0, Math.PI * 2); ctx.fill();
-  }
-  ctx.restore();
-}
-function drawChidori(
-  ctx: CanvasRenderingContext2D,
-  p: {x:number;y:number},
-  movement: {x:number;y:number},
-  w: number,
-  h: number,
-  t: number,
-  charge = 0.72,
-  hand?: Point[],
-) {
-  const x = p.x * w, y = p.y * h;
-  const pulse = 1 + Math.sin(t * 12.5) * 0.055;
-  const r = Math.min(w, h) * (0.073 + charge * 0.027) * pulse;
-  ctx.save();
-  ctx.globalCompositeOperation = 'screen';
-
-  // Charged electric haze and a white-hot center make the lightning read as one energy mass.
-  const haze = ctx.createRadialGradient(x, y, r * 0.04, x, y, r * 1.7);
-  haze.addColorStop(0, 'rgba(249,255,255,.96)');
-  haze.addColorStop(0.17, 'rgba(151,233,255,.86)');
-  haze.addColorStop(0.48, 'rgba(49,159,255,.38)');
-  haze.addColorStop(1, 'rgba(22,112,255,0)');
-  ctx.fillStyle = haze; ctx.beginPath(); ctx.arc(x, y, r * 1.7, 0, Math.PI * 2); ctx.fill();
-
-  // Lightning coats the detected hand: palm, knuckles, fingers and fingertips.
-  if (hand && hand.length >= 21) {
-    ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    for (const [a, b] of LINKS) {
-      const ax=hand[a].x*w, ay=hand[a].y*h, bx=hand[b].x*w, by=hand[b].y*h;
-      const dx=bx-ax, dy=by-ay, length=Math.hypot(dx,dy)||1, nx=-dy/length, ny=dx/length;
-      const jitter=Math.sin(t*31+a*3.7+b)*Math.min(8,length*.17), mx=(ax+bx)/2+nx*jitter, my=(ay+by)/2+ny*jitter;
-      ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(mx,my);ctx.lineTo(bx,by);ctx.strokeStyle='rgba(62,166,255,.96)';ctx.lineWidth=Math.max(4,Math.min(13,length*.28));ctx.shadowColor='#2fa8ff';ctx.shadowBlur=17+charge*10;ctx.stroke();
-      ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(mx,my);ctx.lineTo(bx,by);ctx.strokeStyle='rgba(225,250,255,.94)';ctx.lineWidth=Math.max(1.2,Math.min(3.5,length*.07));ctx.shadowColor='#d9f7ff';ctx.shadowBlur=8;ctx.stroke();
-      if((a+b)%3===0){const side=Math.sin(t*27+a*5)>0?1:-1;ctx.beginPath();ctx.moveTo(mx,my);ctx.lineTo(mx+nx*side*(5+charge*8),my+ny*side*(5+charge*8));ctx.lineTo(mx+nx*side*(10+charge*13)+dx*.12,my+ny*side*(10+charge*13)+dy*.12);ctx.strokeStyle='rgba(168,229,255,.9)';ctx.lineWidth=1.2;ctx.shadowBlur=9;ctx.stroke();}
-    }
-    for(const id of [4,8,12,16,20]){const tip=hand[id],tx=tip.x*w,ty=tip.y*h,g=ctx.createRadialGradient(tx,ty,0,tx,ty,12+charge*7);g.addColorStop(0,'rgba(255,255,255,.98)');g.addColorStop(.28,'rgba(105,209,255,.78)');g.addColorStop(1,'rgba(42,145,255,0)');ctx.fillStyle=g;ctx.beginPath();ctx.arc(tx,ty,12+charge*7,0,Math.PI*2);ctx.fill();}
-    ctx.restore();
-  }
-
-  // Fine jagged bolts branch out from a compact, bright core.
-  for (let bolt = 0; bolt < 17; bolt++) {
-    const a = bolt * Math.PI * 2 / 17 + Math.sin(t * 3.1 + bolt) * 0.12;
-    const length = r * (0.9 + 0.52 * ((Math.sin(t * 10 + bolt * 7.7) + 1) / 2));
-    ctx.beginPath();
-    ctx.moveTo(x + Math.cos(a) * r * 0.15, y + Math.sin(a) * r * 0.15);
-    let lastX = x, lastY = y;
-    for (let step = 1; step <= 7; step++) {
-      const k = step / 7;
-      const jitter = step === 7 ? 0 : Math.sin(t * 22 + bolt * 4.3 + step * 8.1) * r * (0.1 + 0.08 * charge);
-      const nx = x + Math.cos(a) * length * k + Math.cos(a + Math.PI / 2) * jitter;
-      const ny = y + Math.sin(a) * length * k + Math.sin(a + Math.PI / 2) * jitter;
-      ctx.lineTo(nx, ny);
-      lastX = nx; lastY = ny;
-      if (step === 4 && bolt % 3 === 0) {
-        ctx.moveTo(nx, ny);
-        ctx.lineTo(nx + Math.cos(a + 0.8) * r * 0.22, ny + Math.sin(a + 0.8) * r * 0.22);
-        ctx.moveTo(nx, ny);
-      }
-    }
-    ctx.strokeStyle = bolt % 4 === 0 ? 'rgba(255,255,255,.98)' : bolt % 2 ? 'rgba(80,182,255,.92)' : 'rgba(141,228,255,.94)';
-    ctx.lineWidth = bolt % 4 === 0 ? 2.3 + charge : 1 + charge * 0.7;
-    ctx.shadowColor = '#49beff'; ctx.shadowBlur = 8 + charge * 13; ctx.stroke();
-    // Tiny hot point sparks ride the tips of longer bolts.
-    if (bolt % 3 === 0) {
-      ctx.fillStyle = '#e9fdff'; ctx.shadowBlur = 10;
-      ctx.beginPath(); ctx.arc(lastX, lastY, 1.2 + charge, 0, Math.PI * 2); ctx.fill();
-    }
-  }
-
-  // The hand's recent motion leaves a short, directional lightning tail.
-  const speed = Math.hypot(movement.x, movement.y);
-  if (speed > 0.0015) {
-    const dx = movement.x / speed, dy = movement.y / speed;
-    const tail = r * (1.35 + Math.min(1, speed * 24) * 1.7);
-    for (let i = 0; i < 4; i++) {
-      const offset = (i - 1.5) * r * 0.1;
-      ctx.beginPath();
-      ctx.moveTo(x - dx * r * 0.15 + -dy * offset, y - dy * r * 0.15 + dx * offset);
-      ctx.lineTo(x - dx * tail * 0.46 + -dy * offset * 1.4, y - dy * tail * 0.46 + dx * offset * 1.4);
-      ctx.lineTo(x - dx * tail * (0.7 + i * 0.08) + -dy * offset * 0.4, y - dy * tail * (0.7 + i * 0.08) + dx * offset * 0.4);
-      ctx.strokeStyle = i % 2 ? 'rgba(65,166,255,.48)' : 'rgba(197,246,255,.8)';
-      ctx.lineWidth = i % 2 ? 1.6 : 2.4; ctx.shadowBlur = 13; ctx.stroke();
-    }
-  }
-  for (let i = 0; i < 12; i++) {
-    const a = t * 4.2 + i * Math.PI * 2 / 12;
-    const rr = r * (0.18 + 0.88 * ((Math.sin(t * 8 + i * 1.9) + 1) / 2));
-    ctx.fillStyle = i % 3 ? '#71dcff' : '#ffffff'; ctx.shadowBlur = 7;
-    ctx.beginPath(); ctx.arc(x + Math.cos(a) * rr, y + Math.sin(a) * rr, 1 + (i % 3) * 0.6, 0, Math.PI * 2); ctx.fill();
-  }
-  ctx.restore();
-}
-function drawLightningBurst(ctx: CanvasRenderingContext2D, p: {x:number;y:number}, w: number, h: number, t: number, charge = 0.72) {
-  const x=p.x*w, y=p.y*h, base=Math.min(w,h)*(0.075+charge*0.035), pulse=1+Math.sin(t*9)*0.08;
-  ctx.save(); ctx.globalCompositeOperation='screen'; ctx.lineCap='round'; ctx.lineJoin='round';
-  const glow=ctx.createRadialGradient(x,y,base*.08,x,y,base*2.5);
-  glow.addColorStop(0,'rgba(255,255,255,.96)'); glow.addColorStop(.2,'rgba(171,244,255,.82)'); glow.addColorStop(.55,'rgba(58,160,255,.32)'); glow.addColorStop(1,'rgba(45,115,255,0)');
-  ctx.fillStyle=glow;ctx.beginPath();ctx.arc(x,y,base*2.5*pulse,0,Math.PI*2);ctx.fill();
-  for(let ring=0;ring<3;ring++){
-    ctx.beginPath();ctx.ellipse(x,y,base*(.65+ring*.38)*pulse,base*(.35+ring*.24),t*(ring%2?-.9:1.1)+ring,0,Math.PI*2);
-    ctx.strokeStyle=ring===0?'rgba(255,255,255,.95)':'rgba(83,196,255,.78)';ctx.lineWidth=ring===0?3:1.8;ctx.shadowColor='#50caff';ctx.shadowBlur=14;ctx.stroke();
-  }
-  for(let bolt=0;bolt<22;bolt++){
-    const a=bolt*Math.PI*2/22+t*(bolt%2?1.7:-1.3),len=base*(.75+((Math.sin(t*11+bolt*2.8)+1)/2)*1.25);
-    ctx.beginPath();ctx.moveTo(x+Math.cos(a)*base*.16,y+Math.sin(a)*base*.16);
-    for(let step=1;step<=5;step++){const k=step/5,j=step===5?0:Math.sin(t*24+bolt+step*3)*base*.12;ctx.lineTo(x+Math.cos(a)*len*k-Math.sin(a)*j,y+Math.sin(a)*len*k+Math.cos(a)*j);}
-    ctx.strokeStyle=bolt%4===0?'rgba(255,255,255,.98)':'rgba(91,191,255,.92)';ctx.lineWidth=bolt%4===0?2.4:1.3;ctx.shadowBlur=10;ctx.stroke();
-  }
-  ctx.restore();
-}
-
-function drawUchihaMouthFire(ctx: CanvasRenderingContext2D, face: Point[], w: number, h: number, t: number, charge = 0.8): {x:number;y:number} {
-  if(face.length<292)return {x:.5,y:.5};
-  const mouth={x:(face[13].x+face[14].x)*.5*w,y:(face[13].y+face[14].y)*.5*h},mouthWidth=Math.max(12,Math.hypot((face[61].x-face[291].x)*w,(face[61].y-face[291].y)*h));
-  const eyeMid={x:(face[33].x+face[263].x)*.5*w,y:(face[33].y+face[263].y)*.5*h},nose={x:face[1].x*w,y:face[1].y*h};
-  const angle=Math.atan2(nose.y-eyeMid.y,nose.x-eyeMid.x)+.04*Math.sin(t*1.4),dx=Math.cos(angle),dy=Math.sin(angle),nx=-dy,ny=dx,length=Math.min(w,h)*(.23+charge*.08),base=mouthWidth*(.22+charge*.1);
-  ctx.save();ctx.globalCompositeOperation='screen';ctx.lineCap='round';ctx.lineJoin='round';ctx.beginPath();ctx.moveTo(mouth.x,mouth.y);ctx.quadraticCurveTo(mouth.x+dx*length*.48+nx*base,mouth.y+dy*length*.48+ny*base,mouth.x+dx*length,mouth.y+dy*length);ctx.strokeStyle='rgba(255,76,12,.48)';ctx.lineWidth=base*4.8;ctx.shadowColor='#ff4b0b';ctx.shadowBlur=base*3.8;ctx.stroke();
-  for(let r=0;r<7;r++){const side=(r-3)/3;ctx.beginPath();for(let s=0;s<=12;s++){const p=s/12,wiggle=Math.sin(t*(7+r*.19)+p*15+r*1.7)*base*(.12+p*.42),spread=side*base*(.15+p*2.6),along=p*length,x=mouth.x+dx*along+nx*(spread+wiggle),y=mouth.y+dy*along+ny*(spread+wiggle);if(!s)ctx.moveTo(x,y);else ctx.lineTo(x,y);}ctx.strokeStyle=r%3===0?'rgba(255,246,190,.96)':r%3===1?'rgba(255,167,42,.94)':'rgba(255,58,12,.88)';ctx.lineWidth=base*(r%3===0?.36:.72);ctx.shadowColor=r%3===0?'#fff1a3':'#ff4b0b';ctx.shadowBlur=base*(1.2+charge);ctx.stroke();}
-  for(let i=0;i<24;i++){const p=((i*.61803398875+t*.11)%1),side=Math.sin(i*2.37+t*5.5)*base*(.15+p*2.3),along=p*length,x=mouth.x+dx*along+nx*side,y=mouth.y+dy*along+ny*side,q=base*(.16+((Math.sin(t*13+i*3.1)+1)*.5)*.55)*(1-p*.45);ctx.beginPath();ctx.moveTo(x-nx*q*.2,y-ny*q*.2);ctx.quadraticCurveTo(x+dx*q*.55+nx*q,y+dy*q*.55+ny*q,x+dx*q*1.15-nx*q*.18,y+dy*q*1.15-ny*q*.18);ctx.strokeStyle=i%4===0?'#fff6c5':i%2?'#ffb43c':'#ff4a16';ctx.lineWidth=Math.max(1.2,q*.32);ctx.shadowColor='#ff6b1b';ctx.shadowBlur=9;ctx.stroke();}
-  const glow=ctx.createRadialGradient(mouth.x,mouth.y,1,mouth.x,mouth.y,base*2.1);glow.addColorStop(0,'rgba(255,255,224,.98)');glow.addColorStop(.25,'rgba(255,179,61,.82)');glow.addColorStop(1,'rgba(255,50,9,0)');ctx.fillStyle=glow;ctx.beginPath();ctx.ellipse(mouth.x,mouth.y,base*1.5,base*.9,angle,0,Math.PI*2);ctx.fill();ctx.restore();return {x:(mouth.x+dx*length)/w,y:(mouth.y+dy*length)/h};
-}
-
-function drawFireball(ctx: CanvasRenderingContext2D, p: {x:number;y:number}, w:number, h:number, t:number, charge=0.8) {
-  const x=p.x*w,y=p.y*h,r=Math.min(w,h)*(.07+charge*.045),pulse=1+Math.sin(t*13)*.07;
-  ctx.save();ctx.globalCompositeOperation='screen';ctx.lineCap='round';ctx.lineJoin='round';
-  const glow=ctx.createRadialGradient(x,y,r*.1,x,y,r*2.8);
-  glow.addColorStop(0,'rgba(255,255,220,.98)');glow.addColorStop(.18,'rgba(255,203,85,.92)');glow.addColorStop(.48,'rgba(255,94,24,.48)');glow.addColorStop(1,'rgba(255,48,12,0)');
-  ctx.fillStyle=glow;ctx.beginPath();ctx.arc(x,y,r*2.8*pulse,0,Math.PI*2);ctx.fill();
-  for(let ring=0;ring<5;ring++){
-    const phase=t*(ring%2?1.8:-1.45)+ring*1.25;ctx.beginPath();
-    for(let i=0;i<=42;i++){const k=i/42,a=phase+k*Math.PI*2*(1.1+ring*.12),rr=r*(.2+k*(.5+ring*.08)),px=x+Math.cos(a)*rr,py=y+Math.sin(a)*rr*(.7+.12*Math.sin(a*3+ring));if(i===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);}
-    ctx.strokeStyle=ring%2?'rgba(255,236,151,.9)':'rgba(255,112,35,.86)';ctx.lineWidth=ring%2?2.2:3.3;ctx.shadowColor='#ff5a16';ctx.shadowBlur=15;ctx.stroke();
-  }
-  const core=ctx.createRadialGradient(x-r*.22,y-r*.28,r*.04,x,y,r*.78);
-  core.addColorStop(0,'#fffde2');core.addColorStop(.3,'#ffe477');core.addColorStop(.62,'#ff8b24');core.addColorStop(1,'rgba(255,62,12,.08)');
-  ctx.fillStyle=core;ctx.shadowColor='#ff6b20';ctx.shadowBlur=28;ctx.beginPath();ctx.arc(x,y,r*.75*pulse,0,Math.PI*2);ctx.fill();
-  for(let i=0;i<28;i++){const a=t*(1.8+(i%4)*.4)+i*Math.PI*2/28,rr=r*(.72+((Math.sin(t*9+i*2.3)+1)/2)*.82),len=r*(.08+((Math.sin(t*12+i)+1)/2)*.16);ctx.beginPath();ctx.moveTo(x+Math.cos(a)*rr,y+Math.sin(a)*rr);ctx.lineTo(x+Math.cos(a)*(rr+len),y+Math.sin(a)*(rr+len));ctx.strokeStyle=i%3?'rgba(255,171,56,.9)':'rgba(255,246,194,.98)';ctx.lineWidth=i%3?1.5:2.4;ctx.shadowBlur=10;ctx.stroke();}
-  ctx.restore();
-}
-
 function drawCloneEcho(ctx: CanvasRenderingContext2D, w: number, h: number, t: number) {
   ctx.save(); ctx.globalCompositeOperation='screen';
   for(let i=0;i<3;i++) {
@@ -635,47 +293,6 @@ function updateCloneSprite(
     pixels.data[i * 4 + 3] = Math.round(pixels.data[i * 4 + 3] * soft);
   }
   ctx.putImageData(pixels, 0, 0);
-}
-
-function drawWindScythe(ctx: CanvasRenderingContext2D, p: {x:number;y:number}, move: {x:number;y:number}, w:number, h:number, t:number, charge=0.8) {
-  const x=p.x*w,y=p.y*h,base=Math.min(w,h)*(.11+charge*.045),speed=Math.hypot(move.x,move.y);
-  ctx.save();ctx.globalCompositeOperation='screen';ctx.lineCap='round';ctx.lineJoin='round';
-  const aura=ctx.createRadialGradient(x,y,base*.05,x,y,base*2.2);
-  aura.addColorStop(0,'rgba(235,255,247,.65)');aura.addColorStop(.35,'rgba(100,255,190,.32)');aura.addColorStop(1,'rgba(50,255,170,0)');
-  ctx.fillStyle=aura;ctx.beginPath();ctx.arc(x,y,base*2.2,0,Math.PI*2);ctx.fill();
-  const direction=Math.atan2(move.y,move.x)+(speed>.012?0:-.22);
-  for(let blade=0;blade<3;blade++){
-    const phase=t*(2.1+blade*.38)+blade*2.05,angle=direction+phase*.14;
-    const radius=base*(.8+blade*.27),start=angle-.92,end=angle+.92;
-    ctx.beginPath();ctx.ellipse(x+Math.cos(phase)*base*.2,y+Math.sin(phase)*base*.2,radius*1.12,radius*.48,angle,start,end);
-    ctx.strokeStyle=blade===0?'rgba(255,255,255,.96)':blade===1?'rgba(137,255,204,.92)':'rgba(53,206,151,.72)';
-    ctx.lineWidth=blade===0?3.2:2.1;ctx.shadowColor='#6cffbd';ctx.shadowBlur=18+charge*10;ctx.stroke();
-  }
-  for(let i=0;i<18;i++){
-    const a=i*2.399+t*(i%2?1.8:-1.2),r=base*(.42+((i*7)%11)/11*1.55);
-    const px=x+Math.cos(a)*r,py=y+Math.sin(a)*r;
-    ctx.beginPath();ctx.moveTo(px,py);ctx.lineTo(px+Math.cos(a+.7)*(3+(i%4)*2),py+Math.sin(a+.7)*(3+(i%4)*2));
-    ctx.strokeStyle=i%3?'rgba(101,255,190,.86)':'rgba(255,255,255,.95)';ctx.lineWidth=i%3?1.5:2.4;ctx.shadowBlur=8;ctx.stroke();
-  }
-  ctx.restore();
-}
-
-function drawAmaterasu(ctx: CanvasRenderingContext2D, p: {x:number;y:number}, w:number, h:number, t:number, charge=0.8) {
-  const x=p.x*w,y=p.y*h,base=Math.min(w,h)*(.06+charge*.025);
-  ctx.save();ctx.globalCompositeOperation='source-over';ctx.lineCap='round';ctx.lineJoin='round';
-  const aura=ctx.createRadialGradient(x,y,base*.05,x,y,base*2.2);
-  aura.addColorStop(0,'rgba(255,255,255,.8)');aura.addColorStop(.18,'rgba(100,58,150,.58)');aura.addColorStop(.52,'rgba(38,14,58,.42)');aura.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle=aura;ctx.beginPath();ctx.arc(x,y,base*2.2,0,Math.PI*2);ctx.fill();
-  for(let i=0;i<13;i++){
-    const a=i*Math.PI*2/13+t*(i%2?-.55:.7),flicker=.72+.28*Math.sin(t*8+i*2.4);
-    const inner=base*(.34+(i%3)*.08),outer=base*(1.05+(i%4)*.19)*flicker;
-    const sx=x+Math.cos(a)*inner,sy=y+Math.sin(a)*inner;
-    const ex=x+Math.cos(a+.12*Math.sin(t*6+i))*outer,ey=y+Math.sin(a+.12*Math.cos(t*5+i))*outer;
-    ctx.beginPath();ctx.moveTo(sx,sy);ctx.quadraticCurveTo(x+Math.cos(a+.28)*outer*.55,y+Math.sin(a+.28)*outer*.55,ex,ey);
-    ctx.strokeStyle=i%3===0?'rgba(155,110,255,.96)':'rgba(8,5,16,.98)';ctx.lineWidth=Math.max(3,base*(i%3===0?.12:.2));ctx.shadowColor='#6c38a8';ctx.shadowBlur=10+charge*12;ctx.stroke();
-    ctx.beginPath();ctx.arc(ex,ey,Math.max(1.5,base*.035),0,Math.PI*2);ctx.fillStyle=i%3===0?'#bba0ff':'#08050e';ctx.fill();
-  }
-  ctx.restore();
 }
 
 function drawSegmentedClones(
@@ -734,6 +351,7 @@ export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const threeTrackingRef = useRef<ThreeTrackingState>({ hands: [], face: [], move: { x: 0, y: 0 }, activeTool: 'none', thrownTools: [], trail: [] });
   const trackerRef = useRef<HandLandmarker | null>(null);
   const segmenterRef = useRef<ImageSegmenter | null>(null);
   const cloneSpriteRef = useRef<HTMLCanvasElement | null>(null);
@@ -823,6 +441,7 @@ export default function App() {
     comboModeRef.current = false; setComboMode(false); comboCandidateRef.current = 'none';
     castUntilRef.current = 0; cloneVisualUntilRef.current = 0;
     if (videoRef.current) videoRef.current.srcObject = null;
+    threeTrackingRef.current = { hands: [], face: [], move: { x: 0, y: 0 }, activeTool: 'none', thrownTools: [], trail: [] };
     switchJutsu('none'); setCameraState('idle'); setHandCount(0); setGestureLabel('Camera stopped');
     const ctx = canvasRef.current?.getContext('2d');
     if (ctx && canvasRef.current) ctx.clearRect(0,0,canvasRef.current.width,canvasRef.current.height);
@@ -1071,7 +690,6 @@ export default function App() {
           ctx.clearRect(0,0,w,h);
           const hands = smoothedLandmarksRef.current;
           if (landmarksRef.current) drawLandmarks(ctx,hands,w,h);
-          const charge = Math.min(1, Math.max(0, (now - jutsuStartedAtRef.current) / 2600));
           if (activeRef.current !== 'none' && hands.length) {
             const focus = activeRef.current === 'lightning-burst' && hands.length > 1
               ? { x: (palm(hands[0]).x + palm(hands[1]).x) / 2, y: (palm(hands[0]).y + palm(hands[1]).y) / 2 }
@@ -1082,18 +700,7 @@ export default function App() {
             }
           }
           while (energyTrail.length && now - energyTrail[0].at > 520) energyTrail.shift();
-          const trailColor = activeRef.current === 'fireball' ? 'rgba(255,150,48,.95)'
-            : activeRef.current === 'amaterasu' ? 'rgba(166,119,255,.95)'
-            : activeRef.current === 'wind-scythe' ? 'rgba(104,255,190,.96)'
-            : activeRef.current === 'clone' ? 'rgba(199,165,255,.92)'
-            : activeRef.current === 'chidori' || activeRef.current === 'lightning-burst' ? 'rgba(115,222,255,.98)'
-            : 'rgba(70,190,255,.95)';
-          if (activeRef.current !== 'none') drawEnergyTrail(ctx, energyTrail, w, h, now, trailColor);
-          else energyTrail.length = 0;
-          if (activeRef.current === 'rasengan' && hands.length) drawRasengan(ctx,palm(hands[0]),w,h,now/1000,charge);
-          if (activeRef.current === 'chidori' && hands.length) drawChidori(ctx,palm(hands[0]),move,w,h,now/1000,charge,hands[0]);
-          if (activeRef.current === 'lightning-burst' && hands.length > 1) drawLightningBurst(ctx,{x:(palm(hands[0]).x+palm(hands[1]).x)/2,y:(palm(hands[0]).y+palm(hands[1]).y)/2},w,h,now/1000,charge);
-          if (activeRef.current === 'fireball') { const face = latestFace?.faceLandmarks?.[0] as Point[] | undefined; if (face && face.length >= 292) { const target = drawUchihaMouthFire(ctx, face, w, h, now / 1000, charge); drawFireball(ctx, target, w, h, now / 1000, charge); } else { drawFireball(ctx, hands.length > 1 ? {x:(palm(hands[0]).x+palm(hands[1]).x)/2,y:(palm(hands[0]).y+palm(hands[1]).y)/2} : {x:.5,y:.5},w,h,now/1000,charge); } }
+          if (activeRef.current === 'none') energyTrail.length = 0;
           if (activeRef.current === 'clone' && now < cloneVisualUntilRef.current) {
             const cloneFade = Math.min(1, Math.max(0, (cloneVisualUntilRef.current - now) / 550));
             ctx.save(); ctx.globalAlpha = cloneFade;
@@ -1101,11 +708,6 @@ export default function App() {
             else drawCloneEcho(ctx,w,h,now/1000);
             ctx.restore();
           }
-          if (activeRef.current === 'amaterasu' && hands.length) drawAmaterasu(ctx,palm(hands[0]),w,h,now/1000,charge);
-          if (activeRef.current === 'wind-scythe' && hands.length) drawWindScythe(ctx,palm(hands[0]),move,w,h,now/1000,charge);
-          const facePoints = latestFace?.faceLandmarks?.[0] as Point[] | undefined;
-          if (sharinganRef.current && facePoints && facePoints.length >= 478) drawSharinganEyes(ctx, facePoints, w, h, now / 1000);
-          if (activeToolRef.current !== 'none' && hands.length) drawHeldTool(ctx, hands[0], activeToolRef.current, w, h, now / 1000);
           const dt = Math.min(.05, Math.max(0, (now - lastProjectileFrameAt) / 1000));
           lastProjectileFrameAt = now;
           thrownToolsRef.current.forEach((projectile) => {
@@ -1116,8 +718,15 @@ export default function App() {
           thrownToolsRef.current = thrownToolsRef.current.filter((projectile) =>
             now - projectile.born < 1800 && projectile.x > -.2 && projectile.x < 1.2 && projectile.y > -.2 && projectile.y < 1.2
           );
-          drawThrownTools(ctx, thrownToolsRef.current, w, h, now);
         }
+        threeTrackingRef.current = {
+          hands: smoothedLandmarksRef.current,
+          face: (latestFace?.faceLandmarks?.[0] as Point[] | undefined) ?? [],
+          move,
+          activeTool: activeToolRef.current,
+          thrownTools: thrownToolsRef.current,
+          trail: energyTrail,
+        };
         frames++;
         if (now - fpsAt >= 1000) { setFps(Math.round(frames*1000/(now-fpsAt))); fpsAt=now; frames=0; }
         rafRef.current = requestAnimationFrame(frame);
@@ -1156,7 +765,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (cameraState === 'ready' || activeJutsu === 'none' || !canvasRef.current) return;
+    if (cameraState === 'ready' || activeJutsu !== 'clone' || !canvasRef.current) return;
     const canvas = canvasRef.current, rect = canvas.getBoundingClientRect();
     const w = Math.max(1, Math.round(rect.width * window.devicePixelRatio));
     const h = Math.max(1, Math.round(rect.height * window.devicePixelRatio));
@@ -1165,9 +774,7 @@ export default function App() {
     let id = 0;
     const draw = (t: number) => {
       ctx.clearRect(0,0,w,h);
-      if (activeJutsu === 'rasengan') drawRasengan(ctx,{x:.5,y:.52},w,h,t/1000);
-      if (activeJutsu === 'chidori') drawChidori(ctx,{x:.5,y:.52},{x:.8,y:-.2},w,h,t/1000);
-      if (activeJutsu === 'clone') drawCloneEcho(ctx,w,h,t/1000);
+      drawCloneEcho(ctx,w,h,t/1000);
       id = requestAnimationFrame(draw);
     };
     id = requestAnimationFrame(draw);
@@ -1243,6 +850,7 @@ export default function App() {
             <div className="video-wrap">
               <video ref={videoRef} className="camera-video" autoPlay playsInline muted aria-label="Mirrored webcam preview" />
               <canvas ref={canvasRef} className="effects-canvas" />
+              <ThreeEffects trackingRef={threeTrackingRef} activeJutsu={activeJutsu} sharinganActive={sharinganActive} chargeLevel={chargeLevel} />
               {cameraState !== 'ready' && cameraState !== 'camera-only' && <div className="camera-placeholder">
                 {cameraState === 'loading' ? <LoaderCircle className="spin" size={38} /> : cameraState === 'error' ? <Camera size={35} /> : <div className="camera-orb"><Camera size={28} /></div>}
                 <strong>{cameraState === 'loading' ? 'Warming up the chakra flow' : cameraState === 'error' ? (error.includes('hand tracking') ? 'Hand tracking unavailable' : 'Camera not ready') : 'Your training space awaits'}</strong>
