@@ -691,16 +691,16 @@ export default function App() {
           oneEuroFiltersRef.current = nextFilters;
           smoothedHandednessRef.current = currentHandedness;
           const rawDetected = readJutsu(latest), count = rawHands.length;
-          const voteHistory = gestureVoteHistoryRef.current;
-          voteHistory.push({ ...rawDetected, at: now });
-          // Keep only a compact recent window: three matching predictions out of five are
-          // enough to confirm a pose, while old poses expire quickly when the player switches.
-          while (voteHistory.length > 5 || (voteHistory[0] && now - voteHistory[0].at > 320)) voteHistory.shift();
           let detected = rawDetected;
           // Combo mode uses the raw gesture because each sequence step has its own hold timer.
           // Free casting benefits from temporal consensus, like the rolling-vote approach used
           // in dedicated Naruto hand-seal recognizers.
           if (!comboModeRef.current) {
+            const voteHistory = gestureVoteHistoryRef.current;
+            voteHistory.push({ ...rawDetected, at: now });
+            // Keep only a compact recent window: three matching predictions out of five are
+            // enough to confirm a pose, while old poses expire quickly when the player switches.
+            while (voteHistory.length > 5 || (voteHistory[0] && now - voteHistory[0].at > 320)) voteHistory.shift();
             const votes = new Map<string, { jutsu: Jutsu; gesture: Gesture; count: number }>();
             for (const sample of voteHistory) {
               const key = sample.jutsu + ':' + sample.gesture;
@@ -713,6 +713,8 @@ export default function App() {
             detected = winner && winner.count >= 3
               ? { jutsu: winner.jutsu, gesture: winner.gesture }
               : { jutsu: 'none', gesture: rawDetected.gesture };
+          } else {
+            gestureVoteHistoryRef.current = [];
           }
           setHandCount(count);
           if (!comboModeRef.current && activeRef.current === 'chidori' && now < castUntilRef.current) {
