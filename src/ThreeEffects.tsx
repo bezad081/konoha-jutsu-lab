@@ -20,6 +20,7 @@ function createRasengan(scene: T.Scene): RasenganFx {
     uniforms: {
       uTime: { value: 0 },
       uCharge: { value: 0 },
+      uPhase: { value: 0 },
       uBaseColor: { value: new T.Color(0x168dff) },
       uHotColor: { value: new T.Color(0xf0fdff) },
     },
@@ -31,7 +32,7 @@ function createRasengan(scene: T.Scene): RasenganFx {
         vNormalView = normalize(normalMatrix * normal);
         gl_Position = projectionMatrix * mvPosition;
       }`,
-    fragmentShader: `uniform float uTime; uniform float uCharge; uniform vec3 uBaseColor; uniform vec3 uHotColor;
+    fragmentShader: `uniform float uTime; uniform float uCharge; uniform float uPhase; uniform vec3 uBaseColor; uniform vec3 uHotColor;
       varying vec3 vLocalPosition; varying vec3 vNormalView; varying vec3 vViewPosition;
       void main() {
         vec3 n = normalize(vNormalView);
@@ -47,10 +48,11 @@ function createRasengan(scene: T.Scene): RasenganFx {
         float fresnel = pow(1.0 - max(0.0, dot(n, viewDir)), 2.15);
         float core = pow(max(0.0, 1.0 - length(vLocalPosition.xy) * 0.041), 2.8);
         float surge = 0.5 + 0.5 * sin(uTime * (12.0 + uCharge * 8.0) + angle * 4.0);
+        float ultimateGlow = smoothstep(1.4, 2.0, uPhase);
         vec3 color = mix(uBaseColor, uHotColor,
-          clamp(filaments * (0.48 + uCharge * 0.27) + fineLines * 0.2 + fresnel * 0.55 + core * (0.15 + uCharge * 0.3), 0.0, 1.0));
-        float alpha = clamp(0.24 + fresnel * 0.55 + filaments * 0.3 + fineLines * 0.13 + core * (0.12 + surge * 0.12), 0.0, 0.96);
-        gl_FragColor = vec4(color * (0.7 + fresnel * 1.25 + filaments * 0.65 + uCharge * 0.25), alpha);
+          clamp(filaments * (0.48 + uCharge * 0.27) + fineLines * 0.2 + fresnel * 0.55 + core * (0.15 + uCharge * 0.3) + ultimateGlow * 0.24, 0.0, 1.0));
+        float alpha = clamp(0.24 + fresnel * 0.55 + filaments * 0.3 + fineLines * 0.13 + core * (0.12 + surge * 0.12) + ultimateGlow * 0.08, 0.0, 0.96);
+        gl_FragColor = vec4(color * (0.7 + fresnel * 1.25 + filaments * 0.65 + uCharge * 0.25 + ultimateGlow * 0.38), alpha);
       }`,
     transparent: true,
     blending: additive,
@@ -128,12 +130,29 @@ export default function ThreeEffects({trackingRef,activeJutsu,chargeLevel}:Props
   renderer.setClearColor(0,0);renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1));renderer.outputColorSpace=T.SRGBColorSpace;renderer.domElement.className='three-effects-canvas';element.appendChild(renderer.domElement);
   const scene=new T.Scene(),camera=new T.OrthographicCamera(-1,1,1,-1,.1,1000);camera.position.z=400;
   const rasengan=createRasengan(scene),releaseRing=new T.Mesh(new T.TorusGeometry(13,1.4,7,64),basic(0xbcefff,0));releaseRing.visible=false;scene.add(releaseRing);
-  const count=48,burstGeometry=new T.BufferGeometry();burstGeometry.setAttribute('position',new T.BufferAttribute(new Float32Array(count*3),3));
-  const directions=Array.from({length:count},(_,i)=>({angle:i/count*Math.PI*2+(Math.random()-.5)*.12,speed:55+Math.random()*110,depth:(Math.random()-.5)*20}));
-  const burstMaterial=new T.PointsMaterial({color:0x94eaff,size:3.2,transparent:true,opacity:0,blending:additive,depthWrite:false,sizeAttenuation:false});
+  const releaseRing2=new T.Mesh(new T.TorusGeometry(8,0.72,6,64),basic(0x62cfff,0));releaseRing2.visible=false;scene.add(releaseRing2);
+  const count=72,burstGeometry=new T.BufferGeometry();burstGeometry.setAttribute('position',new T.BufferAttribute(new Float32Array(count*3),3));
+  const directions=Array.from({length:count},(_,i)=>({angle:i/count*Math.PI*2+(Math.random()-.5)*.12,speed:70+Math.random()*135,depth:(Math.random()-.5)*24}));
+  const burstMaterial=new T.PointsMaterial({color:0x94eaff,size:3.4,transparent:true,opacity:0,blending:additive,depthWrite:false,sizeAttenuation:false});
   const burstParticles=new T.Points(burstGeometry,burstMaterial);burstParticles.visible=false;scene.add(burstParticles);
-  let raf=0,lastAt=0,targetMs=1000/60,slow=0,fast=0,pixelRatio=Math.min(window.devicePixelRatio||1,1),wasDrawing=false,previous='none',burstAt=-Infinity,burstPower=0,lastCharge=0;
-  const burstCenter=new T.Vector3(),anchor=new T.Vector3(),observed=new T.Vector3(),predicted=new T.Vector3(),velocity=new T.Vector3();let anchorReady=false,observedAt=0,motionSpeed=0;
+
+  // Reused point buffers give the moving orb an energy trail without per-frame allocations.
+  const trailCount=28,trailPositions=new Float32Array(trailCount*3),trailLife=new Float32Array(trailCount),trailSizes=new Float32Array(trailCount);
+  trailSizes.fill(4.2);
+  const trailGeometry=new T.BufferGeometry();
+  const trailPositionAttribute=new T.BufferAttribute(trailPositions,3);trailPositionAttribute.setUsage(T.DynamicDrawUsage);trailGeometry.setAttribute('position',trailPositionAttribute);
+  const trailLifeAttribute=new T.BufferAttribute(trailLife,1);trailLifeAttribute.setUsage(T.DynamicDrawUsage);trailGeometry.setAttribute('aLife',trailLifeAttribute);
+  const trailSizeAttribute=new T.BufferAttribute(trailSizes,1);trailGeometry.setAttribute('aSize',trailSizeAttribute);
+  const trailMaterial=new T.ShaderMaterial({
+   transparent:true,blending:additive,depthWrite:false,
+   vertexShader:`attribute float aLife;attribute float aSize;varying float vLife;
+    void main(){vLife=aLife;vec4 mvPosition=modelViewMatrix*vec4(position,1.0);gl_PointSize=aSize*(0.35+aLife*1.25);gl_Position=projectionMatrix*mvPosition;}`,
+   fragmentShader:`varying float vLife;
+    void main(){vec2 p=gl_PointCoord-vec2(0.5);float r=length(p);float glow=1.0-smoothstep(0.04,0.5,r);float core=1.0-smoothstep(0.0,0.16,r);float alpha=glow*vLife*0.62;gl_FragColor=vec4(vec3(0.24,0.72,1.0)*(0.85+core*1.2),alpha);}`,
+  });
+  const trail=new T.Points(trailGeometry,trailMaterial);trail.visible=false;trail.frustumCulled=false;scene.add(trail);
+  let raf=0,lastAt=0,targetMs=1000/60,slow=0,fast=0,pixelRatio=Math.min(window.devicePixelRatio||1,1),wasDrawing=false,previous='none',burstAt=-Infinity,burstPower=0,lastCharge=0,chargePhaseLast=-1,trailClock=0,trailCursor=0;
+  const burstCenter=new T.Vector3(),anchor=new T.Vector3(),observed=new T.Vector3(),predicted=new T.Vector3(),velocity=new T.Vector3(),lastTrailAnchor=new T.Vector3(1e6,1e6,1e6);let anchorReady=false,observedAt=0,motionSpeed=0;
   const resize=()=>{const w=Math.max(1,element.clientWidth),h=Math.max(1,element.clientHeight);camera.left=-w/2;camera.right=w/2;camera.top=h/2;camera.bottom=-h/2;camera.updateProjectionMatrix();renderer.setSize(w,h,false)};
   const ro=typeof ResizeObserver!=='undefined'?new ResizeObserver(resize):null;ro?.observe(element);resize();
   const palmCenter=(hand:EffectPoint[]|undefined)=>{if(!hand||hand.length<21)return null;return [0,5,9,13,17].reduce((p,i)=>({x:p.x+hand[i].x/5,y:p.y+hand[i].y/5}),{x:0,y:0})};
@@ -156,26 +175,48 @@ export default function ThreeEffects({trackingRef,activeJutsu,chargeLevel}:Props
     }else if(!anchorReady){anchor.set(0,0,0);anchorReady=true}
     lastCharge=Math.max(lastCharge,charge);
    }
-   if(previous==='rasengan'&&!active&&anchorReady){burstAt=now;burstCenter.copy(anchor);burstPower=clamp(Math.max(lastCharge,charge)*.82+clamp(motionSpeed*.15,0,.18),.2,1);releaseRing.position.copy(burstCenter);releaseRing.position.z=18;releaseRing.visible=true;burstParticles.position.copy(burstCenter);burstParticles.position.z=19;burstParticles.visible=true}
+   if(previous==='rasengan'&&!active&&anchorReady){burstAt=now;burstCenter.copy(anchor);burstPower=clamp(Math.max(lastCharge,charge)*.82+clamp(motionSpeed*.15,0,.18),.2,1);releaseRing.position.copy(burstCenter);releaseRing.position.z=18;releaseRing.visible=true;releaseRing2.position.copy(burstCenter);releaseRing2.position.z=16;releaseRing2.visible=true;burstParticles.position.copy(burstCenter);burstParticles.position.z=19;burstParticles.visible=true}
    previous=active?'rasengan':'none';
-   const bp=clamp((now-burstAt)/460,0,1),burstActive=now-burstAt<460;
-   if(burstActive){const mat=releaseRing.material as T.MeshBasicMaterial;releaseRing.scale.setScalar(scale*(.45+bp*3.7)*(.65+burstPower*.55));releaseRing.rotation.z=time*1.7;mat.opacity=(1-bp)*(.28+burstPower*.52);
+   const bp=clamp((now-burstAt)/620,0,1),burstActive=now-burstAt<620;
+   if(burstActive){
+    const mat=releaseRing.material as T.MeshBasicMaterial;releaseRing.scale.setScalar(scale*(.45+bp*3.7)*(.65+burstPower*.55));releaseRing.rotation.z=time*1.7;mat.opacity=(1-bp)*(.28+burstPower*.58);
+    const bp2=clamp((now-burstAt-72)/560,0,1),mat2=releaseRing2.material as T.MeshBasicMaterial;
+    releaseRing2.scale.setScalar(scale*(.2+bp2*4.3)*(.72+burstPower*.62));releaseRing2.rotation.z=-time*1.15;mat2.opacity=(now-burstAt<72?0:(1-bp2)*(.26+burstPower*.43));
     const pos=burstGeometry.getAttribute('position').array as Float32Array;
     for(let i=0;i<count;i++){const p=directions[i],d=p.speed*bp*(.45+burstPower*.7);pos[3*i]=Math.cos(p.angle)*d;pos[3*i+1]=Math.sin(p.angle)*d;pos[3*i+2]=p.depth*bp}
-    burstGeometry.getAttribute('position').needsUpdate=true;burstMaterial.opacity=(1-bp)*(.3+burstPower*.5);releaseRing.visible=true;burstParticles.visible=true;
-   }else{releaseRing.visible=false;burstParticles.visible=false;burstMaterial.opacity=0}
+    burstGeometry.getAttribute('position').needsUpdate=true;burstMaterial.opacity=(1-bp)*(.3+burstPower*.55);releaseRing.visible=true;releaseRing2.visible=true;burstParticles.visible=true;
+   }else{releaseRing.visible=false;releaseRing2.visible=false;burstParticles.visible=false;burstMaterial.opacity=0}
+
+   // Fade the persistent palm trail in-place; the geometry buffers are reused every frame.
+   const trailFade=Math.max(0,dt/1000)/.23;let trailActive=false;
+   for(let i=0;i<trailCount;i++){trailLife[i]=Math.max(0,trailLife[i]-trailFade);if(trailLife[i]>.01)trailActive=true}
+   if(trailActive)trailLifeAttribute.needsUpdate=true;
+   if(active&&lastTrailAnchor.x>1e5){lastTrailAnchor.copy(anchor);trailClock=0}
+   trailClock+=dt/1000;
+   if(active&&anchorReady&&anchor.distanceTo(lastTrailAnchor)>.85&&trailClock>=.02){
+    trailClock=0;trailCursor=(trailCursor+1)%trailCount;
+    trailPositions[trailCursor*3]=lastTrailAnchor.x;trailPositions[trailCursor*3+1]=lastTrailAnchor.y;trailPositions[trailCursor*3+2]=8;
+    trailLife[trailCursor]=1;trailSizes[trailCursor]=3.2+Math.random()*4.8;
+    trailPositionAttribute.needsUpdate=true;trailLifeAttribute.needsUpdate=true;trailSizeAttribute.needsUpdate=true;
+    trailActive=true;lastTrailAnchor.copy(anchor);
+   }else if(!active){trailClock=0}
+   trail.visible=trailActive;
    rasengan.root.visible=active;
    if(active){
     rasengan.root.position.copy(anchor);const motion=1+clamp(motionSpeed*.72,0,1.35),pulse=Math.sin(time*13.5)*(.012+charge*.025);
-    rasengan.root.scale.setScalar(scale*(.78+charge*.64+pulse));rasengan.halo.scale.setScalar(.95+charge*.24+Math.sin(time*7.2)*.035);(rasengan.halo.material as T.MeshBasicMaterial).opacity=.055+charge*.09+motionSpeed*.025;
-    const shader=rasengan.core.material as T.ShaderMaterial;shader.uniforms.uTime.value=time;shader.uniforms.uCharge.value=charge;rasengan.innerCore.scale.setScalar(.88+charge*.46+Math.sin(time*13.2)*.08);
-    rasengan.rings.forEach((ring,i)=>{const d=i%2?-1:1;ring.rotation.x=time*(.8+i*.22)*motion+i*.7;ring.rotation.y=time*d*(1.0+charge*2.1+i*.20)*motion;ring.rotation.z=time*d*(1.8+charge*2.6)+i*1.3;ring.scale.setScalar(.7+charge*.38+Math.sin(time*10+i)*.035);(ring.material as T.MeshBasicMaterial).opacity=.36+charge*.48});
+    const chargePhase=charge<.35?0:charge<.78?1:2;
+    rasengan.root.scale.setScalar(scale*(.78+charge*.64+pulse)*(chargePhase===2?1.035:1));rasengan.halo.scale.setScalar(.95+charge*.24+Math.sin(time*7.2)*.035);
+    const haloMaterial=rasengan.halo.material as T.MeshBasicMaterial;
+    if(chargePhase!==chargePhaseLast){const haloHex=chargePhase===0?0x258cff:chargePhase===1?0x31caff:0x9cefff;haloMaterial.color.setHex(haloHex);(rasengan.core.material as T.ShaderMaterial).uniforms.uBaseColor.value.setHex(chargePhase===0?0x168dff:chargePhase===1?0x26bfff:0x85e9ff);chargePhaseLast=chargePhase}
+    haloMaterial.opacity=.055+charge*.09+motionSpeed*.025+(chargePhase===2?.055:0);
+    const shader=rasengan.core.material as T.ShaderMaterial;shader.uniforms.uTime.value=time;shader.uniforms.uCharge.value=charge;shader.uniforms.uPhase.value=chargePhase;rasengan.innerCore.scale.setScalar(.88+charge*.46+Math.sin(time*13.2)*.08+(chargePhase===2?.12:0));
+    rasengan.rings.forEach((ring,i)=>{const d=i%2?-1:1;ring.rotation.x=time*(.8+i*.22)*motion+i*.7;ring.rotation.y=time*d*(1.0+charge*2.1+i*.20)*motion;ring.rotation.z=time*d*(1.8+charge*2.6)+i*1.3;ring.scale.setScalar(.7+charge*.38+Math.sin(time*10+i)*.035);(ring.material as T.MeshBasicMaterial).opacity=(.36+charge*.48)*(chargePhase===2?1.08:1)});
     rasengan.spirals.forEach((line,i)=>{line.rotation.z=time*(i%2?-4.8:4.2)*(.68+charge*.7)*(1+clamp(motionSpeed*.7,0,1.2));line.rotation.x=Math.sin(time*2.0+i)*.28;(line.material as T.LineBasicMaterial).opacity=.5+charge*.44});
     const particles=rasengan.particles;particles.rotation.z=-time*(.9+charge*2.0)*motion;particles.rotation.y=time*(.7+charge*1.0)*(1+clamp(motionSpeed*.5,0,.9));(particles.material as T.PointsMaterial).opacity=.34+charge*.54+Math.sin(time*9)*.05;
     const pos=particles.geometry.getAttribute('position').array as Float32Array,seeds=particles.geometry.userData.seeds as Array<{angle:number;radius:number;depth:number;speed:number}>;
     for(let i=0;i<seeds.length;i++){const s=seeds[i],angle=s.angle+time*s.speed*(1.4+charge*2.0),radius=s.radius*(.82+charge*.18)+Math.sin(time*5+i)*1.7;pos[3*i]=Math.cos(angle)*radius;pos[3*i+1]=Math.sin(angle)*radius;pos[3*i+2]=s.depth+Math.sin(time*3+i)*2.4}particles.geometry.getAttribute('position').needsUpdate=true;
    }
-   if(!(active||burstActive)){if(wasDrawing){renderer.clear();wasDrawing=false}return}
+   if(!(active||burstActive||trailActive)){if(wasDrawing){renderer.clear();wasDrawing=false}return}
    wasDrawing=true;renderer.render(scene,camera);const cost=performance.now()-now;
    if(cost>20){slow++;fast=0}else if(cost<12){fast++;slow=0}else{slow=0;fast=0}
    if(slow>=3){targetMs=1000/45;if(pixelRatio>.72){pixelRatio=.72;renderer.setPixelRatio(pixelRatio);resize()}slow=0;fast=0}

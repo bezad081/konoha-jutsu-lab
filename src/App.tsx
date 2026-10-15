@@ -91,6 +91,13 @@ const INFO: Record<Exclude<Jutsu, 'none'>, { name: string; color: string }> = {
   rasengan: { name: 'Rasengan', color: 'blue' },
 };
 
+// Try public image hosts in sequence so a blocked hotlink does not leave the card blank.
+const RASENGAN_IMAGES = [
+  'https://zefirka.club/uploads/posts/2022-12/1672261699_75-zefirka-club-p-viuchit-tekhniki-iz-naruto-rasengan-87.png',
+  'https://www.looper.com/img/gallery/the-most-important-jutsu-that-naruto-ever-learned/the-rasengan-is-no-slouch-either-1655876917.jpg',
+  'https://wallpaper.forfun.com/fetch/f4/f4bc7b8352674e59dbee35fbfb0dcfb8.jpeg',
+];
+
 function filterOneEuro(value: number, previous: OneEuroAxis | undefined, now: number): { value: number; state: OneEuroAxis } {
   if (!previous) return { value, state: { raw: value, filtered: value, derivative: 0, at: now } };
   const dt = Math.max(1 / 120, Math.min(0.12, (now - previous.at) / 1000));
@@ -178,6 +185,7 @@ export default function App() {
   const [error, setError] = useState('');
   const [activeJutsu, setActiveJutsu] = useState<Jutsu>('none');
   const [chargeLevel, setChargeLevel] = useState(0);
+  const [rasenganImageIndex, setRasenganImageIndex] = useState(0);
   const [gestureLabel, setGestureLabel] = useState('Waiting for hands');
   const [handCount, setHandCount] = useState(0);
   const [showLandmarks, setShowLandmarks] = useState(false);
@@ -442,7 +450,9 @@ export default function App() {
             candidate = 'none'; candidateAt = 0;
             if (!noPoseAt) noPoseAt = now;
             const previewStillVisible = now < previewUntilRef.current;
-            if (activeRef.current === 'rasengan' && !previewStillVisible && now > castUntilRef.current && now - noPoseAt > (detected.gesture === 'fist' ? 90 : 300)) {
+            // Avoid cancelling the orb during a brief angle, occlusion, or motion-blur hiccup.
+            const releaseDelay = detected.gesture === 'fist' ? 340 : count > 0 ? 640 : 720;
+            if (activeRef.current === 'rasengan' && !previewStillVisible && now > castUntilRef.current && now - noPoseAt > releaseDelay) {
               switchJutsu('none'); castUntilRef.current = 0; noPoseAt = 0;
               setGestureLabel('Chakra released · show one open palm to cast again');
             } else if (activeRef.current === 'rasengan') setGestureLabel('Rasengan sustained · keep one open palm in view');
@@ -555,7 +565,7 @@ export default function App() {
             {activeJutsu === 'rasengan' && <div className="chakra-charge-hud" aria-live="polite">
               <div className="charge-hud-top"><span><Zap size={12} /> CHAKRA OUTPUT</span><strong>{chargeLevel}%</strong></div>
               <div className="charge-hud-track"><span style={{ width: chargeLevel + '%' }} /></div>
-              <small>{chargeLevel < 35 ? 'GATHERING ENERGY' : chargeLevel < 78 ? 'CHAKRA RESONANCE' : 'MAXIMUM OUTPUT'}</small>
+              <small>{chargeLevel < 35 ? 'STAGE 1 · GATHER CHAKRA' : chargeLevel < 78 ? 'STAGE 2 · SPIRAL COMPRESSION' : 'STAGE 3 · PERFECT RESONANCE'}</small>
             </div>}
             <div className="video-wrap">
               <video ref={videoRef} className="camera-video" autoPlay playsInline muted aria-label="Mirrored webcam preview" />
@@ -582,7 +592,19 @@ export default function App() {
           <div className="panel-heading"><div><span className="section-kicker">02 / SIGNATURE TECHNIQUE</span><h2>Rasengan control</h2></div><span className="mini-count">01</span></div>
           <div className="jutsu-list">
             <button className={'jutsu-card blue-card ' + (activeJutsu === 'rasengan' ? 'is-active' : '')} onClick={() => preview('rasengan')}>
-              <div className="jutsu-art rasengan-art"><img className="rasengan-reference-photo" src="https://www.looper.com/img/gallery/the-most-important-jutsu-that-naruto-ever-learned/the-rasengan-is-no-slouch-either-1655876917.jpg" alt="Naruto forming a blue Rasengan" loading="eager" decoding="async" /></div>
+              <div className="jutsu-art rasengan-art">
+                {rasenganImageIndex < RASENGAN_IMAGES.length
+                  ? <img
+                      className="rasengan-reference-photo"
+                      src={RASENGAN_IMAGES[rasenganImageIndex] as string}
+                      alt="Naruto forming a blue Rasengan"
+                      loading="eager"
+                      decoding="async"
+                      referrerPolicy="no-referrer"
+                      onError={() => setRasenganImageIndex((index) => Math.min(index + 1, RASENGAN_IMAGES.length))}
+                    />
+                  : <div className="rasengan-photo-fallback" role="img" aria-label="Glowing blue Rasengan chakra orb"><div className="rasengan-photo-fallback-core" /></div>}
+              </div>
               <div className="jutsu-copy"><div className="jutsu-overline">WIND / CHAKRA</div><h3>Rasengan</h3><p>Open your palm to summon chakra. The orb follows your hand, intensifies as it charges, and releases in a burst.</p><div className="jutsu-foot"><span className="difficulty easy">BEGINNER</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">01</span>
             </button>
 
