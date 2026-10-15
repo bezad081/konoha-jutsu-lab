@@ -14,7 +14,7 @@ A focused React + TypeScript + Vite browser experience: use one open palm to sum
 - Three.js effects load on demand; the main-thread MediaPipe compatibility path is dynamically imported only when the worker cannot run.
 - Camera frames and hand landmarks stay in the browser; video is not uploaded to an application backend.
 - Responsive desktop/mobile UI, camera-permission messaging, synthesized chakra sound, and a manual preview.
-- The Rasengan technique card displays an anime still credited by Looper to TXN (TV Tokyo)/YouTube; the image is remotely hosted by Looper. Check asset permissions before redistribution or commercial use.
+- The Rasengan technique card attempts to cache an anime still as a same-origin site asset during the build, then falls back across public image hosts if the download is unavailable. Check asset permissions before redistribution or commercial use.
 
 ## Run locally
 

@@ -93,6 +93,10 @@ const INFO: Record<Exclude<Jutsu, 'none'>, { name: string; color: string }> = {
 
 // Try public image hosts in sequence so a blocked hotlink does not leave the card blank.
 const RASENGAN_IMAGES = [
+  // Build-time assets are same-origin on GitHub Pages; missing candidates fall through to public hosts.
+  new URL('images/rasengan-reference.png', document.baseURI).href,
+  new URL('images/rasengan-reference.jpg', document.baseURI).href,
+  new URL('images/rasengan-reference.jpeg', document.baseURI).href,
   'https://zefirka.club/uploads/posts/2022-12/1672261699_75-zefirka-club-p-viuchit-tekhniki-iz-naruto-rasengan-87.png',
   'https://www.looper.com/img/gallery/the-most-important-jutsu-that-naruto-ever-learned/the-rasengan-is-no-slouch-either-1655876917.jpg',
   'https://wallpaper.forfun.com/fetch/f4/f4bc7b8352674e59dbee35fbfb0dcfb8.jpeg',
