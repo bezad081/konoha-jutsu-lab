@@ -11,6 +11,7 @@ A focused React + TypeScript + Vite browser experience: use one open palm to sum
 - Procedural Three.js/WebGL Rasengan: animated shader core, counter-rotating orbit rings, spiral chakra filaments, orbiting particles, a soft energy halo, and a release burst.
 - Motion-aware positioning: the orb follows the palm with smoothed velocity prediction and adapts its follow rate to hand speed.
 - Adaptive rendering targets 60 FPS and falls back to 30 FPS with a lower pixel ratio on slower devices.
+- Three.js effects load on demand; the main-thread MediaPipe compatibility path is dynamically imported only when the worker cannot run.
 - Camera frames and hand landmarks stay in the browser; video is not uploaded to an application backend.
 - Responsive desktop/mobile UI, camera-permission messaging, synthesized chakra sound, and a manual preview.
 

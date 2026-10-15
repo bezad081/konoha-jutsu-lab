@@ -13,6 +13,7 @@ type Outgoing =
   | { type: 'ready'; delegate: 'GPU' | 'CPU' }
   | { type: 'result'; timestamp: number; hands: SerializedHands }
   | { type: 'tracking-error'; message: string }
+  | { type: 'delegate-changed'; delegate: 'GPU' | 'CPU'; message: string }
   | { type: 'init-error'; message: string };
 
 type WorkerScope = {
@@ -91,7 +92,7 @@ async function recoverGpuFailure() {
       minTrackingConfidence: 0.5,
     });
     handDelegate = 'CPU';
-    scope.postMessage({ type: 'tracking-error', message: 'GPU inference failed; hand tracking switched to CPU.' });
+    scope.postMessage({ type: 'delegate-changed', delegate: 'CPU', message: 'GPU inference failed; hand tracking switched to CPU.' });
     return true;
   } catch (cause) {
     scope.postMessage({ type: 'tracking-error', message: 'Hand tracker GPU→CPU fallback failed: ' + errorText(cause) });

@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import {
   Activity, Camera, Check, ChevronDown, CircleHelp, CirclePlay, Cpu, Expand,
   Hand, Info, Lightbulb, LoaderCircle, RotateCcw, ShieldCheck, Sparkles, Zap
 } from 'lucide-react';
-import { FilesetResolver, HandLandmarker, type HandLandmarkerResult } from '@mediapipe/tasks-vision';
-import ThreeEffects, { type ThreeTrackingState } from './ThreeEffects';
+import type { HandLandmarker, HandLandmarkerResult } from '@mediapipe/tasks-vision';
+import type { ThreeTrackingState } from './ThreeEffects';
+
+// Keep the initial screen light: load WebGL effects only when the user previews or casts Rasengan.
+const ThreeEffects = lazy(() => import('./ThreeEffects'));
 
 type Jutsu = 'none' | 'rasengan';
 type Gesture = 'none' | 'open' | 'fist';
@@ -16,6 +19,7 @@ type VisionWorkerOutput =
   | { type: 'ready'; delegate: string }
   | { type: 'result'; timestamp: number; hands: WorkerHandPayload }
   | { type: 'tracking-error'; message: string }
+  | { type: 'delegate-changed'; delegate: 'GPU' | 'CPU'; message: string }
   | { type: 'init-error'; message: string };
 
 // Prefer assets shipped with this GitHub Pages build so the browser does not need to reach a third-party model/CDN.
@@ -49,6 +53,8 @@ function describeFailure(cause: unknown): string {
 }
 
 async function createHandTracker() {
+  // The compatibility path is uncommon; defer MediaPipe's main-thread bundle until it is needed.
+  const { FilesetResolver, HandLandmarker } = await import('@mediapipe/tasks-vision');
   const failures: string[] = [];
   for (const wasmUrl of WASM_URLS) {
     try {
@@ -332,6 +338,9 @@ export default function App() {
               latest = message.hands as unknown as HandLandmarkerResult;
               inferencePending = true;
               workerBusy = false;
+            } else if (message.type === 'delegate-changed') {
+              setTrackingEngine(message.delegate === 'GPU' ? 'worker-gpu' : 'worker-cpu');
+              setGestureLabel(message.message);
             } else if (message.type === 'tracking-error') {
               workerBusy = false;
               setGestureLabel('Tracking hiccup · retrying in background');
@@ -586,7 +595,7 @@ export default function App() {
             <div className="video-wrap">
               <video ref={videoRef} className="camera-video" autoPlay playsInline muted aria-label="Mirrored webcam preview" />
               <canvas ref={canvasRef} className="effects-canvas" />
-              {(cameraState === 'ready' || activeJutsu !== 'none') && <ThreeEffects trackingRef={threeTrackingRef} activeJutsu={activeJutsu} chargeLevel={chargeLevel} />}
+              {(cameraState === 'ready' || activeJutsu !== 'none') && <Suspense fallback={null}><ThreeEffects trackingRef={threeTrackingRef} activeJutsu={activeJutsu} chargeLevel={chargeLevel} /></Suspense>}
               {cameraState !== 'ready' && cameraState !== 'camera-only' && <div className="camera-placeholder">
                 {cameraState === 'loading' ? <LoaderCircle className="spin" size={38} /> : cameraState === 'error' ? <Camera size={35} /> : <div className="camera-orb"><Camera size={28} /></div>}
                 <strong>{cameraState === 'loading' ? 'Warming up the chakra flow' : cameraState === 'error' ? (error.includes('hand tracking') ? 'Hand tracking unavailable' : 'Camera not ready') : 'Your training space awaits'}</strong>
