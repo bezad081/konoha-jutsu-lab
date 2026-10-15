@@ -3,11 +3,11 @@ import {
   Activity, Camera, Check, ChevronDown, CircleHelp, CirclePlay, Cpu, Expand,
   Hand, Info, Lightbulb, LoaderCircle, RotateCcw, ShieldCheck, Sparkles, Zap
 } from 'lucide-react';
-import { FilesetResolver, HandLandmarker, ImageSegmenter, type HandLandmarkerResult } from '@mediapipe/tasks-vision';
+import { FilesetResolver, HandLandmarker, type HandLandmarkerResult } from '@mediapipe/tasks-vision';
 import ThreeEffects, { type ThreeTrackingState } from './ThreeEffects';
 
-type Jutsu = 'none' | 'rasengan' | 'clone';
-type Gesture = 'none' | 'open' | 'fist' | 'clone-seal';
+type Jutsu = 'none' | 'rasengan';
+type Gesture = 'none' | 'open' | 'fist';
 type Point = { x: number; y: number; z: number };
 type OneEuroAxis = { raw: number; filtered: number; derivative: number; at: number };
 type OneEuroPoint = { x: OneEuroAxis; y: OneEuroAxis; z: OneEuroAxis };
@@ -26,11 +26,6 @@ const MODEL_URLS = [
   'https://huggingface.co/Leo-TX/mediapipe-hand/resolve/main/hand_landmarker.task?download=true',
   'https://github.com/sanderdesnaijer/mediapipe-model-mirrors/releases/download/v1/hand_landmarker.task',
   'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
-];
-const LOCAL_SEGMENTER_MODEL_URL = new URL('models/selfie_segmenter_landscape.tflite', document.baseURI).href;
-const SEGMENTER_MODEL_URLS = [
-  LOCAL_SEGMENTER_MODEL_URL,
-  'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter_landscape/float16/latest/selfie_segmenter_landscape.tflite',
 ];
 const WASM_URLS = [
   LOCAL_WASM_URL,
@@ -64,7 +59,7 @@ async function createHandTracker() {
             const tracker = await HandLandmarker.createFromOptions(vision, {
               baseOptions: { modelAssetPath, delegate },
               runningMode: 'VIDEO',
-              numHands: 2,
+              numHands: 1,
               minHandDetectionConfidence: 0.55,
               minHandPresenceConfidence: 0.5,
               minTrackingConfidence: 0.5,
@@ -90,7 +85,6 @@ const LINKS: Array<[number, number]> = [
 ];
 const INFO: Record<Exclude<Jutsu, 'none'>, { name: string; color: string }> = {
   rasengan: { name: 'Rasengan', color: 'blue' },
-  clone: { name: 'Shadow Clone', color: 'violet' },
 };
 
 function dist(a: Point, b: Point) {
@@ -139,113 +133,26 @@ function classify(points: Point[]): Gesture {
   if (count <= 1) return 'fist';
   return 'none';
 }
-function midpoint(a: Point, b: Point) {
-  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-}
-function isShadowCloneSeal(hands: Point[][]) {
-  if (hands.length !== 2 || hands.some((hand) => hand.length < 21)) return false;
-  const poses = hands.map((hand) => ({
-    index: fingerExtended(hand, 8, 6, 5),
-    middle: fingerExtended(hand, 12, 10, 9),
-    ring: fingerExtended(hand, 16, 14, 13),
-    pinky: fingerExtended(hand, 20, 18, 17),
-  }));
-  // Make the seal tolerant of small landmark errors: both index/middle pairs
-  // should be extended, but the ring/pinky fingers need not be perfectly curled.
-  if (poses.some((pose) => !pose.index || !pose.middle || (pose.ring && pose.pinky))) return false;
-
-  const [a, b] = hands;
-  const palmA = palm(a), palmB = palm(b);
-  const scaleA = dist(a[0], a[9]), scaleB = dist(b[0], b[9]);
-  const palmsNear = Math.hypot(palmA.x - palmB.x, palmA.y - palmB.y) < (scaleA + scaleB) * 2.25;
-  if (!palmsNear) return false;
-
-  // Compare the index/middle finger axes. A visible cross/plus is less likely to be confused
-  // with simply holding both palms open side by side.
-  const baseA = midpoint(a[5], a[9]), tipA = midpoint(a[8], a[12]);
-  const baseB = midpoint(b[5], b[9]), tipB = midpoint(b[8], b[12]);
-  const ax = tipA.x - baseA.x, ay = tipA.y - baseA.y;
-  const bx = tipB.x - baseB.x, by = tipB.y - baseB.y;
-  const lengthA = Math.hypot(ax, ay), lengthB = Math.hypot(bx, by);
-  if (lengthA < 0.01 || lengthB < 0.01) return false;
-  const cosine = Math.min(1, Math.abs((ax * bx + ay * by) / (lengthA * lengthB)));
-  const angle = Math.acos(cosine) * 180 / Math.PI;
-  const tipsNear = Math.hypot(tipA.x - tipB.x, tipA.y - tipB.y) < (scaleA + scaleB) * 1.9;
-  return angle > 12 && tipsNear;
-}
-function playJutsuCue(audio: AudioContext, jutsu: Exclude<Jutsu, 'none'>) {
+function playJutsuCue(audio: AudioContext, _jutsu: 'rasengan') {
   const now = audio.currentTime;
-  const master = audio.createGain();
-  master.gain.value = 0.34;
-  master.connect(audio.destination);
-  if (jutsu === 'rasengan') {
-    const oscillator = audio.createOscillator();
-    const overtone = audio.createOscillator();
-    const filter = audio.createBiquadFilter();
-    const gain = audio.createGain();
-    oscillator.type = 'sine';
-    overtone.type = 'triangle';
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(720, now);
-    filter.frequency.exponentialRampToValueAtTime(190, now + 0.55);
-    oscillator.frequency.setValueAtTime(180, now);
-    oscillator.frequency.exponentialRampToValueAtTime(62, now + 0.56);
-    overtone.frequency.setValueAtTime(360, now);
-    overtone.frequency.exponentialRampToValueAtTime(124, now + 0.52);
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.42, now + 0.06);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.58);
-    oscillator.connect(filter); overtone.connect(filter); filter.connect(gain); gain.connect(master);
-    oscillator.start(now); overtone.start(now);
-    oscillator.stop(now + 0.6); overtone.stop(now + 0.6);
-  } else {
-    const duration = 0.34;
-    const buffer = audio.createBuffer(1, Math.floor(audio.sampleRate * duration), audio.sampleRate);
-    const samples = buffer.getChannelData(0);
-    for (let i = 0; i < samples.length; i++) samples[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / samples.length, 2.1);
-    const source = audio.createBufferSource();
-    const lowpass = audio.createBiquadFilter();
-    const gain = audio.createGain();
-    source.buffer = buffer;
-    lowpass.type = 'lowpass';
-    lowpass.frequency.setValueAtTime(1500, now);
-    lowpass.frequency.exponentialRampToValueAtTime(240, now + duration);
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.3, now + 0.035);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-    source.connect(lowpass); lowpass.connect(gain); gain.connect(master);
-    source.start(now); source.stop(now + duration);
-  }
-}
-function palmOrientationAllowsRasengan(result: HandLandmarkerResult, handIndex: number): boolean {
-  const world = (result.worldLandmarks?.[handIndex] ?? []) as Point[];
-  if (world.length < 21) return false;
-  const wrist = world[0], index = world[5], pinky = world[17];
-  const ax = index.x - wrist.x, ay = index.y - wrist.y, az = index.z - wrist.z;
-  const bx = pinky.x - wrist.x, by = pinky.y - wrist.y, bz = pinky.z - wrist.z;
-  const normalY = az * bx - ax * bz;
-  const normalZ = ax * by - ay * bx;
-  const side = result.handedness?.[handIndex]?.[0]?.categoryName === 'Left' ? 1 : -1;
-  return normalZ * side > 0.00002 || normalY * side > 0.00002;
+  const master = audio.createGain(); master.gain.value = 0.34; master.connect(audio.destination);
+  const oscillator = audio.createOscillator(), overtone = audio.createOscillator();
+  const filter = audio.createBiquadFilter(), gain = audio.createGain();
+  oscillator.type = 'sine'; overtone.type = 'triangle'; filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(720, now); filter.frequency.exponentialRampToValueAtTime(190, now + 0.55);
+  oscillator.frequency.setValueAtTime(180, now); oscillator.frequency.exponentialRampToValueAtTime(62, now + 0.56);
+  overtone.frequency.setValueAtTime(360, now); overtone.frequency.exponentialRampToValueAtTime(124, now + 0.52);
+  gain.gain.setValueAtTime(0.0001, now); gain.gain.exponentialRampToValueAtTime(0.42, now + 0.06);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.58);
+  oscillator.connect(filter); overtone.connect(filter); filter.connect(gain); gain.connect(master);
+  oscillator.start(now); overtone.start(now); oscillator.stop(now + 0.6); overtone.stop(now + 0.6);
 }
 function readJutsu(result: HandLandmarkerResult | null): { jutsu: Jutsu; gesture: Gesture; handIndex?: number } {
   const hands = (result?.landmarks ?? []) as Point[][];
   const gestures = hands.map((hand) => classify(hand));
-
-  // Keep the live classifier intentionally narrow: these are the only two
-  // techniques in the focused experience.
-  if (isShadowCloneSeal(hands)) return { jutsu: 'clone', gesture: 'clone-seal' };
-
-  const openHands = gestures
-    .map((gesture, index) => gesture === 'open' ? index : -1)
-    .filter((index) => index >= 0);
-
-  if (openHands.length === 1) {
-    const index = openHands[0];
-    if (result && palmOrientationAllowsRasengan(result, index)) {
-      return { jutsu: 'rasengan', gesture: 'open', handIndex: index };
-    }
-  }
+  const openHands = gestures.map((gesture, index) => gesture === 'open' ? index : -1).filter((index) => index >= 0);
+  // A single open palm is sufficient; don't reject it due to noisy 3D orientation landmarks.
+  if (openHands.length === 1) return { jutsu: 'rasengan', gesture: 'open', handIndex: openHands[0] };
   if (gestures.includes('fist')) return { jutsu: 'none', gesture: 'fist' };
   return { jutsu: 'none', gesture: 'none' };
 }
@@ -259,12 +166,12 @@ function drawLandmarks(ctx: CanvasRenderingContext2D, hands: Point[][], w: numbe
   for (const hand of hands) {
     ctx.strokeStyle = 'rgba(130,235,255,.62)';
     for (const pair of LINKS) {
-      ctx.beginPath(); ctx.moveTo(hand[pair[0]].x * w, hand[pair[0]].y * h);
-      ctx.lineTo(hand[pair[1]].x * w, hand[pair[1]].y * h); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo((1 - hand[pair[0]].x) * w, hand[pair[0]].y * h);
+      ctx.lineTo((1 - hand[pair[1]].x) * w, hand[pair[1]].y * h); ctx.stroke();
     }
     for (const p of hand) {
       ctx.beginPath(); ctx.fillStyle = '#e5fbff'; ctx.shadowColor = '#47dcff'; ctx.shadowBlur = 7;
-      ctx.arc(p.x * w, p.y * h, Math.max(2, w * 0.003), 0, Math.PI * 2); ctx.fill();
+      ctx.arc((1 - p.x) * w, p.y * h, Math.max(2, w * 0.003), 0, Math.PI * 2); ctx.fill();
     }
   }
   ctx.restore();
@@ -280,48 +187,14 @@ function createVisionBitmap(video: HTMLVideoElement, maxWidth = 640): Promise<Im
   });
 }
 
-type CloneMask = { width:number; height:number; getAsFloat32Array():Float32Array; close():void };
-function updateCloneSprite(video:HTMLVideoElement, mask:CloneMask, sprite:HTMLCanvasElement):boolean {
- const width=mask.width,height=mask.height;
- if(!width||!height)return false;
- const scores=new Float32Array(mask.getAsFloat32Array());
- if(scores.length<width*height)return false;
- let peak=0;for(let i=0;i<width*height;i++)if(scores[i]>peak)peak=scores[i];
- if(peak<0.2)return false;
- let minX=width,minY=height,maxX=-1,maxY=-1;
- for(const threshold of [0.38,0.27,0.16]){
-  minX=width;minY=height;maxX=-1;maxY=-1;
-  for(let y=0;y<height;y++)for(let x=0;x<width;x++)if(scores[y*width+x]>threshold){minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);}
-  if(maxX>=minX&&maxY>=minY&&(maxX-minX+1)*(maxY-minY+1)>width*height*0.025)break;
- }
- if(maxX<minX||maxY<minY)return false;
- const bw=maxX-minX+1,bh=maxY-minY+1,padX=Math.max(4,Math.round(bw*.1)),padTop=Math.max(3,Math.round(bh*.04)),padBottom=Math.max(3,Math.round(bh*.035));
- const left=Math.max(0,minX-padX),top=Math.max(0,minY-padTop),right=Math.min(width,maxX+1+padX),bottom=Math.min(height,maxY+1+padBottom);
- const frame=document.createElement('canvas');frame.width=width;frame.height=height;
- const fc=frame.getContext('2d',{willReadFrequently:true});if(!fc)return false;
- fc.drawImage(video,0,0,width,height);
- const pixels=fc.getImageData(0,0,width,height);
- for(let i=0;i<width*height;i++){const v=Math.max(0,Math.min(1,(scores[i]-.12)/.58));const a=v*v*(3-2*v);pixels.data[i*4+3]=Math.round(pixels.data[i*4+3]*a);}
- fc.putImageData(pixels,0,0);
- const cw=Math.max(1,right-left),ch=Math.max(1,bottom-top);
- if(sprite.width!==cw||sprite.height!==ch){sprite.width=cw;sprite.height=ch;}
- const sc=sprite.getContext('2d');if(!sc)return false;
- sc.clearRect(0,0,cw,ch);sc.imageSmoothingEnabled=true;sc.imageSmoothingQuality='high';sc.drawImage(frame,left,top,cw,ch,0,0,cw,ch);
- sprite.dataset.revision=String((Number(sprite.dataset.revision)||0)+1);
- frame.width=1;frame.height=1;return true;
-}
-
 export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const threeTrackingRef = useRef<ThreeTrackingState>({ hands: [], effectHands: [], effectHandIndex: 0, cloneSprite: null, cloneRevision: 0, cloneVisibleUntil: 0 });
+  const threeTrackingRef = useRef<ThreeTrackingState>({ hands: [], effectHands: [], effectHandIndex: 0 });
   const effectHandIndexRef = useRef(0);
   const trackerRef = useRef<HandLandmarker | null>(null);
   const visionWorkerRef = useRef<Worker | null>(null);
-  const segmenterRef = useRef<ImageSegmenter | null>(null);
-  const cloneSpriteRef = useRef<HTMLCanvasElement | null>(null);
-  const cloneSpriteReadyRef = useRef(false);
   const smoothedLandmarksRef = useRef<Point[][]>([]);
   // Effects receive raw landmarks so they can react immediately to fast movements.
   const effectLandmarksRef = useRef<Point[][]>([]);
@@ -336,8 +209,6 @@ export default function App() {
   const audioRef = useRef<AudioContext | null>(null);
   const jutsuStartedAtRef = useRef(0);
   const castUntilRef = useRef(0);
-  const cloneVisualUntilRef = useRef(0);
-  const cloneStatusRef = useRef<'idle'|'loading'|'ready'|'error'>('idle');
   const soundRef = useRef(false);
   const previewUntilRef = useRef(0);
   const landmarksRef = useRef(true);
@@ -352,8 +223,6 @@ export default function App() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [fps, setFps] = useState(0);
   const [trackingEngine, setTrackingEngine] = useState<'idle'|'starting'|'worker-gpu'|'worker-cpu'|'main-thread'|'unavailable'>('idle');
-  const [cloneStatus, setCloneStatus] = useState<'idle'|'loading'|'ready'|'error'>('idle');
-  useEffect(() => { cloneStatusRef.current = cloneStatus; }, [cloneStatus]);
   useEffect(() => { soundRef.current=soundEnabled; if(soundEnabled)try{const a=audioRef.current??new window.AudioContext();audioRef.current=a;void a.resume();}catch{/* optional */} }, [soundEnabled]);
   useEffect(() => { landmarksRef.current = showLandmarks; }, [showLandmarks]);
   useEffect(() => {
@@ -392,15 +261,12 @@ export default function App() {
     streamRef.current = null;
     trackerRef.current?.close(); trackerRef.current = null;
     visionWorkerRef.current?.terminate(); visionWorkerRef.current = null;
-    segmenterRef.current?.close(); segmenterRef.current = null;
-    cloneSpriteRef.current = null; cloneSpriteReadyRef.current = false;
     smoothedLandmarksRef.current = []; effectLandmarksRef.current = []; smoothedHandednessRef.current = []; oneEuroFiltersRef.current = [];
     gestureVoteHistoryRef.current = [];
     setTrackingEngine('idle');
-    setCloneStatus('idle');
-    castUntilRef.current = 0; cloneVisualUntilRef.current = 0;
+    castUntilRef.current = 0;
     if (videoRef.current) videoRef.current.srcObject = null;
-    threeTrackingRef.current = { hands: [], effectHands: [], effectHandIndex: 0, cloneSprite: null, cloneRevision: 0, cloneVisibleUntil: 0 };
+    threeTrackingRef.current = { hands: [], effectHands: [], effectHandIndex: 0 };
     switchJutsu('none'); setCameraState('idle'); setHandCount(0); setGestureLabel('Camera stopped');
     const ctx = canvasRef.current?.getContext('2d');
     if (ctx && canvasRef.current) ctx.clearRect(0,0,canvasRef.current.width,canvasRef.current.height);
@@ -412,7 +278,7 @@ export default function App() {
       setError('This browser does not expose camera access. Use a current browser on localhost or HTTPS.');
       return;
     }
-    stopCamera(); setCameraState('loading'); setError(''); setGestureLabel('Loading hand-tracking model…'); setTrackingEngine('starting');
+    stopCamera(); setCameraState('loading'); setError(''); setGestureLabel('Loading the Rasengan hand tracker…'); setTrackingEngine('starting');
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false, video: { facingMode: 'user', width: { ideal: 960 }, height: { ideal: 540 }, frameRate: { ideal: 30, max: 30 } }
@@ -427,7 +293,7 @@ export default function App() {
       });
       await video.play();
       if (stageRef.current && video.videoWidth && video.videoHeight) stageRef.current.style.aspectRatio = video.videoWidth + ' / ' + video.videoHeight;
-      setGestureLabel('Camera is on · starting the background vision worker…');
+      setGestureLabel('Camera is on · starting the hand tracker…');
       const cameraStream = stream;
       let worker: Worker | null = null;
       let workerMode = false;
@@ -488,7 +354,7 @@ export default function App() {
               if (streamRef.current !== cameraStream) { initialized.tracker.close(); return; }
               trackerRef.current = initialized.tracker;
               setTrackingEngine('main-thread');
-              setGestureLabel('Tracking ready · form Rasengan or Shadow Clone');
+              setGestureLabel('Tracking ready · show one open palm for Rasengan');
             }).catch((cause) => {
               setCameraState('camera-only');
               setTrackingEngine('unavailable');
@@ -511,33 +377,8 @@ export default function App() {
         setTrackingEngine('main-thread');
       }
       setCameraState('ready');
-      setGestureLabel('Tracking ready · open palm for Rasengan or cross-finger seal for Shadow Clone');
-      let segmenterLoading=false,segmenterFailed=false,segmenterReady=false,segmentationBusy=false;
-      let lastSegmentationAt=0,lastSegmentationVideoTime=-1;
-      const cloneSprite=document.createElement('canvas');
-      cloneSpriteRef.current=cloneSprite;cloneSpriteReadyRef.current=false;setCloneStatus('loading');
-      const loadSegmenter=async()=>{
-       if(segmenterLoading||segmenterRef.current||segmenterFailed)return;
-       segmenterLoading=true;setCloneStatus('loading');
-       const failures:string[]=[];
-       try{
-        let vision:Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>>|null=null;
-        for(const wasmUrl of WASM_URLS){try{vision=await FilesetResolver.forVisionTasks(wasmUrl);break;}catch(cause){failures.push('WASM '+wasmUrl+': '+describeFailure(cause));}}
-        if(!vision)throw new Error('Could not load MediaPipe vision runtime. '+failures.slice(-2).join(' | '));
-        for(const modelUrl of SEGMENTER_MODEL_URLS)for(const delegate of ['GPU','CPU'] as const){
-         try{
-          const seg=await ImageSegmenter.createFromOptions(vision,{baseOptions:{modelAssetPath:modelUrl,delegate},runningMode:'VIDEO',outputCategoryMask:false,outputConfidenceMasks:true});
-          if(streamRef.current!==cameraStream){seg.close();return;}
-          segmenterRef.current=seg;segmenterReady=true;
-          setGestureLabel('Person segmentation ready · form the crossed-finger Shadow Clone seal');return;
-         }catch(cause){failures.push(delegate+' / '+modelUrl+': '+describeFailure(cause));}
-        }
-        throw new Error('Could not initialize person segmentation. '+failures.slice(-4).join(' | '));
-       }catch(cause){
-        if(streamRef.current===cameraStream){segmenterFailed=true;setCloneStatus('error');setGestureLabel('Shadow Clone image cutout unavailable: '+describeFailure(cause));}
-       }finally{segmenterLoading=false;}
-      };
-      void loadSegmenter();
+      setGestureLabel('Tracking ready · show one open palm for Rasengan');
+
       let lastVideoTime = -1;
       let overlayDirty = true;
       let candidate: Jutsu = 'none', candidateAt = 0, noPoseAt = 0, fpsAt = performance.now(), frames = 0;
@@ -614,113 +455,31 @@ export default function App() {
             ? { jutsu: winner.jutsu, gesture: winner.gesture }
             : { jutsu: 'none' as const, gesture: rawDetected.gesture };
           setHandCount(count);
-          if (activeRef.current !== 'none') {
-            if (count > 0) {
-              noPoseAt = 0;
-              if (detected.jutsu !== 'none' && detected.jutsu !== activeRef.current) {
-                if (candidate !== detected.jutsu) { candidate = detected.jutsu; candidateAt = now; }
-                if (now - candidateAt > 175) {
-                  const next = detected.jutsu;
-                  if (next === 'clone') {
-                    const cloneWindow = cloneSpriteReadyRef.current ? 6000 : 15000;
-                    castUntilRef.current = now + cloneWindow;
-                    cloneVisualUntilRef.current = castUntilRef.current;
-                  }
-                  previewUntilRef.current = 0;
-                  switchJutsu(next);
-                  candidate = 'none'; candidateAt = 0;
-                  setGestureLabel(next === 'clone'
-                    ? 'Shadow Clone summoned · clones linger for six seconds'
-                    : 'Rasengan formed · keep your palm visible to build chakra');
-                } else setGestureLabel('New hand sign detected · hold steady for a moment to switch');
-              } else {
-                candidate = 'none'; candidateAt = 0;
-                if (activeRef.current === 'clone' && detected.gesture === 'clone-seal') {
-                  const cloneWindow = cloneSpriteReadyRef.current ? 6000 : 15000;
-                  cloneVisualUntilRef.current = now + cloneWindow;
-                  castUntilRef.current = cloneVisualUntilRef.current;
-                }
-                setGestureLabel(detected.jutsu === activeRef.current
-                  ? activeRef.current === 'clone'
-                    ? 'Shadow Clone active · hold the crossed-finger seal to keep summoning'
-                    : 'Rasengan charging · keep your open palm facing the camera'
-                  : activeRef.current === 'clone'
-                    ? 'Shadow Clone active · form the crossed-finger seal again to refresh'
-                    : 'Rasengan active · keep your palm in frame to sustain the chakra');
-              }
-            } else {
-              candidate = 'none';
-              if (!noPoseAt) noPoseAt = now;
-              const cloneStillVisible = activeRef.current === 'clone' && now < cloneVisualUntilRef.current;
-              const waitingForClone = activeRef.current === 'clone' && !cloneSpriteReadyRef.current && now < castUntilRef.current && !segmenterFailed;
-              const previewStillVisible = now < previewUntilRef.current;
-              if (cloneStillVisible && cloneSpriteReadyRef.current) setGestureLabel('Shadow Clone · your live image is duplicated');
-              else if (waitingForClone) setGestureLabel('Shadow Clone · isolating your image, keep your upper body in frame');
-              else if (cloneStillVisible) setGestureLabel('Shadow Clone · preparing the person cutout');
-              else if (previewStillVisible) setGestureLabel(activeRef.current === 'clone' ? 'Shadow Clone preview · loading your cutout' : 'Rasengan preview · building chakra');
-              else if (now > castUntilRef.current && now - noPoseAt > 500) {
-                switchJutsu('none'); castUntilRef.current = 0; noPoseAt = 0;
-                setGestureLabel('Ready · form Rasengan or the crossed-finger Shadow Clone seal');
-              }
-            }
-          } else if (detected.jutsu !== 'none') {
+          if (detected.jutsu === 'rasengan') {
             noPoseAt = 0;
-            if (candidate !== detected.jutsu) { candidate = detected.jutsu; candidateAt = now; }
-            if (now - candidateAt > 175) {
-              const next = detected.jutsu;
-              if (next === 'clone') {
-                const cloneWindow = cloneSpriteReadyRef.current ? 6000 : 15000;
-                castUntilRef.current = now + cloneWindow;
-                cloneVisualUntilRef.current = castUntilRef.current;
-              }
-              previewUntilRef.current = 0;
-              switchJutsu(next);
-              setGestureLabel(next === 'clone'
-                ? 'Shadow Clone summoned · clones linger for six seconds'
-                : 'Rasengan formed · keep your palm visible to build chakra');
+            if (timeoutRef.current !== null) { window.clearTimeout(timeoutRef.current); timeoutRef.current = null; }
+            previewUntilRef.current = 0;
+            castUntilRef.current = 0;
+            if (activeRef.current !== 'rasengan') {
+              if (candidate !== 'rasengan') { candidate = 'rasengan'; candidateAt = now; }
+              if (now - candidateAt >= 145) {
+                switchJutsu('rasengan'); candidate = 'none'; candidateAt = 0;
+                setGestureLabel('Rasengan formed · keep your open palm in frame to build chakra');
+              } else setGestureLabel('Open palm detected · focus chakra');
+            } else {
               candidate = 'none'; candidateAt = 0;
-            } else setGestureLabel('Hand sign recognized · hold steady to summon');
-          } else {
-            candidate = 'none'; candidateAt = now;
-            if (!noPoseAt) noPoseAt = now;
-            setGestureLabel(count
-              ? 'Pose detected · face one open palm toward the camera for Rasengan, or cross both index/middle fingers for Shadow Clone'
-              : 'Move your hands into the frame');
-            if (now > castUntilRef.current && now - noPoseAt > 700) switchJutsu('none');
-          }
-        }
-        if(!segmenterRef.current&&!segmenterLoading&&!segmenterFailed)void loadSegmenter();
-        const shouldSegment=activeRef.current==='clone'||!cloneSpriteReadyRef.current;
-        if(segmenterReady&&segmenterRef.current&&shouldSegment&&!segmentationBusy&&v.currentTime!==lastSegmentationVideoTime){
-         const interval=activeRef.current==='clone'?125:280;
-         if(now-lastSegmentationAt>=interval){
-          lastSegmentationVideoTime=v.currentTime;lastSegmentationAt=now;segmentationBusy=true;
-          try{
-           const seg=segmenterRef.current;
-           seg.segmentForVideo(v,now,(result)=>{
-            const masks=result.confidenceMasks??[];
-            try{
-             const mask=masks[0];
-             if(mask&&cloneSpriteRef.current){
-              const first=!cloneSpriteReadyRef.current;
-              if(updateCloneSprite(v,mask,cloneSpriteRef.current)){
-               cloneSpriteReadyRef.current=true;setCloneStatus('ready');
-               if(first&&activeRef.current==='clone'){
-                const until=performance.now()+6000;cloneVisualUntilRef.current=until;castUntilRef.current=until;
-                if(previewUntilRef.current>0)previewUntilRef.current=until;
-               }
-              }else if(!cloneSpriteReadyRef.current&&activeRef.current==='clone')setGestureLabel('Shadow Clone · finding your outline, keep your upper body in frame');
-             }
-            }catch(cause){if(!cloneSpriteReadyRef.current)setGestureLabel('Shadow Clone · retrying cutout: '+describeFailure(cause));}
-            finally{
-             for(const mask of masks){try{mask.close();}catch{/* already released */}}
-             try{result.categoryMask?.close();}catch{/* category mask disabled */}
-             segmentationBusy=false;
+              setGestureLabel('Rasengan charging · move your palm to drive the chakra');
             }
-           });
-          }catch(cause){segmentationBusy=false;if(!cloneSpriteReadyRef.current&&activeRef.current==='clone')setGestureLabel('Shadow Clone · retrying segmentation: '+describeFailure(cause));}
-         }
-        }
+          } else {
+            candidate = 'none'; candidateAt = 0;
+            if (!noPoseAt) noPoseAt = now;
+            const previewStillVisible = now < previewUntilRef.current;
+            if (activeRef.current === 'rasengan' && !previewStillVisible && now > castUntilRef.current && now - noPoseAt > 650) {
+              switchJutsu('none'); castUntilRef.current = 0; noPoseAt = 0;
+              setGestureLabel('Chakra released · show one open palm to cast again');
+            } else if (activeRef.current === 'rasengan') setGestureLabel('Rasengan sustained · keep one open palm in view');
+            else setGestureLabel(count ? 'Hand detected · face one open palm toward the camera' : 'Move one hand into the frame');
+          }
         if (overlayDirty) {
           const ctx = canvas.getContext('2d');
           if (ctx) {
@@ -734,9 +493,6 @@ export default function App() {
           hands: smoothedLandmarksRef.current,
           effectHands: effectLandmarksRef.current,
           effectHandIndex: effectHandIndexRef.current,
-          cloneSprite: cloneSpriteReadyRef.current ? cloneSpriteRef.current : null,
-          cloneRevision: cloneSpriteRef.current ? Number(cloneSpriteRef.current.dataset.revision ?? 0) : 0,
-          cloneVisibleUntil: cloneVisualUntilRef.current,
         }
         rafRef.current = requestAnimationFrame(frame);
       };
@@ -771,58 +527,26 @@ export default function App() {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     trackerRef.current?.close();
     visionWorkerRef.current?.terminate(); visionWorkerRef.current = null;
-    segmenterRef.current?.close(); segmenterRef.current = null;
     audioRef.current?.close().catch(() => undefined);
   }, []);
 
-  const preview = (jutsu: Exclude<Jutsu, 'none'>) => {
+  const preview = (_jutsu: 'rasengan') => {
     if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current);
-    switchJutsu(jutsu);
-    const previewStartedAt = performance.now();
-    const cloneWaitLimit = 15000;
-    const previewDuration = jutsu === 'clone'
-      ? (cloneSpriteReadyRef.current ? 6000 : cloneWaitLimit)
-      : 2200;
-    previewUntilRef.current = previewStartedAt + previewDuration;
-    if (jutsu === 'clone') {
-      castUntilRef.current = previewStartedAt + previewDuration;
-      cloneVisualUntilRef.current = castUntilRef.current;
-    }
-    setGestureLabel(jutsu === 'clone'
-      ? cameraState === 'ready'
-        ? 'Shadow Clone preview · preparing your live cutout'
-        : 'Shadow Clone preview · start the camera to clone your image'
-      : 'Rasengan preview · swirling chakra');
-
+    switchJutsu('rasengan');
+    const started = performance.now(), duration = cameraState === 'ready' ? 4600 : 4200;
+    previewUntilRef.current = started + duration; castUntilRef.current = previewUntilRef.current;
+    setGestureLabel(cameraState === 'ready'
+      ? 'Rasengan preview · hold an open palm near the camera to lock on'
+      : 'Rasengan preview · start the camera to attach chakra to your hand');
     const finishPreview = () => {
-      const now = performance.now();
-      if (jutsu === 'clone' && activeRef.current === 'clone') {
-        // Don't let a fixed preview timeout kill the first summon while the
-        // segmenter is still preparing. Keep polling briefly, then linger for
-        // six seconds from the first valid person cutout.
-        const waitingForImage = !cloneSpriteReadyRef.current &&
-          cloneStatusRef.current !== 'error' && now - previewStartedAt < cloneWaitLimit;
-        if (waitingForImage) {
-          const keepAliveUntil = now + 400;
-          castUntilRef.current = Math.max(castUntilRef.current, keepAliveUntil);
-          cloneVisualUntilRef.current = Math.max(cloneVisualUntilRef.current, keepAliveUntil);
-          timeoutRef.current = window.setTimeout(finishPreview, 250);
-          return;
-        }
-        if (cloneSpriteReadyRef.current && now < cloneVisualUntilRef.current) {
-          timeoutRef.current = window.setTimeout(finishPreview, Math.min(500, Math.max(50, cloneVisualUntilRef.current - now)));
-          return;
-        }
-      }
-      previewUntilRef.current = 0;
-      if (activeRef.current === jutsu) switchJutsu('none');
+      previewUntilRef.current = 0; castUntilRef.current = 0;
+      if (activeRef.current === 'rasengan') switchJutsu('none');
+      timeoutRef.current = null;
       setGestureLabel(cameraState === 'ready'
-        ? jutsu === 'clone' && !cloneSpriteReadyRef.current
-          ? 'Shadow Clone could not isolate your image · check Detection status'
-          : 'Ready · form Rasengan or Shadow Clone'
-        : 'Preview complete · start camera for tracking');
+        ? 'Ready · face one open palm toward the camera to form Rasengan'
+        : 'Preview complete · start the camera for live hand tracking');
     };
-    timeoutRef.current = window.setTimeout(finishPreview, jutsu === 'clone' ? 250 : previewDuration);
+    timeoutRef.current = window.setTimeout(finishPreview, duration);
   };
   const activeInfo = activeJutsu === 'none' ? null : INFO[activeJutsu];
 
@@ -832,24 +556,24 @@ export default function App() {
       <header className="topbar">
         <a className="brand" href="#top" aria-label="Konoha Jutsu Lab home">
           <div className="brand-mark"><Sparkles size={21} /></div>
-          <div><strong>KONOHA <span>JUTSU LAB</span></strong><small>RASENGAN · SHADOW CLONE TRAINING</small></div>
+          <div><strong>KONOHA <span>JUTSU LAB</span></strong><small>RASENGAN · CHAKRA CONTROL</small></div>
         </a>
-        <div className="topbar-right"><div className="build-chip"><span className="status-dot" /> TWO SIGNATURE JUTSU</div>
+        <div className="topbar-right"><div className="build-chip"><span className="status-dot" /> ONE SIGNATURE JUTSU</div>
           <button className="icon-button" onClick={() => setHelpOpen((v) => !v)} aria-label="Toggle instructions"><CircleHelp size={18} /></button>
         </div>
       </header>
       <section className="intro-row" id="top">
         <div><div className="eyebrow"><span className="eyebrow-line" /> YOUR HIDDEN LEAF TRAINING GROUND</div>
           <h1>Bring chakra<br /><span>to life.</span></h1>
-          <p className="intro-copy">Enter the Hidden Leaf training ground. Charge a Rasengan that locks onto your hand, then split into true shadow clones cut from your own live image.</p>
+          <p className="intro-copy">Enter the Hidden Leaf training ground. Form a live Rasengan that locks onto your palm, gathers chakra, and spins faster as you move.</p>
         </div>
         <div className="intro-stats">
-          <div className="stat-item"><span className="stat-icon"><Hand size={17} /></span><div><b>2 jutsu</b><small>one focused experience</small></div></div>
+          <div className="stat-item"><span className="stat-icon"><Hand size={17} /></span><div><b>1 signature jutsu</b><small>one technique, refined</small></div></div>
           <div className="stat-item"><span className="stat-icon violet"><Cpu size={17} /></span><div><b>Live tracking</b><small>hands in real time</small></div></div>
           <div className="stat-item"><span className="stat-icon green"><ShieldCheck size={17} /></span><div><b>Private</b><small>video stays local</small></div></div>
         </div>
       </section>
-      {helpOpen && <section className="help-panel"><Info size={18} /><div><strong>Quick start · Your two signature jutsu</strong><p><b>1.</b> Start the camera and keep your hands in frame. <b>2. Rasengan:</b> face one open palm toward the camera and hold it steady while chakra gathers. <b>3. Shadow Clone:</b> bring both hands together and cross the index and middle fingers into a clear plus (+) seal. Keep your upper body visible and give the segmentation model a moment to load. The camera feed is processed in your browser.</p></div><button className="text-button" onClick={() => setHelpOpen(false)}>Got it</button></section>}
+      {helpOpen && <section className="help-panel"><Info size={18} /><div><strong>Rasengan · quick start</strong><p><b>1.</b> Start the camera. <b>2.</b> Raise one open hand with your palm visible. <b>3.</b> Hold the pose to gather chakra, then move your hand to make the orb follow. Close your hand or move it out of frame to release the Rasengan. Video stays on your device.</p></div><button className="text-button" onClick={() => setHelpOpen(false)}>Got it</button></section>}
       <section className="workspace">
         <div className="camera-column">
           <div className="panel-heading"><div><span className="section-kicker">01 / LIVE INPUT</span><h2>Your training mirror</h2></div>
@@ -863,7 +587,6 @@ export default function App() {
               <div className="charge-hud-track"><span style={{ width: chargeLevel + '%' }} /></div>
               <small>{chargeLevel < 35 ? 'GATHERING ENERGY' : chargeLevel < 78 ? 'CHAKRA RESONANCE' : 'MAXIMUM OUTPUT'}</small>
             </div>}
-            {activeJutsu === 'clone' && <div className="clone-summon-hud" aria-live="polite"><Sparkles size={13} /><span>SHADOW CLONE</span><small>CHAKRA SPLIT IN PROGRESS</small></div>}
             <div className="video-wrap">
               <video ref={videoRef} className="camera-video" autoPlay playsInline muted aria-label="Mirrored webcam preview" />
               <canvas ref={canvasRef} className="effects-canvas" />
@@ -871,7 +594,7 @@ export default function App() {
               {cameraState !== 'ready' && cameraState !== 'camera-only' && <div className="camera-placeholder">
                 {cameraState === 'loading' ? <LoaderCircle className="spin" size={38} /> : cameraState === 'error' ? <Camera size={35} /> : <div className="camera-orb"><Camera size={28} /></div>}
                 <strong>{cameraState === 'loading' ? 'Warming up the chakra flow' : cameraState === 'error' ? (error.includes('hand tracking') ? 'Hand tracking unavailable' : 'Camera not ready') : 'Your training space awaits'}</strong>
-                <span>{cameraState === 'loading' ? 'Requesting camera and loading hand tracking…' : cameraState === 'error' ? error : 'Start the camera, then choose Rasengan or Shadow Clone.'}</span>
+                <span>{cameraState === 'loading' ? 'Requesting camera and loading hand tracking…' : cameraState === 'error' ? error : 'Start the camera, then preview Rasengan or show an open palm.'}</span>
               </div>}
             </div>
             <div className="stage-bottomline"><span><span className={'small-dot ' + (cameraState === 'ready' ? 'active' : '')} /> {cameraState === 'ready' ? handCount + ' HAND' + (handCount === 1 ? '' : 'S') + ' DETECTED' : cameraState === 'camera-only' ? 'CAMERA ON · TRACKING UNAVAILABLE' : 'AWAITING VIDEO SOURCE'}</span><span className="mono">MP / HAND LANDMARKER</span></div>
@@ -881,21 +604,18 @@ export default function App() {
               <button className="primary-button" onClick={startCamera} disabled={cameraState === 'loading'}>{cameraState === 'loading' ? <LoaderCircle className="spin" size={17} /> : <Camera size={17} />}{cameraState === 'loading' ? 'Starting camera…' : 'Start camera'}</button>}
             <button className={'secondary-button ' + (showLandmarks ? 'selected' : '')} onClick={() => setShowLandmarks((v) => !v)}><Hand size={16} /> Landmark overlay <span className="toggle-pill">{showLandmarks ? 'ON' : 'OFF'}</span></button>
             <button className={'secondary-button ' + (soundEnabled ? 'selected' : '')} onClick={() => { const next = !soundEnabled; setSoundEnabled(next); if (next) { try { const audio = audioRef.current ?? new window.AudioContext(); audioRef.current = audio; void audio.resume().then(() => playJutsuCue(audio, 'rasengan')); } catch { /* optional audio */ } } }} title="Turn the chakra sound on or off"><Zap size={16} /> Chakra sound <span className="toggle-pill">{soundEnabled ? 'ON' : 'OFF'}</span></button>
-            <button className="reset-button" onClick={() => { switchJutsu('none'); setGestureLabel('Effects cleared'); }} title="Clear current effect"><RotateCcw size={16} /></button>
+            <button className="reset-button" onClick={() => { switchJutsu('none'); setGestureLabel('Rasengan released'); }} title="Clear current effect"><RotateCcw size={16} /></button>
           </div>
           {(cameraState === 'error' || cameraState === 'camera-only') && <p className="error-hint"><Info size={14} /> {cameraState === 'camera-only' ? 'The camera preview is being kept active. Hand tracking is unavailable until the model/runtime loads; use the GitHub Actions link to check that the newest build was deployed.' : 'Camera access requires browser permission and a secure context (localhost or HTTPS).'}</p>}
         </div>
         <aside className="right-column">
-          <div className="panel-heading"><div><span className="section-kicker">02 / YOUR TECHNIQUES</span><h2>Choose your jutsu</h2></div><span className="mini-count">02</span></div>
+          <div className="panel-heading"><div><span className="section-kicker">02 / SIGNATURE TECHNIQUE</span><h2>Rasengan control</h2></div><span className="mini-count">01</span></div>
           <div className="jutsu-list">
             <button className={'jutsu-card blue-card ' + (activeJutsu === 'rasengan' ? 'is-active' : '')} onClick={() => preview('rasengan')}>
               <div className="jutsu-art rasengan-art"><span className="orb-core" /><span className="orb-ring ring-one" /><span className="orb-ring ring-two" /><span className="orb-spark s1" /><span className="orb-spark s2" /></div>
-              <div className="jutsu-copy"><div className="jutsu-overline">WIND / CHAKRA</div><h3>Rasengan</h3><p>Face your palm forward. The chakra sphere follows your hand and surges as you move.</p><div className="jutsu-foot"><span className="difficulty easy">BEGINNER</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">01</span>
+              <div className="jutsu-copy"><div className="jutsu-overline">WIND / CHAKRA</div><h3>Rasengan</h3><p>Open your palm to summon chakra. The orb follows your hand, intensifies as it charges, and releases in a burst.</p><div className="jutsu-foot"><span className="difficulty easy">BEGINNER</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">01</span>
             </button>
-            <button className={'jutsu-card violet-card ' + (activeJutsu === 'clone' ? 'is-active' : '')} onClick={() => preview('clone')}>
-              <div className="jutsu-art clone-art"><span className="clone-figure figure-one" /><span className="clone-figure figure-two" /><span className="clone-figure figure-three" /><Sparkles className="clone-star" size={17} /></div>
-              <div className="jutsu-copy"><div className="jutsu-overline">NINJUTSU / DECOY</div><h3>Shadow Clone</h3><p>Form the crossed-finger seal and summon copies cut from your own live camera image.</p><div className="jutsu-foot"><span className="difficulty advanced">CROSSED SEAL</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">02</span>
-            </button>
+
           </div>
           <div className="detection-card">
             <div className="detection-heading"><div><span className="section-kicker">LIVE READOUT</span><h3>Detection status</h3></div><Activity size={17} /></div>
@@ -903,17 +623,16 @@ export default function App() {
             <div className="readout-row"><span>Hand landmarks</span><strong>{cameraState === 'ready' ? (handCount ? handCount + ' hand' + (handCount === 1 ? '' : 's') + ' tracked' : 'Searching…') : 'Not connected'}</strong></div>
             <div className="readout-row"><span>Inference engine</span><strong>{trackingEngine === 'worker-gpu' ? 'Web Worker · GPU' : trackingEngine === 'worker-cpu' ? 'Web Worker · CPU' : trackingEngine === 'main-thread' ? 'Compatibility fallback' : trackingEngine === 'starting' ? 'Initializing…' : trackingEngine === 'unavailable' ? 'Unavailable' : 'Idle'}</strong></div>
             <div className="readout-row"><span>Gesture classifier</span><strong>{cameraState === 'ready' ? 'Running locally' : 'Awaiting camera'}</strong></div>
-            <div className="readout-row"><span>Clone cutout</span><strong>{cloneStatus === 'ready' ? 'Your image · ready' : cloneStatus === 'loading' ? 'Preparing your image…' : cloneStatus === 'error' ? 'Image cutout unavailable' : 'Loads on first clone'}</strong></div>
             <div className="signal-track"><span style={{ width: cameraState === 'ready' ? (handCount ? '86%' : '32%') : '5%' }} /></div>
             <p className="signal-caption">{gestureLabel}</p>
           </div>
         </aside>
       </section>
       <section className="bottom-grid">
-        <div className="bottom-card mission-card"><div className="bottom-icon"><Lightbulb size={18} /></div><div><div className="section-kicker">YOUR FIRST MISSION</div><h3>Land your first clean cast</h3><p>First, land a clean Rasengan: face one open palm toward the camera and hold steady as the chakra sphere builds. Then summon your own shadow clones: make the classic crossed-finger seal with both hands, keep your upper body in frame, and allow a moment for the cutout model to load.</p></div><ChevronDown size={18} className="muted-chevron" /></div>
+        <div className="bottom-card mission-card"><div className="bottom-icon"><Lightbulb size={18} /></div><div><div className="section-kicker">YOUR FIRST MISSION</div><h3>Land your first clean cast</h3><p>Raise one open palm toward the camera and hold it steady while the orb forms. Once it starts glowing, move your hand smoothly: the Rasengan follows your palm, accelerates with your motion, and flashes outward when you release it.</p></div><ChevronDown size={18} className="muted-chevron" /></div>
         <div className="bottom-card privacy-card"><div className="bottom-icon green-icon"><ShieldCheck size={18} /></div><div><div className="section-kicker">PRIVACY BY DESIGN</div><h3>Your video stays on your device</h3><p>Hand landmarks are processed in the browser. The model is fetched from a public CDN the first time; camera footage is not sent to a server by this prototype.</p></div><Check size={18} className="privacy-check" /></div>
       </section>
-      <footer className="footer"><div><span className="footer-mark">木ノ葉</span><span> KONOHA JUTSU LAB</span><span className="footer-dim"> · Early access prototype</span></div><div><span className="footer-dim">Built with MediaPipe · Three.js · WebGL</span><a href="https://github.com/FavorPan/naruto" target="_blank" rel="noreferrer">Inspired by open-source experiments <Expand size={12} /></a></div></footer>
+      <footer className="footer"><div><span className="footer-mark">木ノ葉</span><span> KONOHA JUTSU LAB</span><span className="footer-dim"> · Early access prototype</span></div><div><span className="footer-dim">ONE HAND · MEDIAPIPE · THREE.JS / WEBGL</span><a href="https://github.com/FavorPan/naruto" target="_blank" rel="noreferrer">Inspired by open-source experiments <Expand size={12} /></a></div></footer>
     </main>
   );
 }

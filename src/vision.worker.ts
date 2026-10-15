@@ -46,7 +46,7 @@ async function initialize(message: InitMessage) {
           handTracker = await HandLandmarker.createFromOptions(vision, {
             baseOptions: { modelAssetPath: modelPath, delegate },
             runningMode: 'VIDEO',
-            numHands: 2,
+            numHands: 1,
             minHandDetectionConfidence: 0.55,
             minHandPresenceConfidence: 0.5,
             minTrackingConfidence: 0.5,
@@ -85,7 +85,7 @@ async function recoverGpuFailure() {
     handTracker = await HandLandmarker.createFromOptions(vision, {
       baseOptions: { modelAssetPath: handModelPath, delegate: 'CPU' },
       runningMode: 'VIDEO',
-      numHands: 2,
+      numHands: 1,
       minHandDetectionConfidence: 0.55,
       minHandPresenceConfidence: 0.5,
       minTrackingConfidence: 0.5,

@@ -1,34 +1,12 @@
 import { useEffect, useRef, type RefObject } from 'react';
 import * as T from 'three';
-
-export type EffectPoint = { x: number; y: number; z?: number };
-export type ThreeTrackingState = {
-  hands: EffectPoint[][];
-  effectHands?: EffectPoint[][];
-  effectHandIndex?: number;
-  cloneSprite: HTMLCanvasElement | null;
-  cloneRevision: number;
-  cloneVisibleUntil: number;
-};
-type Props = {
-  trackingRef: RefObject<ThreeTrackingState>;
-  activeJutsu: string;
-  chargeLevel: number;
-};
-type RasenganFx = {
-  root: T.Group;
-  core: T.Mesh;
-  innerCore: T.Mesh;
-  rings: T.Mesh[];
-  spirals: T.Line[];
-  particles: T.Points;
-};
-
-const additive = T.AdditiveBlending;
-const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
-const basic = (color: number, opacity: number, blending = additive) =>
-  new T.MeshBasicMaterial({ color, transparent: true, opacity, blending, depthWrite: false, side: T.DoubleSide });
-
+export type EffectPoint = { x:number; y:number; z?:number };
+export type ThreeTrackingState = { hands:EffectPoint[][]; effectHands?:EffectPoint[][]; effectHandIndex?:number };
+type Props = { trackingRef:RefObject<ThreeTrackingState>; activeJutsu:string; chargeLevel:number };
+type RasenganFx = { root:T.Group; halo:T.Mesh; core:T.Mesh; innerCore:T.Mesh; rings:T.Mesh[]; spirals:T.Line[]; particles:T.Points };
+const additive=T.AdditiveBlending;
+const clamp=(v:number,min:number,max:number)=>Math.max(min,Math.min(max,v));
+const basic=(color:number,opacity:number,blending=additive)=>new T.MeshBasicMaterial({color,transparent:true,opacity,blending,depthWrite:false,side:T.DoubleSide});
 function makeLine(points: T.Vector3[], color: number, opacity = 0.9) {
   return new T.Line(
     new T.BufferGeometry().setFromPoints(points),
@@ -79,6 +57,8 @@ function createRasengan(scene: T.Scene): RasenganFx {
     depthWrite: false,
     side: T.DoubleSide,
   });
+  const halo = new T.Mesh(new T.SphereGeometry(44, 24, 18), basic(0x258cff, 0.065));
+  root.add(halo);
   const core = new T.Mesh(new T.SphereGeometry(25, 36, 28), shader);
   root.add(core);
   const innerCore = new T.Mesh(new T.SphereGeometry(10, 20, 16), basic(0xd7f8ff, 0.18));
@@ -137,412 +117,72 @@ function createRasengan(scene: T.Scene): RasenganFx {
   }));
   root.add(particles);
   scene.add(root);
-  return { root, core, innerCore, rings, spirals, particles };
+  return { root, halo, core, innerCore, rings, spirals, particles };
 }
 
-
-export default function ThreeEffects({ trackingRef, activeJutsu, chargeLevel }: Props) {
-  const host = useRef<HTMLDivElement>(null);
-  const latest = useRef({ activeJutsu, chargeLevel });
-  latest.current = { activeJutsu, chargeLevel };
-
-  useEffect(() => {
-    const element = host.current;
-    if (!element) return;
-    let renderer: T.WebGLRenderer;
-    try {
-      renderer = new T.WebGLRenderer({
-        alpha: true, antialias: false, powerPreference: 'high-performance', premultipliedAlpha: false,
-      });
-    } catch {
-      element.dataset.renderer = 'unavailable';
-      return;
-    }
-    renderer.setClearColor(0, 0);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1));
-    renderer.outputColorSpace = T.SRGBColorSpace;
-    renderer.domElement.className = 'three-effects-canvas';
-    element.appendChild(renderer.domElement);
-
-    const scene = new T.Scene();
-    const camera = new T.OrthographicCamera(-1, 1, 1, -1, 0.1, 1000);
-    camera.position.z = 400;
-    const rasengan = createRasengan(scene);
-
-    const cloneGeometry = new T.PlaneGeometry(1, 1);
-    const cloneMaterials = [
-      new T.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: T.DoubleSide }),
-      new T.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: T.DoubleSide }),
-    ];
-    const glowMaterials = [
-      new T.MeshBasicMaterial({ color: 0x39bfff, transparent: true, opacity: 0, blending: additive, depthWrite: false, side: T.DoubleSide }),
-      new T.MeshBasicMaterial({ color: 0xffa64d, transparent: true, opacity: 0, blending: additive, depthWrite: false, side: T.DoubleSide }),
-    ];
-    const glowPlanes = glowMaterials.map((material) => {
-      const mesh = new T.Mesh(cloneGeometry, material);
-      mesh.visible = false;
-      scene.add(mesh);
-      return mesh;
-    });
-    const clonePlanes = cloneMaterials.map((material) => {
-      const mesh = new T.Mesh(cloneGeometry, material);
-      mesh.visible = false;
-      scene.add(mesh);
-      return mesh;
-    });
-    const summonRings = [
-      new T.Mesh(new T.TorusGeometry(18, 1.2, 7, 56), basic(0x65e2ff, 0.8)),
-      new T.Mesh(new T.TorusGeometry(18, 1.2, 7, 56), basic(0xffb45e, 0.8)),
-    ];
-    summonRings.forEach((mesh) => { mesh.visible = false; scene.add(mesh); });
-
-    const releaseRing = new T.Mesh(new T.TorusGeometry(13, 1.4, 7, 64), basic(0xbcefff, 0));
-    releaseRing.visible = false;
-    scene.add(releaseRing);
-    const burstCount = 68;
-    const burstPositions = new Float32Array(burstCount * 3);
-    const burstDirections = Array.from({ length: burstCount }, (_, i) => ({
-      angle: (i / burstCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.12,
-      speed: 55 + Math.random() * 110,
-      depth: (Math.random() - 0.5) * 20,
-    }));
-    const burstGeometry = new T.BufferGeometry();
-    burstGeometry.setAttribute('position', new T.BufferAttribute(burstPositions, 3));
-    const burstMaterial = new T.PointsMaterial({
-      color: 0x94eaff, size: 3.2, transparent: true, opacity: 0,
-      blending: additive, depthWrite: false, sizeAttenuation: false,
-    });
-    const burstParticles = new T.Points(burstGeometry, burstMaterial);
-    burstParticles.visible = false;
-    scene.add(burstParticles);
-
-    let cloneTexture: T.CanvasTexture | null = null;
-    let cloneSource: HTMLCanvasElement | null = null;
-    let lastCloneRevision = -1;
-    let cloneEntryAt = 0;
-    let wasCloneActive = false;
-    let wasCloneTextureReady = false;
-    let previousJutsu = 'none';
-    let lastRenderAt = 0;
-    let wasDrawing = false;
-    let frameId = 0;
-    let pixelRatio = Math.min(window.devicePixelRatio || 1, 1);
-    let slowFrames = 0;
-    let fastFrames = 0;
-    let targetFrameMs = 1000 / 60;
-    let burstStartedAt = -Infinity;
-    let burstStrength = 0;
-    let burstCenter = new T.Vector3();
-    let anchor = new T.Vector3();
-    let anchorReady = false;
-    let lastObservedTarget = new T.Vector3();
-    let predictedTarget = new T.Vector3();
-    let trackedVelocity = new T.Vector3();
-    let lastObservedTargetAt = 0;
-    let trackedMotionSpeed = 0;
-
-    const resize = () => {
-      const width = Math.max(1, element.clientWidth);
-      const height = Math.max(1, element.clientHeight);
-      camera.left = -width / 2;
-      camera.right = width / 2;
-      camera.top = height / 2;
-      camera.bottom = -height / 2;
-      camera.updateProjectionMatrix();
-      renderer.setSize(width, height, false);
-    };
-    const resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(resize) : null;
-    resizeObserver?.observe(element);
-    resize();
-
-    const toScreen = (point: EffectPoint, width: number, height: number) =>
-      new T.Vector3((point.x - 0.5) * width, (0.5 - point.y) * height, 0);
-    const palmCenter = (hand: EffectPoint[] | undefined) => {
-      if (!hand || hand.length < 21) return null;
-      const ids = [0, 5, 9, 13, 17];
-      return ids.reduce((center, id) => ({
-        x: center.x + hand[id].x / ids.length,
-        y: center.y + hand[id].y / ids.length,
-      }), { x: 0, y: 0 });
-    };
-
-    const draw = () => {
-      frameId = requestAnimationFrame(draw);
-      const now = performance.now();
-      if (now - lastRenderAt < targetFrameMs) return;
-      const deltaMs = lastRenderAt ? now - lastRenderAt : 16.7;
-      lastRenderAt = now;
-      const time = now / 1000;
-      const width = Math.max(1, element.clientWidth);
-      const height = Math.max(1, element.clientHeight);
-      const minDimension = Math.min(width, height);
-      const state = trackingRef.current;
-      const props = latest.current;
-      const hands = state?.hands ?? [];
-      const cloneUntil = state?.cloneVisibleUntil ?? 0;
-      const cloneActive = props.activeJutsu === 'clone' && (cloneUntil === 0 || now < cloneUntil);
-      const cloneCanvas = state?.cloneSprite ?? null;
-      const scale = minDimension / 360;
-      const charge = clamp(props.chargeLevel / 100, 0, 1);
-
-      if (props.activeJutsu === 'rasengan') {
-        const effectHands = state?.effectHands?.length ? state.effectHands : hands;
-        const rawCenter = palmCenter(effectHands[state?.effectHandIndex ?? 0]);
-        if (rawCenter) {
-          const target = toScreen(rawCenter, width, height);
-          if (!anchorReady || previousJutsu !== 'rasengan') {
-            anchor.copy(target);
-            lastObservedTarget.copy(target);
-            predictedTarget.copy(target);
-            trackedVelocity.set(0, 0, 0);
-            lastObservedTargetAt = now;
-            trackedMotionSpeed = 0;
-            anchorReady = true;
-          } else {
-            // Estimate velocity from the live hand target, not the trailing effect.
-            // Fast movement raises the follow rate and keeps the orb attached to the palm.
-            const observedDelta = target.distanceTo(lastObservedTarget);
-            if (observedDelta > 0.45) {
-              const elapsed = clamp((now - lastObservedTargetAt) / 1000, 0.016, 0.12);
-              trackedVelocity.copy(target).sub(lastObservedTarget).divideScalar(elapsed);
-              trackedMotionSpeed = trackedVelocity.length() / Math.max(1, minDimension);
-              lastObservedTarget.copy(target);
-              lastObservedTargetAt = now;
-            } else {
-              const decay = Math.exp(-deltaMs / 85);
-              trackedVelocity.multiplyScalar(decay);
-              trackedMotionSpeed = trackedVelocity.length() / Math.max(1, minDimension);
-            }
-            // Landmark results arrive at camera/inference cadence while WebGL can
-            // render faster. Predict a few milliseconds ahead (with a strict cap)
-            // to counter the visible lag on quick hand swipes without overshooting stops.
-            predictedTarget.copy(target);
-            const predictionSeconds = Math.min(0.012, Math.max(0.004, deltaMs / 1000 * 0.6));
-            let leadX = trackedVelocity.x * predictionSeconds;
-            let leadY = trackedVelocity.y * predictionSeconds;
-            const lead = Math.hypot(leadX, leadY);
-            const maxLead = minDimension * 0.032;
-            if (lead > maxLead && lead > 0) {
-              const cap = maxLead / lead;
-              leadX *= cap;
-              leadY *= cap;
-            }
-            predictedTarget.x += leadX;
-            predictedTarget.y += leadY;
-            const followRate = clamp(60 + trackedMotionSpeed * 10, 60, 140);
-            const follow = 1 - Math.exp(-followRate * Math.max(0.008, deltaMs / 1000));
-            anchor.lerp(predictedTarget, follow);
-          }
-        }
-      }
-
-      if (previousJutsu === 'rasengan' && props.activeJutsu !== 'rasengan' && anchorReady) {
-        burstStartedAt = now;
-        burstCenter.copy(anchor);
-        burstStrength = clamp(charge, 0.2, 1);
-        releaseRing.position.copy(burstCenter);
-        releaseRing.position.z = 18;
-        releaseRing.visible = true;
-        burstParticles.position.copy(burstCenter);
-        burstParticles.position.z = 19;
-        burstParticles.visible = true;
-      }
-      previousJutsu = props.activeJutsu;
-
-      if (cloneCanvas && cloneCanvas !== cloneSource) {
-        cloneTexture?.dispose();
-        cloneSource = cloneCanvas;
-        cloneTexture = new T.CanvasTexture(cloneCanvas);
-        cloneTexture.colorSpace = T.SRGBColorSpace;
-        cloneTexture.generateMipmaps = false;
-        cloneTexture.minFilter = T.LinearFilter;
-        cloneTexture.magFilter = T.LinearFilter;
-        [...cloneMaterials, ...glowMaterials].forEach((material) => {
-          material.map = cloneTexture;
-          material.needsUpdate = true;
-        });
-        lastCloneRevision = -1;
-      }
-      if (cloneTexture && (state?.cloneRevision ?? 0) !== lastCloneRevision) {
-        cloneTexture.needsUpdate = true;
-        lastCloneRevision = state?.cloneRevision ?? 0;
-      }
-      const hasCloneTexture = !!cloneTexture;
-      if (cloneActive && (!wasCloneActive || (hasCloneTexture && !wasCloneTextureReady))) {
-        cloneEntryAt = now;
-        const centers = [-1, 1];
-        summonRings.forEach((ringMesh, i) => {
-          ringMesh.position.set(width * centers[i] * 0.29, height * (i === 0 ? -0.005 : 0.005), 14 + i);
-          ringMesh.scale.setScalar(scale * 0.3);
-          ringMesh.visible = true;
-        });
-      }
-      if (!cloneActive) summonRings.forEach((ringMesh) => { ringMesh.visible = false; });
-      wasCloneActive = cloneActive;
-      wasCloneTextureReady = hasCloneTexture;
-
-      const entryProgress = cloneActive ? clamp((now - cloneEntryAt) / 680, 0, 1) : 1;
-      const entryEase = 1 - Math.pow(1 - entryProgress, 3);
-      const cloneOffsets = [-0.29, 0.29];
-      const cloneY = [0.006, -0.004];
-      const cloneAlpha = [0.92, 0.88];
-      const sourceWidth = cloneSource?.width || 3;
-      const sourceHeight = cloneSource?.height || 5;
-      // The worker returns a cropped person cutout rather than a full camera frame.
-      // Size each duplicate by height and preserve the actual person's aspect ratio.
-      const clonePlaneHeight = height * 0.84;
-      const clonePlaneWidth = clonePlaneHeight * sourceWidth / sourceHeight;
-      clonePlanes.forEach((mesh, i) => {
-        mesh.visible = cloneActive && hasCloneTexture;
-        const offset = cloneOffsets[i] * (0.28 + 0.72 * entryEase);
-        const bob = Math.sin(time * (1.4 + i * 0.15) + i) * 0.006;
-        mesh.position.set(width * offset, -height * (cloneY[i] + bob), 10.2 + i * 0.01);
-        const cloneScale = 0.84 + 0.12 * entryEase;
-        mesh.scale.set(clonePlaneWidth * cloneScale, clonePlaneHeight * cloneScale, 1);
-        cloneMaterials[i].opacity = cloneAlpha[i] * (0.12 + 0.88 * entryEase);
-        glowPlanes[i].visible = mesh.visible;
-        glowPlanes[i].position.copy(mesh.position);
-        glowPlanes[i].position.z = 9.8 + i * 0.01;
-        glowPlanes[i].scale.copy(mesh.scale).multiplyScalar(1.035);
-        glowMaterials[i].opacity = 0.2 * (0.12 + 0.88 * entryEase);
-      });
-      summonRings.forEach((ringMesh, i) => {
-        if (!ringMesh.visible) return;
-        const material = ringMesh.material as T.MeshBasicMaterial;
-        const progress = clamp((now - cloneEntryAt) / 520, 0, 1);
-        ringMesh.scale.setScalar(scale * (0.35 + progress * 4.2));
-        ringMesh.rotation.z = (i ? -1 : 1) * time * 0.55;
-        material.opacity = 0.8 * (1 - progress);
-        if (progress >= 1) ringMesh.visible = false;
-      });
-
-      const burstProgress = clamp((now - burstStartedAt) / 440, 0, 1);
-      const burstActive = now - burstStartedAt < 440;
-      if (burstActive) {
-        const ringMaterial = releaseRing.material as T.MeshBasicMaterial;
-        releaseRing.scale.setScalar(scale * (0.45 + burstProgress * 3.4) * (0.65 + burstStrength * 0.55));
-        releaseRing.rotation.z = time * 1.7;
-        ringMaterial.opacity = (1 - burstProgress) * (0.24 + burstStrength * 0.55);
-        const positions = burstGeometry.getAttribute('position') as T.BufferAttribute;
-        const array = positions.array as Float32Array;
-        for (let i = 0; i < burstCount; i++) {
-          const particle = burstDirections[i];
-          const distance = particle.speed * burstProgress * (0.45 + burstStrength * 0.7);
-          array[i * 3] = Math.cos(particle.angle) * distance;
-          array[i * 3 + 1] = Math.sin(particle.angle) * distance;
-          array[i * 3 + 2] = particle.depth * burstProgress;
-        }
-        positions.needsUpdate = true;
-        burstMaterial.opacity = (1 - burstProgress) * (0.28 + burstStrength * 0.48);
-        releaseRing.visible = true;
-        burstParticles.visible = true;
-      } else {
-        releaseRing.visible = false;
-        burstParticles.visible = false;
-        burstMaterialReset(burstParticles);
-      }
-
-      const rasenganActive = props.activeJutsu === 'rasengan';
-      rasengan.root.visible = rasenganActive;
-      if (rasenganActive) {
-        const position = anchorReady ? anchor : new T.Vector3(0, 0, 0);
-        rasengan.root.position.copy(position);
-        rasengan.root.scale.setScalar(scale * (0.62 + charge * 0.53 + Math.sin(time * 8) * (0.008 + charge * 0.018)));
-        const shader = rasengan.core.material as T.ShaderMaterial;
-        shader.uniforms.uTime.value = time;
-        shader.uniforms.uCharge.value = charge;
-        rasengan.innerCore.scale.setScalar(0.88 + charge * 0.42 + Math.sin(time * 8.4) * 0.08);
-        rasengan.rings.forEach((ringMesh, i) => {
-          const direction = i % 2 ? -1 : 1;
-          const motionBoost = 1 + clamp(trackedMotionSpeed * 0.7, 0, 1.3);
-          ringMesh.rotation.x = time * (0.45 + i * 0.13) * motionBoost + i * 0.7;
-          ringMesh.rotation.y = time * direction * (0.62 + charge * 1.45 + i * 0.14) * motionBoost;
-          ringMesh.rotation.z = time * (direction * (1.05 + charge * 1.7)) * motionBoost + i * 1.3;
-          ringMesh.scale.setScalar(0.7 + charge * 0.35 + Math.sin(time * 6 + i) * 0.035);
-          (ringMesh.material as T.MeshBasicMaterial).opacity = 0.36 + charge * 0.45;
-        });
-        rasengan.spirals.forEach((spiral, i) => {
-          spiral.rotation.z = time * (i % 2 ? -2.3 : 2.0) * (0.68 + charge * 0.62) * (1 + clamp(trackedMotionSpeed * 0.65, 0, 1.2));
-          spiral.rotation.x = Math.sin(time * 1.3 + i) * 0.28;
-          (spiral.material as T.LineBasicMaterial).opacity = 0.5 + charge * 0.43;
-        });
-        const particles = rasengan.particles;
-        particles.rotation.z = -time * (0.45 + charge * 1.2) * (1 + clamp(trackedMotionSpeed * 0.7, 0, 1.3));
-        particles.rotation.y = time * (0.35 + charge * 0.5) * (1 + clamp(trackedMotionSpeed * 0.45, 0, 0.9));
-        (particles.material as T.PointsMaterial).opacity = 0.34 + charge * 0.52 + Math.sin(time * 9) * 0.05;
-        const particlePositions = particles.geometry.getAttribute('position') as T.BufferAttribute;
-        const particleArray = particlePositions.array as Float32Array;
-        const seeds = particles.geometry.userData.seeds as Array<{ angle: number; radius: number; depth: number; speed: number }>;
-        for (let i = 0; i < seeds.length; i++) {
-          const seed = seeds[i];
-          const angle = seed.angle + time * seed.speed * (0.8 + charge * 1.4);
-          const radius = seed.radius * (0.82 + charge * 0.18) + Math.sin(time * 5 + i) * 1.7;
-          particleArray[i * 3] = Math.cos(angle) * radius;
-          particleArray[i * 3 + 1] = Math.sin(angle) * radius;
-          particleArray[i * 3 + 2] = seed.depth + Math.sin(time * 3 + i) * 2.4;
-        }
-        particlePositions.needsUpdate = true;
-      }
-
-      const shouldDraw = rasenganActive || cloneActive || burstActive;
-      if (!shouldDraw) {
-        if (wasDrawing) {
-          renderer.clear();
-          wasDrawing = false;
-        }
-        return;
-      }
-      wasDrawing = true;
-      renderer.render(scene, camera);
-      // Count JS scene updates as well as the WebGL submit; adapting only to the
-      // GPU call can miss stalls caused by CPU-side particle and clone updates.
-      const cost = performance.now() - now;
-      if (cost > 21) { slowFrames++; fastFrames = 0; }
-      else if (cost < 10) { fastFrames++; slowFrames = 0; }
-      else { slowFrames = 0; fastFrames = 0; }
-      if (slowFrames >= 3) {
-        targetFrameMs = 1000 / 30;
-        if (pixelRatio > 0.72) {
-          pixelRatio = 0.72;
-          renderer.setPixelRatio(pixelRatio);
-          resize();
-        }
-        slowFrames = 0;
-        fastFrames = 0;
-      } else if (fastFrames >= 90) {
-        targetFrameMs = 1000 / 60;
-        const bestRatio = Math.min(window.devicePixelRatio || 1, 1);
-        if (pixelRatio < bestRatio) {
-          pixelRatio = bestRatio;
-          renderer.setPixelRatio(pixelRatio);
-          resize();
-        }
-        fastFrames = 0;
-      }
-    };
-
-    frameId = requestAnimationFrame(draw);
-    return () => {
-      cancelAnimationFrame(frameId);
-      resizeObserver?.disconnect();
-      scene.traverse((object) => {
-        const mesh = object as T.Mesh;
-        if (mesh.geometry) mesh.geometry.dispose();
-        const material = mesh.material;
-        if (material) {
-          if (Array.isArray(material)) material.forEach((item) => item.dispose());
-          else material.dispose();
-        }
-      });
-      cloneTexture?.dispose();
-      renderer.dispose();
-      renderer.domElement.remove();
-    };
-  }, [trackingRef]);
-
-  return <div ref={host} className="three-effects-layer" aria-hidden="true" />;
-}
-
-function burstMaterialReset(points: T.Points) {
-  (points.material as T.PointsMaterial).opacity = 0;
+export default function ThreeEffects({trackingRef,activeJutsu,chargeLevel}:Props){
+ const host=useRef<HTMLDivElement>(null),latest=useRef({activeJutsu,chargeLevel});latest.current={activeJutsu,chargeLevel};
+ useEffect(()=>{
+  const element=host.current;if(!element)return;let renderer:T.WebGLRenderer;
+  try{renderer=new T.WebGLRenderer({alpha:true,antialias:false,powerPreference:'high-performance',premultipliedAlpha:false})}catch{element.dataset.renderer='unavailable';return}
+  renderer.setClearColor(0,0);renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1));renderer.outputColorSpace=T.SRGBColorSpace;renderer.domElement.className='three-effects-canvas';element.appendChild(renderer.domElement);
+  const scene=new T.Scene(),camera=new T.OrthographicCamera(-1,1,1,-1,.1,1000);camera.position.z=400;
+  const rasengan=createRasengan(scene),releaseRing=new T.Mesh(new T.TorusGeometry(13,1.4,7,64),basic(0xbcefff,0));releaseRing.visible=false;scene.add(releaseRing);
+  const count=48,burstGeometry=new T.BufferGeometry();burstGeometry.setAttribute('position',new T.BufferAttribute(new Float32Array(count*3),3));
+  const directions=Array.from({length:count},(_,i)=>({angle:i/count*Math.PI*2+(Math.random()-.5)*.12,speed:55+Math.random()*110,depth:(Math.random()-.5)*20}));
+  const burstMaterial=new T.PointsMaterial({color:0x94eaff,size:3.2,transparent:true,opacity:0,blending:additive,depthWrite:false,sizeAttenuation:false});
+  const burstParticles=new T.Points(burstGeometry,burstMaterial);burstParticles.visible=false;scene.add(burstParticles);
+  let raf=0,lastAt=0,targetMs=1000/60,slow=0,fast=0,pixelRatio=Math.min(window.devicePixelRatio||1,1),wasDrawing=false,previous='none',burstAt=-Infinity,burstPower=0,lastCharge=0;
+  const burstCenter=new T.Vector3(),anchor=new T.Vector3(),observed=new T.Vector3(),predicted=new T.Vector3(),velocity=new T.Vector3();let anchorReady=false,observedAt=0,motionSpeed=0;
+  const resize=()=>{const w=Math.max(1,element.clientWidth),h=Math.max(1,element.clientHeight);camera.left=-w/2;camera.right=w/2;camera.top=h/2;camera.bottom=-h/2;camera.updateProjectionMatrix();renderer.setSize(w,h,false)};
+  const ro=typeof ResizeObserver!=='undefined'?new ResizeObserver(resize):null;ro?.observe(element);resize();
+  const palmCenter=(hand:EffectPoint[]|undefined)=>{if(!hand||hand.length<21)return null;return [0,5,9,13,17].reduce((p,i)=>({x:p.x+hand[i].x/5,y:p.y+hand[i].y/5}),{x:0,y:0})};
+  // Mirror the landmark X coordinate to match the selfie-preview flip.
+  const screen=(p:{x:number;y:number},w:number,h:number)=>new T.Vector3((.5-p.x)*w,(.5-p.y)*h,0);
+  const draw=()=>{
+   raf=requestAnimationFrame(draw);const now=performance.now();if(now-lastAt<targetMs)return;const dt=lastAt?now-lastAt:16.7;lastAt=now;const time=now/1000,w=Math.max(1,element.clientWidth),h=Math.max(1,element.clientHeight),min=Math.min(w,h),state=trackingRef.current,props=latest.current;
+   const hands=state?.effectHands?.length?state.effectHands:(state?.hands??[]),active=props.activeJutsu==='rasengan',scale=min/360,charge=clamp(props.chargeLevel/100,0,1);
+   if(active){
+    const hand=hands[state?.effectHandIndex??0]??hands[0],center=palmCenter(hand);
+    if(center){const target=screen(center,w,h);
+     if(!anchorReady||previous!=='rasengan'){anchor.copy(target);observed.copy(target);predicted.copy(target);velocity.set(0,0,0);observedAt=now;motionSpeed=0;anchorReady=true;lastCharge=0}
+     else{const moved=target.distanceTo(observed);
+      if(moved>.12){const elapsed=clamp((now-observedAt)/1000,.012,.12);velocity.lerp(target.clone().sub(observed).divideScalar(elapsed),.62);motionSpeed=velocity.length()/Math.max(1,min);observed.copy(target);observedAt=now}
+      else{velocity.multiplyScalar(Math.exp(-dt/170));motionSpeed=velocity.length()/Math.max(1,min)}
+      predicted.copy(target);const pred=Math.min(.014,Math.max(.004,dt/1000*.72));let lx=velocity.x*pred,ly=velocity.y*pred;const lead=Math.hypot(lx,ly),cap=min*.03;
+      if(lead>cap&&lead>0){lx*=cap/lead;ly*=cap/lead}predicted.x+=lx;predicted.y+=ly;
+      anchor.lerp(predicted,1-Math.exp(-clamp(76+motionSpeed*12,76,158)*Math.max(.008,dt/1000)));
+     }
+    }else if(!anchorReady){anchor.set(0,0,0);anchorReady=true}
+    lastCharge=Math.max(lastCharge,charge);
+   }
+   if(previous==='rasengan'&&!active&&anchorReady){burstAt=now;burstCenter.copy(anchor);burstPower=clamp(Math.max(lastCharge,charge),.2,1);releaseRing.position.copy(burstCenter);releaseRing.position.z=18;releaseRing.visible=true;burstParticles.position.copy(burstCenter);burstParticles.position.z=19;burstParticles.visible=true}
+   previous=active?'rasengan':'none';
+   const bp=clamp((now-burstAt)/460,0,1),burstActive=now-burstAt<460;
+   if(burstActive){const mat=releaseRing.material as T.MeshBasicMaterial;releaseRing.scale.setScalar(scale*(.45+bp*3.7)*(.65+burstPower*.55));releaseRing.rotation.z=time*1.7;mat.opacity=(1-bp)*(.28+burstPower*.52);
+    const pos=burstGeometry.getAttribute('position').array as Float32Array;
+    for(let i=0;i<count;i++){const p=directions[i],d=p.speed*bp*(.45+burstPower*.7);pos[3*i]=Math.cos(p.angle)*d;pos[3*i+1]=Math.sin(p.angle)*d;pos[3*i+2]=p.depth*bp}
+    burstGeometry.getAttribute('position').needsUpdate=true;burstMaterial.opacity=(1-bp)*(.3+burstPower*.5);releaseRing.visible=true;burstParticles.visible=true;
+   }else{releaseRing.visible=false;burstParticles.visible=false;burstMaterial.opacity=0}
+   rasengan.root.visible=active;
+   if(active){
+    rasengan.root.position.copy(anchor);const motion=1+clamp(motionSpeed*.72,0,1.35),pulse=Math.sin(time*8.2)*(.012+charge*.025);
+    rasengan.root.scale.setScalar(scale*(.78+charge*.64+pulse));rasengan.halo.scale.setScalar(.95+charge*.24+Math.sin(time*4.4)*.035);(rasengan.halo.material as T.MeshBasicMaterial).opacity=.055+charge*.09+motionSpeed*.025;
+    const shader=rasengan.core.material as T.ShaderMaterial;shader.uniforms.uTime.value=time;shader.uniforms.uCharge.value=charge;rasengan.innerCore.scale.setScalar(.88+charge*.46+Math.sin(time*8.4)*.08);
+    rasengan.rings.forEach((ring,i)=>{const d=i%2?-1:1;ring.rotation.x=time*(.45+i*.13)*motion+i*.7;ring.rotation.y=time*d*(.62+charge*1.5+i*.14)*motion;ring.rotation.z=time*d*(1.05+charge*1.85)+i*1.3;ring.scale.setScalar(.7+charge*.38+Math.sin(time*6+i)*.035);(ring.material as T.MeshBasicMaterial).opacity=.36+charge*.48});
+    rasengan.spirals.forEach((line,i)=>{line.rotation.z=time*(i%2?-2.45:2.15)*(.68+charge*.7)*(1+clamp(motionSpeed*.7,0,1.2));line.rotation.x=Math.sin(time*1.3+i)*.28;(line.material as T.LineBasicMaterial).opacity=.5+charge*.44});
+    const particles=rasengan.particles;particles.rotation.z=-time*(.45+charge*1.25)*motion;particles.rotation.y=time*(.35+charge*.56)*(1+clamp(motionSpeed*.5,0,.9));(particles.material as T.PointsMaterial).opacity=.34+charge*.54+Math.sin(time*9)*.05;
+    const pos=particles.geometry.getAttribute('position').array as Float32Array,seeds=particles.geometry.userData.seeds as Array<{angle:number;radius:number;depth:number;speed:number}>;
+    for(let i=0;i<seeds.length;i++){const s=seeds[i],angle=s.angle+time*s.speed*(.8+charge*1.5),radius=s.radius*(.82+charge*.18)+Math.sin(time*5+i)*1.7;pos[3*i]=Math.cos(angle)*radius;pos[3*i+1]=Math.sin(angle)*radius;pos[3*i+2]=s.depth+Math.sin(time*3+i)*2.4}particles.geometry.getAttribute('position').needsUpdate=true;
+   }
+   if(!(active||burstActive)){if(wasDrawing){renderer.clear();wasDrawing=false}return}
+   wasDrawing=true;renderer.render(scene,camera);const cost=performance.now()-now;
+   if(cost>21){slow++;fast=0}else if(cost<10){fast++;slow=0}else{slow=0;fast=0}
+   if(slow>=3){targetMs=1000/30;if(pixelRatio>.72){pixelRatio=.72;renderer.setPixelRatio(pixelRatio);resize()}slow=0;fast=0}
+   else if(fast>=90){targetMs=1000/60;const best=Math.min(window.devicePixelRatio||1,1);if(pixelRatio<best){pixelRatio=best;renderer.setPixelRatio(pixelRatio);resize()}fast=0}
+  };
+  raf=requestAnimationFrame(draw);
+  return()=>{cancelAnimationFrame(raf);ro?.disconnect();scene.traverse(o=>{const m=o as T.Mesh;if(m.geometry)m.geometry.dispose();const mat=m.material;if(mat){if(Array.isArray(mat))mat.forEach(x=>x.dispose());else mat.dispose()}});renderer.dispose();renderer.domElement.remove()};
+ },[trackingRef]);
+ return <div ref={host} className="three-effects-layer" aria-hidden="true"/>;
 }
