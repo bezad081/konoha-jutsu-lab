@@ -3,7 +3,7 @@ import * as T from 'three';
 export type EffectPoint = { x:number; y:number; z?:number };
 export type ThreeTrackingState = { hands:EffectPoint[][]; effectHands?:EffectPoint[][]; effectHandIndex?:number; sampledAt?:number };
 type Props = { trackingRef:RefObject<ThreeTrackingState>; activeJutsu:string; chargeLevel:number };
-type RasenganFx = { root:T.Group; halo:T.Mesh; core:T.Mesh; innerCore:T.Mesh; rings:T.Mesh[]; spirals:T.Line[]; particles:T.Points };
+type RasenganFx = { root:T.Group; halo:T.Mesh; shell:T.Mesh; core:T.Mesh; innerCore:T.Mesh; rings:T.Mesh[]; spirals:T.Line[]; particles:T.Points };
 const additive=T.AdditiveBlending;
 const clamp=(v:number,min:number,max:number)=>Math.max(min,Math.min(max,v));
 const basic=(color:number,opacity:number,blending=additive)=>new T.MeshBasicMaterial({color,transparent:true,opacity,blending,depthWrite:false,side:T.DoubleSide});
@@ -61,6 +61,38 @@ function createRasengan(scene: T.Scene): RasenganFx {
   });
   const halo = new T.Mesh(new T.SphereGeometry(44, 24, 18), basic(0x258cff, 0.065));
   root.add(halo);
+  const shellShader = new T.ShaderMaterial({
+    uniforms: { uTime: { value: 0 }, uCharge: { value: 0 } },
+    vertexShader: `varying vec3 vLocalPosition; varying vec3 vNormalView; varying vec3 vViewPosition;
+      void main() {
+        vLocalPosition = position;
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        vViewPosition = -mvPosition.xyz;
+        vNormalView = normalize(normalMatrix * normal);
+        gl_Position = projectionMatrix * mvPosition;
+      }`,
+    fragmentShader: `uniform float uTime; uniform float uCharge;
+      varying vec3 vLocalPosition; varying vec3 vNormalView; varying vec3 vViewPosition;
+      void main() {
+        vec3 n = normalize(vNormalView);
+        vec3 viewDir = normalize(vViewPosition);
+        float angle = atan(vLocalPosition.y, vLocalPosition.x);
+        float turbulence = sin(vLocalPosition.y * 0.32 + uTime * 4.2) * cos(vLocalPosition.x * 0.27 - uTime * 3.3);
+        float swirl = sin(angle * 10.0 + vLocalPosition.z * 0.55 - uTime * (6.5 + uCharge * 9.0) + turbulence);
+        float streak = pow(max(0.0, 0.5 + 0.5 * swirl), 7.0);
+        float fresnel = pow(1.0 - max(0.0, dot(n, viewDir)), 2.0);
+        float hot = clamp(streak * 0.68 + fresnel * 0.45 + uCharge * 0.18, 0.0, 1.0);
+        vec3 color = mix(vec3(0.035, 0.24, 0.92), vec3(0.55, 0.94, 1.0), hot);
+        float alpha = clamp(fresnel * 0.32 + streak * (0.12 + uCharge * 0.18) + uCharge * 0.035, 0.0, 0.52);
+        gl_FragColor = vec4(color * (1.1 + streak * 0.85 + uCharge * 0.35), alpha);
+      }`,
+    transparent: true,
+    blending: additive,
+    depthWrite: false,
+    side: T.DoubleSide,
+  });
+  const shell = new T.Mesh(new T.SphereGeometry(33, 28, 22), shellShader);
+  root.add(shell);
   const core = new T.Mesh(new T.SphereGeometry(25, 36, 28), shader);
   root.add(core);
   const innerCore = new T.Mesh(new T.SphereGeometry(10, 20, 16), basic(0xd7f8ff, 0.18));
@@ -81,12 +113,12 @@ function createRasengan(scene: T.Scene): RasenganFx {
   });
 
   const spirals: T.Line[] = [];
-  for (let strand = 0; strand < 4; strand++) {
+  for (let strand = 0; strand < 6; strand++) {
     const points: T.Vector3[] = [];
-    for (let i = 0; i < 116; i++) {
-      const q = i / 115;
-      const angle = q * Math.PI * 6.2 + strand * Math.PI * 0.5;
-      const radius = 5 + q * 34;
+    for (let i = 0; i < 136; i++) {
+      const q = i / 135;
+      const angle = q * Math.PI * 8.0 + strand * Math.PI / 3;
+      const radius = 4 + q * 36;
       points.push(new T.Vector3(
         Math.cos(angle) * radius,
         Math.sin(angle) * radius,
@@ -119,7 +151,7 @@ function createRasengan(scene: T.Scene): RasenganFx {
   }));
   root.add(particles);
   scene.add(root);
-  return { root, halo, core, innerCore, rings, spirals, particles };
+  return { root, halo, shell, core, innerCore, rings, spirals, particles };
 }
 
 export default function ThreeEffects({trackingRef,activeJutsu,chargeLevel}:Props){
@@ -131,7 +163,8 @@ export default function ThreeEffects({trackingRef,activeJutsu,chargeLevel}:Props
   const scene=new T.Scene(),camera=new T.OrthographicCamera(-1,1,1,-1,.1,1000);camera.position.z=400;
   const rasengan=createRasengan(scene),releaseRing=new T.Mesh(new T.TorusGeometry(13,1.4,7,64),basic(0xbcefff,0));releaseRing.visible=false;scene.add(releaseRing);
   const releaseRing2=new T.Mesh(new T.TorusGeometry(8,0.72,6,64),basic(0x62cfff,0));releaseRing2.visible=false;scene.add(releaseRing2);
-  const count=72,burstGeometry=new T.BufferGeometry();burstGeometry.setAttribute('position',new T.BufferAttribute(new Float32Array(count*3),3));
+  const impactFlash=new T.Mesh(new T.SphereGeometry(13,18,14),basic(0xf0fdff,0));impactFlash.visible=false;scene.add(impactFlash);
+  const count=84,burstGeometry=new T.BufferGeometry();burstGeometry.setAttribute('position',new T.BufferAttribute(new Float32Array(count*3),3));
   const directions=Array.from({length:count},(_,i)=>({angle:i/count*Math.PI*2+(Math.random()-.5)*.12,speed:70+Math.random()*135,depth:(Math.random()-.5)*24}));
   const burstMaterial=new T.PointsMaterial({color:0x94eaff,size:3.4,transparent:true,opacity:0,blending:additive,depthWrite:false,sizeAttenuation:false});
   const burstParticles=new T.Points(burstGeometry,burstMaterial);burstParticles.visible=false;scene.add(burstParticles);
@@ -152,21 +185,21 @@ export default function ThreeEffects({trackingRef,activeJutsu,chargeLevel}:Props
   });
   const trail=new T.Points(trailGeometry,trailMaterial);trail.visible=false;trail.frustumCulled=false;scene.add(trail);
   let raf=0,lastAt=0,targetMs=1000/60,slow=0,fast=0,pixelRatio=Math.min(window.devicePixelRatio||1,1),wasDrawing=false,previous='none',burstAt=-Infinity,burstPower=0,lastCharge=0,chargePhaseLast=-1,trailClock=0,trailCursor=0;
-  const burstCenter=new T.Vector3(),anchor=new T.Vector3(),observed=new T.Vector3(),predicted=new T.Vector3(),velocity=new T.Vector3(),lastTrailAnchor=new T.Vector3(1e6,1e6,1e6);let anchorReady=false,observedAt=0,motionSpeed=0;
+  const burstCenter=new T.Vector3(),anchor=new T.Vector3(),observed=new T.Vector3(),predicted=new T.Vector3(),velocity=new T.Vector3(),targetPoint=new T.Vector3(),motionDelta=new T.Vector3(),lastTrailAnchor=new T.Vector3(1e6,1e6,1e6);let anchorReady=false,observedAt=0,motionSpeed=0;
   const resize=()=>{const w=Math.max(1,element.clientWidth),h=Math.max(1,element.clientHeight);camera.left=-w/2;camera.right=w/2;camera.top=h/2;camera.bottom=-h/2;camera.updateProjectionMatrix();renderer.setSize(w,h,false)};
   const ro=typeof ResizeObserver!=='undefined'?new ResizeObserver(resize):null;ro?.observe(element);resize();
   const palmCenter=(hand:EffectPoint[]|undefined)=>{if(!hand||hand.length<21)return null;return [0,5,9,13,17].reduce((p,i)=>({x:p.x+hand[i].x/5,y:p.y+hand[i].y/5}),{x:0,y:0})};
   // Mirror the landmark X coordinate to match the selfie-preview flip.
-  const screen=(p:{x:number;y:number},w:number,h:number)=>new T.Vector3((.5-p.x)*w,(.5-p.y)*h,0);
+  const screen=(p:{x:number;y:number},w:number,h:number,out:T.Vector3)=>out.set((.5-p.x)*w,(.5-p.y)*h,0);
   const draw=()=>{
    raf=requestAnimationFrame(draw);const now=performance.now();if(now-lastAt<targetMs)return;const dt=lastAt?now-lastAt:16.7;lastAt=now;const time=now/1000,w=Math.max(1,element.clientWidth),h=Math.max(1,element.clientHeight),min=Math.min(w,h),state=trackingRef.current,props=latest.current;
    const hands=state?.effectHands?.length?state.effectHands:(state?.hands??[]),active=props.activeJutsu==='rasengan',scale=min/360,charge=clamp(props.chargeLevel/100,0,1),sampleAt=state?.sampledAt&&state.sampledAt>0?state.sampledAt:now;
    if(active){
     const hand=hands[state?.effectHandIndex??0]??hands[0],center=palmCenter(hand);
-    if(center){const target=screen(center,w,h);
-     if(!anchorReady||previous!=='rasengan'){anchor.copy(target);observed.copy(target);predicted.copy(target);velocity.set(0,0,0);observedAt=sampleAt;motionSpeed=0;anchorReady=true;lastCharge=0}
+    if(center){const target=screen(center,w,h,targetPoint);
+     if(!anchorReady||previous!=='rasengan'){anchor.copy(target);observed.copy(target);predicted.copy(target);velocity.set(0,0,0);observedAt=sampleAt;motionSpeed=0;anchorReady=true;lastCharge=0;lastTrailAnchor.set(1e6,1e6,1e6);trailClock=0;trailLife.fill(0);trailLifeAttribute.needsUpdate=true}
      else{const moved=target.distanceTo(observed);
-      if(moved>.12){const elapsed=clamp((sampleAt-observedAt)/1000,.012,.12);velocity.lerp(target.clone().sub(observed).divideScalar(elapsed),.82);motionSpeed=velocity.length()/Math.max(1,min);observed.copy(target);observedAt=sampleAt}
+      if(moved>.12){const elapsed=clamp((sampleAt-observedAt)/1000,.012,.12);motionDelta.subVectors(target,observed).divideScalar(elapsed);velocity.lerp(motionDelta,.82);motionSpeed=velocity.length()/Math.max(1,min);observed.copy(target);observedAt=sampleAt}
       else{velocity.multiplyScalar(Math.exp(-dt/100));motionSpeed=velocity.length()/Math.max(1,min)}
       predicted.copy(target);const pred=Math.min(.026,Math.max(.010,dt/1000*1.05));let lx=velocity.x*pred,ly=velocity.y*pred;const lead=Math.hypot(lx,ly),cap=min*.048;
       if(lead>cap&&lead>0){lx*=cap/lead;ly*=cap/lead}predicted.x+=lx;predicted.y+=ly;
@@ -175,17 +208,19 @@ export default function ThreeEffects({trackingRef,activeJutsu,chargeLevel}:Props
     }else if(!anchorReady){anchor.set(0,0,0);anchorReady=true}
     lastCharge=Math.max(lastCharge,charge);
    }
-   if(previous==='rasengan'&&!active&&anchorReady){burstAt=now;burstCenter.copy(anchor);burstPower=clamp(Math.max(lastCharge,charge)*.82+clamp(motionSpeed*.15,0,.18),.2,1);releaseRing.position.copy(burstCenter);releaseRing.position.z=18;releaseRing.visible=true;releaseRing2.position.copy(burstCenter);releaseRing2.position.z=16;releaseRing2.visible=true;burstParticles.position.copy(burstCenter);burstParticles.position.z=19;burstParticles.visible=true}
+   if(previous==='rasengan'&&!active&&anchorReady){burstAt=now;burstCenter.copy(anchor);burstPower=clamp(Math.max(lastCharge,charge)*.82+clamp(motionSpeed*.15,0,.18),.2,1);releaseRing.position.copy(burstCenter);releaseRing.position.z=18;releaseRing.visible=true;releaseRing2.position.copy(burstCenter);releaseRing2.position.z=16;releaseRing2.visible=true;impactFlash.position.copy(burstCenter);impactFlash.position.z=21;impactFlash.visible=true;burstParticles.position.copy(burstCenter);burstParticles.position.z=19;burstParticles.visible=true}
    previous=active?'rasengan':'none';
    const bp=clamp((now-burstAt)/620,0,1),burstActive=now-burstAt<620;
    if(burstActive){
     const mat=releaseRing.material as T.MeshBasicMaterial;releaseRing.scale.setScalar(scale*(.45+bp*3.7)*(.65+burstPower*.55));releaseRing.rotation.z=time*1.7;mat.opacity=(1-bp)*(.28+burstPower*.58);
+    const flashProgress=clamp((now-burstAt)/150,0,1),flashMaterial=impactFlash.material as T.MeshBasicMaterial;
+    impactFlash.scale.setScalar(scale*(.24+flashProgress*2.8));flashMaterial.opacity=(1-flashProgress)*(.22+burstPower*.68);
     const bp2=clamp((now-burstAt-72)/560,0,1),mat2=releaseRing2.material as T.MeshBasicMaterial;
     releaseRing2.scale.setScalar(scale*(.2+bp2*4.3)*(.72+burstPower*.62));releaseRing2.rotation.z=-time*1.15;mat2.opacity=(now-burstAt<72?0:(1-bp2)*(.26+burstPower*.43));
     const pos=burstGeometry.getAttribute('position').array as Float32Array;
     for(let i=0;i<count;i++){const p=directions[i],d=p.speed*bp*(.45+burstPower*.7);pos[3*i]=Math.cos(p.angle)*d;pos[3*i+1]=Math.sin(p.angle)*d;pos[3*i+2]=p.depth*bp}
     burstGeometry.getAttribute('position').needsUpdate=true;burstMaterial.opacity=(1-bp)*(.3+burstPower*.55);releaseRing.visible=true;releaseRing2.visible=true;burstParticles.visible=true;
-   }else{releaseRing.visible=false;releaseRing2.visible=false;burstParticles.visible=false;burstMaterial.opacity=0}
+   }else{releaseRing.visible=false;releaseRing2.visible=false;impactFlash.visible=false;burstParticles.visible=false;burstMaterial.opacity=0}
 
    // Fade the persistent palm trail in-place; the geometry buffers are reused every frame.
    const trailFade=Math.max(0,dt/1000)/.23;let trailActive=false;
@@ -205,6 +240,10 @@ export default function ThreeEffects({trackingRef,activeJutsu,chargeLevel}:Props
    if(active){
     rasengan.root.position.copy(anchor);const motion=1+clamp(motionSpeed*.72,0,1.35),pulse=Math.sin(time*13.5)*(.012+charge*.025);
     const chargePhase=charge<.35?0:charge<.78?1:2;
+    const outerShell=rasengan.shell.material as T.ShaderMaterial;
+    outerShell.uniforms.uTime.value=time;outerShell.uniforms.uCharge.value=charge;
+    rasengan.shell.rotation.set(Math.sin(time*1.1)*.12,time*(.16+charge*.34),time*(.42+charge*.6));
+    rasengan.shell.scale.setScalar(1+Math.sin(time*7.5)*.012+charge*.045);
     rasengan.root.scale.setScalar(scale*(.78+charge*.64+pulse)*(chargePhase===2?1.035:1));rasengan.halo.scale.setScalar(.95+charge*.24+Math.sin(time*7.2)*.035);
     const haloMaterial=rasengan.halo.material as T.MeshBasicMaterial;
     if(chargePhase!==chargePhaseLast){const haloHex=chargePhase===0?0x258cff:chargePhase===1?0x31caff:0x9cefff;haloMaterial.color.setHex(haloHex);(rasengan.core.material as T.ShaderMaterial).uniforms.uBaseColor.value.setHex(chargePhase===0?0x168dff:chargePhase===1?0x26bfff:0x85e9ff);chargePhaseLast=chargePhase}

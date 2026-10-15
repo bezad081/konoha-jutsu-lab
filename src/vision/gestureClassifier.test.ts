@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyHand, readJutsu, type Point } from './gestureClassifier';
+import { classifyHand, isPalmFacingCamera, readJutsu, type Point } from './gestureClassifier';
 
 function makeHand(extended: boolean[]): Point[] {
   const points: Point[] = Array.from({ length: 21 }, () => ({ x: 0.5, y: 0.5, z: 0 }));
@@ -25,24 +25,62 @@ function rotateHand(points: Point[], depthTilt: number, imageRoll: number): Poin
   });
 }
 
+function showBackOfHand(points: Point[]): Point[] {
+  return points.map((point) => ({ ...point, x: 1 - point.x }));
+}
+
 describe('Rasengan gesture classifier', () => {
-  it('recognizes a stable open palm', () => expect(classifyHand(makeHand([true, true, true, true]))).toBe('open'));
-  it('recognizes an open palm when it turns edge-on in depth', () => {
-    expect(classifyHand(rotateHand(makeHand([true, true, true, true]), 68 * Math.PI / 180, 0))).toBe('open');
+  const palm = () => makeHand([true, true, true, true]);
+
+  it('recognizes an open palm facing the camera', () => {
+    const hand = palm();
+    expect(isPalmFacingCamera(hand, 'Left')).toBe(true);
+    expect(classifyHand(hand, 'Left')).toBe('open');
   });
-  it('recognizes an open palm after a large in-frame rotation', () => {
-    expect(classifyHand(rotateHand(makeHand([true, true, true, true]), 35 * Math.PI / 180, 77 * Math.PI / 180))).toBe('open');
+
+  it('does not activate for the back of the same hand', () => {
+    const back = showBackOfHand(palm());
+    expect(isPalmFacingCamera(back, 'Left')).toBe(false);
+    expect(classifyHand(back, 'Left')).toBe('none');
   });
-  it('recognizes a closed fist', () => expect(classifyHand(makeHand([false, false, false, false]))).toBe('fist'));
-  it('keeps ambiguous two-finger poses neutral', () => expect(classifyHand(makeHand([true, true, false, false]))).toBe('none'));
-  it('ignores incomplete landmark arrays', () => expect(classifyHand([{ x: 0.5, y: 0.5, z: 0 }])).toBe('none'));
-  it('casts with exactly one open palm', () => {
-    expect(readJutsu([makeHand([true, true, true, true])])).toEqual({ jutsu: 'rasengan', gesture: 'open', handIndex: 0 });
+
+  it('recognizes the other hand when its palm faces the camera', () => {
+    const otherPalm = showBackOfHand(palm());
+    expect(isPalmFacingCamera(otherPalm, 'Right')).toBe(true);
+    expect(classifyHand(otherPalm, 'Right')).toBe('open');
   });
-  it('does not cast when both hands are open', () => {
-    expect(readJutsu([makeHand([true, true, true, true]), makeHand([true, true, true, true])])).toEqual({ jutsu: 'none', gesture: 'none' });
+
+  it('keeps working through an oblique palm angle', () => {
+    const obliquePalm = rotateHand(palm(), 68 * Math.PI / 180, 77 * Math.PI / 180);
+    expect(classifyHand(obliquePalm, 'Left')).toBe('open');
   });
-  it('reports the fist pose as the release gesture', () => {
-    expect(readJutsu([makeHand([false, false, false, false])])).toEqual({ jutsu: 'none', gesture: 'fist' });
+
+  it('rejects an almost edge-on palm instead of guessing', () => {
+    const edgeOnPalm = rotateHand(palm(), 86 * Math.PI / 180, 0);
+    expect(classifyHand(edgeOnPalm, 'Left')).toBe('none');
+  });
+
+  it('recognizes a closed fist even without a reliable facing estimate', () => {
+    expect(classifyHand(makeHand([false, false, false, false]))).toBe('fist');
+  });
+
+  it('keeps ambiguous two-finger poses neutral', () => {
+    expect(classifyHand(makeHand([true, true, false, false]), 'Left')).toBe('none');
+  });
+
+  it('ignores incomplete landmark arrays', () => {
+    expect(classifyHand([{ x: 0.5, y: 0.5, z: 0 }], 'Left')).toBe('none');
+  });
+
+  it('casts with exactly one camera-facing open palm', () => {
+    expect(readJutsu([palm()], ['Left'])).toEqual({ jutsu: 'rasengan', gesture: 'open', handIndex: 0 });
+  });
+
+  it('does not cast if the shown hand is a back-of-hand pose', () => {
+    expect(readJutsu([showBackOfHand(palm())], ['Left'])).toEqual({ jutsu: 'none', gesture: 'none' });
+  });
+
+  it('does not cast when both palms face the camera', () => {
+    expect(readJutsu([palm(), showBackOfHand(palm())], ['Left', 'Right'])).toEqual({ jutsu: 'none', gesture: 'none' });
   });
 });

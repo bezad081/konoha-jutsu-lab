@@ -416,7 +416,7 @@ export default function App() {
           });
           oneEuroFiltersRef.current = nextFilters;
           smoothedHandednessRef.current = currentHandedness;
-          const rawDetected = readJutsu(rawHands), count = rawHands.length;
+          const rawDetected = readJutsu(rawHands, currentHandedness), count = rawHands.length;
           if (rawDetected.jutsu === 'rasengan' && rawDetected.handIndex !== undefined) effectHandIndexRef.current = rawDetected.handIndex;
           const voteHistory = gestureVoteHistoryRef.current;
           voteHistory.push({ ...rawDetected, at: now });

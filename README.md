@@ -7,8 +7,8 @@ A focused React + TypeScript + Vite browser experience: use one open palm to sum
 - One technique only: Rasengan.
 - Live mirrored webcam preview with an optional hand-landmark overlay.
 - MediaPipe Hand Landmarker processes one hand in the browser, using a Web Worker with GPU/CPU fallback and a main-thread compatibility fallback.
-- Open-palm detection with short temporal confirmation to reduce accidental casts without adding much lag; classifier regression tests cover open palms, fists, ambiguous poses, and two-hand input.
-- Procedural Three.js/WebGL Rasengan: animated shader core, counter-rotating orbit rings, spiral chakra filaments, orbiting particles, a soft energy halo, and a release burst.
+- Open-palm detection checks both extended fingers and the camera-facing side of the palm using the hand-plane normal plus MediaPipe handedness; a back-of-hand pose is rejected, with regression tests for rotated palms and both hand sides.
+- Procedural Three.js/WebGL Rasengan: animated shader core, a second swirling energy shell, counter-rotating orbit rings, six spiral chakra filaments, orbiting particles, a soft energy halo, a release flash, and layered shockwaves.
 - Motion-aware positioning: the orb follows the palm with smoothed velocity prediction and adapts its follow rate to hand speed.
 - Adaptive rendering targets 60 FPS and falls back to 30 FPS with a lower pixel ratio on slower devices.
 - Three.js effects load on demand; the main-thread MediaPipe compatibility path is dynamically imported only when the worker cannot run.
