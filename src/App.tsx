@@ -91,6 +91,38 @@ const INFO: Record<Exclude<Jutsu, 'none'>, { name: string; color: string }> = {
   rasengan: { name: 'Rasengan', color: 'blue' },
 };
 
+function filterOneEuro(value: number, previous: OneEuroAxis | undefined, now: number): { value: number; state: OneEuroAxis } {
+  if (!previous) return { value, state: { raw: value, filtered: value, derivative: 0, at: now } };
+  const dt = Math.max(1 / 120, Math.min(0.12, (now - previous.at) / 1000));
+  const alpha = (cutoff: number) => {
+    const tau = 1 / (2 * Math.PI * cutoff);
+    return 1 / (1 + tau / dt);
+  };
+  const rawDerivative = (value - previous.raw) / dt;
+  const derivativeAlpha = alpha(1.0);
+  const derivative = previous.derivative + derivativeAlpha * (rawDerivative - previous.derivative);
+  // Normalized video coordinates need a larger beta than pixel-space examples.
+  const cutoff = 3.2 + 11.0 * Math.abs(derivative);
+  const valueAlpha = alpha(cutoff);
+  const filtered = previous.filtered + valueAlpha * (value - previous.filtered);
+  return { value: filtered, state: { raw: value, filtered, derivative, at: now } };
+}
+
+function playJutsuCue(audio: AudioContext, _jutsu: 'rasengan') {
+  const now = audio.currentTime;
+  const master = audio.createGain(); master.gain.value = 0.34; master.connect(audio.destination);
+  const oscillator = audio.createOscillator(), overtone = audio.createOscillator();
+  const filter = audio.createBiquadFilter(), gain = audio.createGain();
+  oscillator.type = 'sine'; overtone.type = 'triangle'; filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(720, now); filter.frequency.exponentialRampToValueAtTime(190, now + 0.55);
+  oscillator.frequency.setValueAtTime(180, now); oscillator.frequency.exponentialRampToValueAtTime(62, now + 0.56);
+  overtone.frequency.setValueAtTime(360, now); overtone.frequency.exponentialRampToValueAtTime(124, now + 0.52);
+  gain.gain.setValueAtTime(0.0001, now); gain.gain.exponentialRampToValueAtTime(0.42, now + 0.06);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.58);
+  oscillator.connect(filter); overtone.connect(filter); filter.connect(gain); gain.connect(master);
+  oscillator.start(now); overtone.start(now); oscillator.stop(now + 0.6); overtone.stop(now + 0.6);
+}
+
 function drawLandmarks(ctx: CanvasRenderingContext2D, hands: Point[][], w: number, h: number) {
   ctx.save(); ctx.lineWidth = Math.max(1.5, w * 0.002); ctx.lineCap = 'round';
   for (const hand of hands) {
