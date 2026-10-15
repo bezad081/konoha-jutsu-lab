@@ -1,7 +1,7 @@
 import { useEffect, useRef, type RefObject } from 'react';
 import * as T from 'three';
 export type EffectPoint = { x:number; y:number; z?:number };
-export type ThreeTrackingState = { hands:EffectPoint[][]; effectHands?:EffectPoint[][]; effectHandIndex?:number };
+export type ThreeTrackingState = { hands:EffectPoint[][]; effectHands?:EffectPoint[][]; effectHandIndex?:number; sampledAt?:number };
 type Props = { trackingRef:RefObject<ThreeTrackingState>; activeJutsu:string; chargeLevel:number };
 type RasenganFx = { root:T.Group; halo:T.Mesh; core:T.Mesh; innerCore:T.Mesh; rings:T.Mesh[]; spirals:T.Line[]; particles:T.Points };
 const additive=T.AdditiveBlending;
@@ -141,13 +141,13 @@ export default function ThreeEffects({trackingRef,activeJutsu,chargeLevel}:Props
   const screen=(p:{x:number;y:number},w:number,h:number)=>new T.Vector3((.5-p.x)*w,(.5-p.y)*h,0);
   const draw=()=>{
    raf=requestAnimationFrame(draw);const now=performance.now();if(now-lastAt<targetMs)return;const dt=lastAt?now-lastAt:16.7;lastAt=now;const time=now/1000,w=Math.max(1,element.clientWidth),h=Math.max(1,element.clientHeight),min=Math.min(w,h),state=trackingRef.current,props=latest.current;
-   const hands=state?.effectHands?.length?state.effectHands:(state?.hands??[]),active=props.activeJutsu==='rasengan',scale=min/360,charge=clamp(props.chargeLevel/100,0,1);
+   const hands=state?.effectHands?.length?state.effectHands:(state?.hands??[]),active=props.activeJutsu==='rasengan',scale=min/360,charge=clamp(props.chargeLevel/100,0,1),sampleAt=state?.sampledAt&&state.sampledAt>0?state.sampledAt:now;
    if(active){
     const hand=hands[state?.effectHandIndex??0]??hands[0],center=palmCenter(hand);
     if(center){const target=screen(center,w,h);
-     if(!anchorReady||previous!=='rasengan'){anchor.copy(target);observed.copy(target);predicted.copy(target);velocity.set(0,0,0);observedAt=now;motionSpeed=0;anchorReady=true;lastCharge=0}
+     if(!anchorReady||previous!=='rasengan'){anchor.copy(target);observed.copy(target);predicted.copy(target);velocity.set(0,0,0);observedAt=sampleAt;motionSpeed=0;anchorReady=true;lastCharge=0}
      else{const moved=target.distanceTo(observed);
-      if(moved>.12){const elapsed=clamp((now-observedAt)/1000,.012,.12);velocity.lerp(target.clone().sub(observed).divideScalar(elapsed),.82);motionSpeed=velocity.length()/Math.max(1,min);observed.copy(target);observedAt=now}
+      if(moved>.12){const elapsed=clamp((sampleAt-observedAt)/1000,.012,.12);velocity.lerp(target.clone().sub(observed).divideScalar(elapsed),.82);motionSpeed=velocity.length()/Math.max(1,min);observed.copy(target);observedAt=sampleAt}
       else{velocity.multiplyScalar(Math.exp(-dt/100));motionSpeed=velocity.length()/Math.max(1,min)}
       predicted.copy(target);const pred=Math.min(.026,Math.max(.010,dt/1000*1.05));let lx=velocity.x*pred,ly=velocity.y*pred;const lead=Math.hypot(lx,ly),cap=min*.048;
       if(lead>cap&&lead>0){lx*=cap/lead;ly*=cap/lead}predicted.x+=lx;predicted.y+=ly;
@@ -156,7 +156,7 @@ export default function ThreeEffects({trackingRef,activeJutsu,chargeLevel}:Props
     }else if(!anchorReady){anchor.set(0,0,0);anchorReady=true}
     lastCharge=Math.max(lastCharge,charge);
    }
-   if(previous==='rasengan'&&!active&&anchorReady){burstAt=now;burstCenter.copy(anchor);burstPower=clamp(Math.max(lastCharge,charge),.2,1);releaseRing.position.copy(burstCenter);releaseRing.position.z=18;releaseRing.visible=true;burstParticles.position.copy(burstCenter);burstParticles.position.z=19;burstParticles.visible=true}
+   if(previous==='rasengan'&&!active&&anchorReady){burstAt=now;burstCenter.copy(anchor);burstPower=clamp(Math.max(lastCharge,charge)*.82+clamp(motionSpeed*.15,0,.18),.2,1);releaseRing.position.copy(burstCenter);releaseRing.position.z=18;releaseRing.visible=true;burstParticles.position.copy(burstCenter);burstParticles.position.z=19;burstParticles.visible=true}
    previous=active?'rasengan':'none';
    const bp=clamp((now-burstAt)/460,0,1),burstActive=now-burstAt<460;
    if(burstActive){const mat=releaseRing.material as T.MeshBasicMaterial;releaseRing.scale.setScalar(scale*(.45+bp*3.7)*(.65+burstPower*.55));releaseRing.rotation.z=time*1.7;mat.opacity=(1-bp)*(.28+burstPower*.52);

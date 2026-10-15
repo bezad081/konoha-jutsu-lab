@@ -7,13 +7,14 @@ A focused React + TypeScript + Vite browser experience: use one open palm to sum
 - One technique only: Rasengan.
 - Live mirrored webcam preview with an optional hand-landmark overlay.
 - MediaPipe Hand Landmarker processes one hand in the browser, using a Web Worker with GPU/CPU fallback and a main-thread compatibility fallback.
-- Open-palm detection with short temporal confirmation to reduce accidental casts without adding much lag.
+- Open-palm detection with short temporal confirmation to reduce accidental casts without adding much lag; classifier regression tests cover open palms, fists, ambiguous poses, and two-hand input.
 - Procedural Three.js/WebGL Rasengan: animated shader core, counter-rotating orbit rings, spiral chakra filaments, orbiting particles, a soft energy halo, and a release burst.
 - Motion-aware positioning: the orb follows the palm with smoothed velocity prediction and adapts its follow rate to hand speed.
 - Adaptive rendering targets 60 FPS and falls back to 30 FPS with a lower pixel ratio on slower devices.
 - Three.js effects load on demand; the main-thread MediaPipe compatibility path is dynamically imported only when the worker cannot run.
 - Camera frames and hand landmarks stay in the browser; video is not uploaded to an application backend.
 - Responsive desktop/mobile UI, camera-permission messaging, synthesized chakra sound, and a manual preview.
+- The Rasengan technique card displays an anime still credited by Looper to TXN (TV Tokyo)/YouTube; the image is remotely hosted by Looper. Check asset permissions before redistribution or commercial use.
 
 ## Run locally
 
@@ -43,4 +44,4 @@ Pushes to `main` build and deploy `dist/` through GitHub Actions. Set Pages sour
 
 ## Design and licensing notes
 
-The live Rasengan uses procedural Three.js geometry and shaders; no anime footage or external character sprites are used by the effect. Naruto and Rasengan are franchise terms owned by their respective rights holders. Audit dependencies, branding, and asset licenses before public or commercial release.
+The live Rasengan effect uses procedural Three.js geometry and shaders; the separate technique-card thumbnail uses an externally hosted anime still. Naruto and Rasengan are franchise terms owned by their respective rights holders. Audit dependencies, branding, and asset licenses before public or commercial release.

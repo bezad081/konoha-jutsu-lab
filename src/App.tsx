@@ -5,13 +5,11 @@ import {
 } from 'lucide-react';
 import type { HandLandmarker, HandLandmarkerResult } from '@mediapipe/tasks-vision';
 import type { ThreeTrackingState } from './ThreeEffects';
+import { readJutsu, type Gesture, type Jutsu, type Point } from './vision/gestureClassifier';
 
 // Keep the initial screen light: load WebGL effects only when the user previews or casts Rasengan.
 const ThreeEffects = lazy(() => import('./ThreeEffects'));
 
-type Jutsu = 'none' | 'rasengan';
-type Gesture = 'none' | 'open' | 'fist';
-type Point = { x: number; y: number; z: number };
 type OneEuroAxis = { raw: number; filtered: number; derivative: number; at: number };
 type OneEuroPoint = { x: OneEuroAxis; y: OneEuroAxis; z: OneEuroAxis };
 type WorkerHandPayload = { landmarks: Point[][]; handedness?: Array<Array<{ categoryName: string }>>; worldLandmarks?: Point[][] };
@@ -93,75 +91,6 @@ const INFO: Record<Exclude<Jutsu, 'none'>, { name: string; color: string }> = {
   rasengan: { name: 'Rasengan', color: 'blue' },
 };
 
-function dist(a: Point, b: Point) {
-  return Math.hypot(a.x - b.x, a.y - b.y, (a.z - b.z) * 0.5);
-}
-function fingerExtended(points: Point[], tip: number, pip: number, mcp: number) {
-  if (points.length < 21) return false;
-  const dip = points[tip - 1];
-  const base = points[mcp], joint = points[pip];
-  // Prefer the PIP bend angle to wrist-distance alone, which is more stable
-  // when the palm is rotated toward or away from the camera.
-  const ax = base.x - joint.x, ay = base.y - joint.y, az = (base.z - joint.z) * 0.35;
-  const bx = dip.x - joint.x, by = dip.y - joint.y, bz = (dip.z - joint.z) * 0.35;
-  const la = Math.hypot(ax, ay, az), lb = Math.hypot(bx, by, bz);
-  if (la < 1e-5 || lb < 1e-5) return false;
-  const cosine = Math.max(-1, Math.min(1, (ax * bx + ay * by + az * bz) / (la * lb)));
-  const angle = Math.acos(cosine) * 180 / Math.PI;
-  return angle > 148 && dist(points[tip], points[mcp]) > dist(points[pip], points[mcp]) * 1.08;
-}
-function filterOneEuro(value: number, previous: OneEuroAxis | undefined, now: number): { value: number; state: OneEuroAxis } {
-  if (!previous) return { value, state: { raw: value, filtered: value, derivative: 0, at: now } };
-  const dt = Math.max(1 / 120, Math.min(0.12, (now - previous.at) / 1000));
-  const alpha = (cutoff: number) => {
-    const tau = 1 / (2 * Math.PI * cutoff);
-    return 1 / (1 + tau / dt);
-  };
-  const rawDerivative = (value - previous.raw) / dt;
-  const derivativeAlpha = alpha(1.0);
-  const derivative = previous.derivative + derivativeAlpha * (rawDerivative - previous.derivative);
-  // Normalized video coordinates need a larger beta than pixel-space examples.
-  const cutoff = 3.2 + 11.0 * Math.abs(derivative);
-  const valueAlpha = alpha(cutoff);
-  const filtered = previous.filtered + valueAlpha * (value - previous.filtered);
-  return { value: filtered, state: { raw: value, filtered, derivative, at: now } };
-}
-function classify(points: Point[]): Gesture {
-  if (points.length < 21) return 'none';
-  const extended = [
-    fingerExtended(points, 8, 6, 5),
-    fingerExtended(points, 12, 10, 9),
-    fingerExtended(points, 16, 14, 13),
-    fingerExtended(points, 20, 18, 17),
-  ];
-  const count = extended.filter(Boolean).length;
-  if (count >= 3) return 'open';
-  if (count <= 1) return 'fist';
-  return 'none';
-}
-function playJutsuCue(audio: AudioContext, _jutsu: 'rasengan') {
-  const now = audio.currentTime;
-  const master = audio.createGain(); master.gain.value = 0.34; master.connect(audio.destination);
-  const oscillator = audio.createOscillator(), overtone = audio.createOscillator();
-  const filter = audio.createBiquadFilter(), gain = audio.createGain();
-  oscillator.type = 'sine'; overtone.type = 'triangle'; filter.type = 'lowpass';
-  filter.frequency.setValueAtTime(720, now); filter.frequency.exponentialRampToValueAtTime(190, now + 0.55);
-  oscillator.frequency.setValueAtTime(180, now); oscillator.frequency.exponentialRampToValueAtTime(62, now + 0.56);
-  overtone.frequency.setValueAtTime(360, now); overtone.frequency.exponentialRampToValueAtTime(124, now + 0.52);
-  gain.gain.setValueAtTime(0.0001, now); gain.gain.exponentialRampToValueAtTime(0.42, now + 0.06);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.58);
-  oscillator.connect(filter); overtone.connect(filter); filter.connect(gain); gain.connect(master);
-  oscillator.start(now); overtone.start(now); oscillator.stop(now + 0.6); overtone.stop(now + 0.6);
-}
-function readJutsu(result: HandLandmarkerResult | null): { jutsu: Jutsu; gesture: Gesture; handIndex?: number } {
-  const hands = (result?.landmarks ?? []) as Point[][];
-  const gestures = hands.map((hand) => classify(hand));
-  const openHands = gestures.map((gesture, index) => gesture === 'open' ? index : -1).filter((index) => index >= 0);
-  // A single open palm is sufficient; don't reject it due to noisy 3D orientation landmarks.
-  if (openHands.length === 1) return { jutsu: 'rasengan', gesture: 'open', handIndex: openHands[0] };
-  if (gestures.includes('fist')) return { jutsu: 'none', gesture: 'fist' };
-  return { jutsu: 'none', gesture: 'none' };
-}
 function drawLandmarks(ctx: CanvasRenderingContext2D, hands: Point[][], w: number, h: number) {
   ctx.save(); ctx.lineWidth = Math.max(1.5, w * 0.002); ctx.lineCap = 'round';
   for (const hand of hands) {
@@ -192,7 +121,7 @@ export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const threeTrackingRef = useRef<ThreeTrackingState>({ hands: [], effectHands: [], effectHandIndex: 0 });
+  const threeTrackingRef = useRef<ThreeTrackingState>({ hands: [], effectHands: [], effectHandIndex: 0, sampledAt: 0 });
   const effectHandIndexRef = useRef(0);
   const trackerRef = useRef<HandLandmarker | null>(null);
   const visionWorkerRef = useRef<Worker | null>(null);
@@ -300,6 +229,7 @@ export default function App() {
       let workerMode = false;
       let workerBusy = false;
       let inferencePending = false;
+      let latestTimestamp = 0;
       let latest: HandLandmarkerResult | null = null;
       let workerDelegate = 'GPU';
 
@@ -336,6 +266,7 @@ export default function App() {
             if (visionWorkerRef.current !== activeWorker) return;
             if (message.type === 'result') {
               latest = message.hands as unknown as HandLandmarkerResult;
+              latestTimestamp = message.timestamp;
               inferencePending = true;
               workerBusy = false;
             } else if (message.type === 'delegate-changed') {
@@ -408,6 +339,7 @@ export default function App() {
             }
           } else if (model) {
             latest = model.detectForVideo(v, now);
+            latestTimestamp = now;
             inferencePending = true;
           }
         }
@@ -440,7 +372,7 @@ export default function App() {
           });
           oneEuroFiltersRef.current = nextFilters;
           smoothedHandednessRef.current = currentHandedness;
-          const rawDetected = readJutsu(latest), count = rawHands.length;
+          const rawDetected = readJutsu(rawHands), count = rawHands.length;
           if (rawDetected.jutsu === 'rasengan' && rawDetected.handIndex !== undefined) effectHandIndexRef.current = rawDetected.handIndex;
           const voteHistory = gestureVoteHistoryRef.current;
           voteHistory.push({ ...rawDetected, at: now });
@@ -478,7 +410,7 @@ export default function App() {
             candidate = 'none'; candidateAt = 0;
             if (!noPoseAt) noPoseAt = now;
             const previewStillVisible = now < previewUntilRef.current;
-            if (activeRef.current === 'rasengan' && !previewStillVisible && now > castUntilRef.current && now - noPoseAt > (detected.gesture === 'fist' ? 100 : 260)) {
+            if (activeRef.current === 'rasengan' && !previewStillVisible && now > castUntilRef.current && now - noPoseAt > (detected.gesture === 'fist' ? 90 : 300)) {
               switchJutsu('none'); castUntilRef.current = 0; noPoseAt = 0;
               setGestureLabel('Chakra released · show one open palm to cast again');
             } else if (activeRef.current === 'rasengan') setGestureLabel('Rasengan sustained · keep one open palm in view');
@@ -498,6 +430,7 @@ export default function App() {
           hands: smoothedLandmarksRef.current,
           effectHands: effectLandmarksRef.current,
           effectHandIndex: effectHandIndexRef.current,
+          sampledAt: latestTimestamp,
         }
         rafRef.current = requestAnimationFrame(frame);
       };
@@ -617,7 +550,7 @@ export default function App() {
           <div className="panel-heading"><div><span className="section-kicker">02 / SIGNATURE TECHNIQUE</span><h2>Rasengan control</h2></div><span className="mini-count">01</span></div>
           <div className="jutsu-list">
             <button className={'jutsu-card blue-card ' + (activeJutsu === 'rasengan' ? 'is-active' : '')} onClick={() => preview('rasengan')}>
-              <div className="jutsu-art rasengan-art"><span className="orb-core" /><span className="orb-ring ring-one" /><span className="orb-ring ring-two" /><span className="orb-spark s1" /><span className="orb-spark s2" /></div>
+              <div className="jutsu-art rasengan-art"><img className="rasengan-reference-photo" src="https://www.looper.com/img/gallery/the-most-important-jutsu-that-naruto-ever-learned/the-rasengan-is-no-slouch-either-1655876917.jpg" alt="Naruto forming a blue Rasengan" loading="eager" decoding="async" /></div>
               <div className="jutsu-copy"><div className="jutsu-overline">WIND / CHAKRA</div><h3>Rasengan</h3><p>Open your palm to summon chakra. The orb follows your hand, intensifies as it charges, and releases in a burst.</p><div className="jutsu-foot"><span className="difficulty easy">BEGINNER</span><span className="card-action">Preview <CirclePlay size={13} /></span></div></div><span className="card-number">01</span>
             </button>
 

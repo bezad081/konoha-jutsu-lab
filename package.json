@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "predev": "node scripts/prepare-mediapipe.mjs",
-    "prebuild": "node scripts/prepare-mediapipe.mjs"
+    "prebuild": "node scripts/prepare-mediapipe.mjs",
+    "test": "vitest run"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "0.10.21",
@@ -23,6 +24,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "~5.6.3",
     "vite": "^6.0.1",
-    "@types/three": "^0.180.0"
+    "@types/three": "^0.180.0",
+    "vitest": "^2.1.8"
   }
 }
