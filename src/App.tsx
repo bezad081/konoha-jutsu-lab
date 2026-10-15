@@ -227,9 +227,9 @@ export default function App() {
   useEffect(() => { landmarksRef.current = showLandmarks; }, [showLandmarks]);
   useEffect(() => {
     if (activeJutsu === 'none') { setChargeLevel(0); return; }
-    const tick = () => setChargeLevel(Math.min(100, Math.round(Math.max(0, performance.now() - jutsuStartedAtRef.current) / 2600 * 100)));
+    const tick = () => setChargeLevel(Math.min(100, Math.round(Math.max(0, performance.now() - jutsuStartedAtRef.current) / 1850 * 100)));
     tick();
-    const timer = window.setInterval(tick, 90);
+    const timer = window.setInterval(tick, 50);
     return () => window.clearInterval(timer);
   }, [activeJutsu]);
 
@@ -281,7 +281,7 @@ export default function App() {
     stopCamera(); setCameraState('loading'); setError(''); setGestureLabel('Loading the Rasengan hand tracker…'); setTrackingEngine('starting');
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false, video: { facingMode: 'user', width: { ideal: 960 }, height: { ideal: 540 }, frameRate: { ideal: 30, max: 30 } }
+        audio: false, video: { facingMode: 'user', width: { ideal: 960 }, height: { ideal: 540 }, frameRate: { ideal: 60, max: 60 } }
       });
       streamRef.current = stream;
       const video = videoRef.current;
@@ -441,7 +441,7 @@ export default function App() {
           const voteHistory = gestureVoteHistoryRef.current;
           voteHistory.push({ ...rawDetected, at: now });
           // A short temporal vote suppresses single-frame flicker without adding much lag.
-          while (voteHistory.length > 5 || (voteHistory[0] && now - voteHistory[0].at > 320)) voteHistory.shift();
+          while (voteHistory.length > 3 || (voteHistory[0] && now - voteHistory[0].at > 220)) voteHistory.shift();
           const votes = new Map<string, { jutsu: Jutsu; gesture: Gesture; count: number }>();
           for (const sample of voteHistory) {
             const key = sample.jutsu + ':' + sample.gesture;
@@ -451,7 +451,7 @@ export default function App() {
           }
           let winner: { jutsu: Jutsu; gesture: Gesture; count: number } | undefined;
           for (const vote of votes.values()) if (!winner || vote.count > winner.count) winner = vote;
-          const detected = winner && winner.count >= 3
+          const detected = winner && winner.count >= 2
             ? { jutsu: winner.jutsu, gesture: winner.gesture }
             : { jutsu: 'none' as const, gesture: rawDetected.gesture };
           setHandCount(count);
@@ -462,7 +462,7 @@ export default function App() {
             castUntilRef.current = 0;
             if (activeRef.current !== 'rasengan') {
               if (candidate !== 'rasengan') { candidate = 'rasengan'; candidateAt = now; }
-              if (now - candidateAt >= 145) {
+              if (now - candidateAt >= 55) {
                 switchJutsu('rasengan'); candidate = 'none'; candidateAt = 0;
                 setGestureLabel('Rasengan formed · keep your open palm in frame to build chakra');
               } else setGestureLabel('Open palm detected · focus chakra');
@@ -474,12 +474,13 @@ export default function App() {
             candidate = 'none'; candidateAt = 0;
             if (!noPoseAt) noPoseAt = now;
             const previewStillVisible = now < previewUntilRef.current;
-            if (activeRef.current === 'rasengan' && !previewStillVisible && now > castUntilRef.current && now - noPoseAt > 650) {
+            if (activeRef.current === 'rasengan' && !previewStillVisible && now > castUntilRef.current && now - noPoseAt > (detected.gesture === 'fist' ? 100 : 260)) {
               switchJutsu('none'); castUntilRef.current = 0; noPoseAt = 0;
               setGestureLabel('Chakra released · show one open palm to cast again');
             } else if (activeRef.current === 'rasengan') setGestureLabel('Rasengan sustained · keep one open palm in view');
             else setGestureLabel(count ? 'Hand detected · face one open palm toward the camera' : 'Move one hand into the frame');
           }
+        }
         if (overlayDirty) {
           const ctx = canvas.getContext('2d');
           if (ctx) {
@@ -556,7 +557,7 @@ export default function App() {
       <header className="topbar">
         <a className="brand" href="#top" aria-label="Konoha Jutsu Lab home">
           <div className="brand-mark"><Sparkles size={21} /></div>
-          <div><strong>KONOHA <span>JUTSU LAB</span></strong><small>RASENGAN · CHAKRA CONTROL</small></div>
+          <div><strong>KONOHA <span>RASENGAN LAB</span></strong><small>RASENGAN · CHAKRA CONTROL</small></div>
         </a>
         <div className="topbar-right"><div className="build-chip"><span className="status-dot" /> ONE SIGNATURE JUTSU</div>
           <button className="icon-button" onClick={() => setHelpOpen((v) => !v)} aria-label="Toggle instructions"><CircleHelp size={18} /></button>
@@ -632,7 +633,7 @@ export default function App() {
         <div className="bottom-card mission-card"><div className="bottom-icon"><Lightbulb size={18} /></div><div><div className="section-kicker">YOUR FIRST MISSION</div><h3>Land your first clean cast</h3><p>Raise one open palm toward the camera and hold it steady while the orb forms. Once it starts glowing, move your hand smoothly: the Rasengan follows your palm, accelerates with your motion, and flashes outward when you release it.</p></div><ChevronDown size={18} className="muted-chevron" /></div>
         <div className="bottom-card privacy-card"><div className="bottom-icon green-icon"><ShieldCheck size={18} /></div><div><div className="section-kicker">PRIVACY BY DESIGN</div><h3>Your video stays on your device</h3><p>Hand landmarks are processed in the browser. The model is fetched from a public CDN the first time; camera footage is not sent to a server by this prototype.</p></div><Check size={18} className="privacy-check" /></div>
       </section>
-      <footer className="footer"><div><span className="footer-mark">木ノ葉</span><span> KONOHA JUTSU LAB</span><span className="footer-dim"> · Early access prototype</span></div><div><span className="footer-dim">ONE HAND · MEDIAPIPE · THREE.JS / WEBGL</span><a href="https://github.com/FavorPan/naruto" target="_blank" rel="noreferrer">Inspired by open-source experiments <Expand size={12} /></a></div></footer>
+      <footer className="footer"><div><span className="footer-mark">木ノ葉</span><span> KONOHA RASENGAN LAB</span><span className="footer-dim"> · Early access prototype</span></div><div><span className="footer-dim">ONE HAND · MEDIAPIPE · THREE.JS / WEBGL</span><a href="https://github.com/FavorPan/naruto" target="_blank" rel="noreferrer">Inspired by open-source experiments <Expand size={12} /></a></div></footer>
     </main>
   );
 }

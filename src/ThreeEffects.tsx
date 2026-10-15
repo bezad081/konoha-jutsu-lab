@@ -37,16 +37,16 @@ function createRasengan(scene: T.Scene): RasenganFx {
         vec3 n = normalize(vNormalView);
         vec3 viewDir = normalize(vViewPosition);
         float angle = atan(vLocalPosition.y, vLocalPosition.x);
-        float turbulence = sin(vLocalPosition.y * 0.31 + uTime * 2.1)
-                        * cos(vLocalPosition.x * 0.24 - uTime * 1.6);
+        float turbulence = sin(vLocalPosition.y * 0.31 + uTime * 3.8)
+                        * cos(vLocalPosition.x * 0.24 - uTime * 3.1);
         float phase = angle * 12.0 + vLocalPosition.z * 0.38
-                    - uTime * (3.5 + uCharge * 5.0) + turbulence * (1.1 + uCharge * 1.8);
+                    - uTime * (7.0 + uCharge * 8.0) + turbulence * (1.1 + uCharge * 1.8);
         float bands = 0.5 + 0.5 * sin(phase);
         float filaments = smoothstep(0.64 - uCharge * 0.12, 0.98, bands);
-        float fineLines = pow(0.5 + 0.5 * sin(angle * 29.0 - vLocalPosition.z * 0.25 - uTime * 5.0), 10.0);
+        float fineLines = pow(0.5 + 0.5 * sin(angle * 29.0 - vLocalPosition.z * 0.25 - uTime * 9.0), 10.0);
         float fresnel = pow(1.0 - max(0.0, dot(n, viewDir)), 2.15);
         float core = pow(max(0.0, 1.0 - length(vLocalPosition.xy) * 0.041), 2.8);
-        float surge = 0.5 + 0.5 * sin(uTime * (7.0 + uCharge * 5.0) + angle * 4.0);
+        float surge = 0.5 + 0.5 * sin(uTime * (12.0 + uCharge * 8.0) + angle * 4.0);
         vec3 color = mix(uBaseColor, uHotColor,
           clamp(filaments * (0.48 + uCharge * 0.27) + fineLines * 0.2 + fresnel * 0.55 + core * (0.15 + uCharge * 0.3), 0.0, 1.0));
         float alpha = clamp(0.24 + fresnel * 0.55 + filaments * 0.3 + fineLines * 0.13 + core * (0.12 + surge * 0.12), 0.0, 0.96);
@@ -147,11 +147,11 @@ export default function ThreeEffects({trackingRef,activeJutsu,chargeLevel}:Props
     if(center){const target=screen(center,w,h);
      if(!anchorReady||previous!=='rasengan'){anchor.copy(target);observed.copy(target);predicted.copy(target);velocity.set(0,0,0);observedAt=now;motionSpeed=0;anchorReady=true;lastCharge=0}
      else{const moved=target.distanceTo(observed);
-      if(moved>.12){const elapsed=clamp((now-observedAt)/1000,.012,.12);velocity.lerp(target.clone().sub(observed).divideScalar(elapsed),.62);motionSpeed=velocity.length()/Math.max(1,min);observed.copy(target);observedAt=now}
-      else{velocity.multiplyScalar(Math.exp(-dt/170));motionSpeed=velocity.length()/Math.max(1,min)}
-      predicted.copy(target);const pred=Math.min(.014,Math.max(.004,dt/1000*.72));let lx=velocity.x*pred,ly=velocity.y*pred;const lead=Math.hypot(lx,ly),cap=min*.03;
+      if(moved>.12){const elapsed=clamp((now-observedAt)/1000,.012,.12);velocity.lerp(target.clone().sub(observed).divideScalar(elapsed),.82);motionSpeed=velocity.length()/Math.max(1,min);observed.copy(target);observedAt=now}
+      else{velocity.multiplyScalar(Math.exp(-dt/100));motionSpeed=velocity.length()/Math.max(1,min)}
+      predicted.copy(target);const pred=Math.min(.026,Math.max(.010,dt/1000*1.05));let lx=velocity.x*pred,ly=velocity.y*pred;const lead=Math.hypot(lx,ly),cap=min*.048;
       if(lead>cap&&lead>0){lx*=cap/lead;ly*=cap/lead}predicted.x+=lx;predicted.y+=ly;
-      anchor.lerp(predicted,1-Math.exp(-clamp(76+motionSpeed*12,76,158)*Math.max(.008,dt/1000)));
+      anchor.lerp(predicted,1-Math.exp(-clamp(132+motionSpeed*28,132,260)*Math.max(.008,dt/1000)));
      }
     }else if(!anchorReady){anchor.set(0,0,0);anchorReady=true}
     lastCharge=Math.max(lastCharge,charge);
@@ -166,20 +166,20 @@ export default function ThreeEffects({trackingRef,activeJutsu,chargeLevel}:Props
    }else{releaseRing.visible=false;burstParticles.visible=false;burstMaterial.opacity=0}
    rasengan.root.visible=active;
    if(active){
-    rasengan.root.position.copy(anchor);const motion=1+clamp(motionSpeed*.72,0,1.35),pulse=Math.sin(time*8.2)*(.012+charge*.025);
-    rasengan.root.scale.setScalar(scale*(.78+charge*.64+pulse));rasengan.halo.scale.setScalar(.95+charge*.24+Math.sin(time*4.4)*.035);(rasengan.halo.material as T.MeshBasicMaterial).opacity=.055+charge*.09+motionSpeed*.025;
-    const shader=rasengan.core.material as T.ShaderMaterial;shader.uniforms.uTime.value=time;shader.uniforms.uCharge.value=charge;rasengan.innerCore.scale.setScalar(.88+charge*.46+Math.sin(time*8.4)*.08);
-    rasengan.rings.forEach((ring,i)=>{const d=i%2?-1:1;ring.rotation.x=time*(.45+i*.13)*motion+i*.7;ring.rotation.y=time*d*(.62+charge*1.5+i*.14)*motion;ring.rotation.z=time*d*(1.05+charge*1.85)+i*1.3;ring.scale.setScalar(.7+charge*.38+Math.sin(time*6+i)*.035);(ring.material as T.MeshBasicMaterial).opacity=.36+charge*.48});
-    rasengan.spirals.forEach((line,i)=>{line.rotation.z=time*(i%2?-2.45:2.15)*(.68+charge*.7)*(1+clamp(motionSpeed*.7,0,1.2));line.rotation.x=Math.sin(time*1.3+i)*.28;(line.material as T.LineBasicMaterial).opacity=.5+charge*.44});
-    const particles=rasengan.particles;particles.rotation.z=-time*(.45+charge*1.25)*motion;particles.rotation.y=time*(.35+charge*.56)*(1+clamp(motionSpeed*.5,0,.9));(particles.material as T.PointsMaterial).opacity=.34+charge*.54+Math.sin(time*9)*.05;
+    rasengan.root.position.copy(anchor);const motion=1+clamp(motionSpeed*.72,0,1.35),pulse=Math.sin(time*13.5)*(.012+charge*.025);
+    rasengan.root.scale.setScalar(scale*(.78+charge*.64+pulse));rasengan.halo.scale.setScalar(.95+charge*.24+Math.sin(time*7.2)*.035);(rasengan.halo.material as T.MeshBasicMaterial).opacity=.055+charge*.09+motionSpeed*.025;
+    const shader=rasengan.core.material as T.ShaderMaterial;shader.uniforms.uTime.value=time;shader.uniforms.uCharge.value=charge;rasengan.innerCore.scale.setScalar(.88+charge*.46+Math.sin(time*13.2)*.08);
+    rasengan.rings.forEach((ring,i)=>{const d=i%2?-1:1;ring.rotation.x=time*(.8+i*.22)*motion+i*.7;ring.rotation.y=time*d*(1.0+charge*2.1+i*.20)*motion;ring.rotation.z=time*d*(1.8+charge*2.6)+i*1.3;ring.scale.setScalar(.7+charge*.38+Math.sin(time*10+i)*.035);(ring.material as T.MeshBasicMaterial).opacity=.36+charge*.48});
+    rasengan.spirals.forEach((line,i)=>{line.rotation.z=time*(i%2?-4.8:4.2)*(.68+charge*.7)*(1+clamp(motionSpeed*.7,0,1.2));line.rotation.x=Math.sin(time*2.0+i)*.28;(line.material as T.LineBasicMaterial).opacity=.5+charge*.44});
+    const particles=rasengan.particles;particles.rotation.z=-time*(.9+charge*2.0)*motion;particles.rotation.y=time*(.7+charge*1.0)*(1+clamp(motionSpeed*.5,0,.9));(particles.material as T.PointsMaterial).opacity=.34+charge*.54+Math.sin(time*9)*.05;
     const pos=particles.geometry.getAttribute('position').array as Float32Array,seeds=particles.geometry.userData.seeds as Array<{angle:number;radius:number;depth:number;speed:number}>;
-    for(let i=0;i<seeds.length;i++){const s=seeds[i],angle=s.angle+time*s.speed*(.8+charge*1.5),radius=s.radius*(.82+charge*.18)+Math.sin(time*5+i)*1.7;pos[3*i]=Math.cos(angle)*radius;pos[3*i+1]=Math.sin(angle)*radius;pos[3*i+2]=s.depth+Math.sin(time*3+i)*2.4}particles.geometry.getAttribute('position').needsUpdate=true;
+    for(let i=0;i<seeds.length;i++){const s=seeds[i],angle=s.angle+time*s.speed*(1.4+charge*2.0),radius=s.radius*(.82+charge*.18)+Math.sin(time*5+i)*1.7;pos[3*i]=Math.cos(angle)*radius;pos[3*i+1]=Math.sin(angle)*radius;pos[3*i+2]=s.depth+Math.sin(time*3+i)*2.4}particles.geometry.getAttribute('position').needsUpdate=true;
    }
    if(!(active||burstActive)){if(wasDrawing){renderer.clear();wasDrawing=false}return}
    wasDrawing=true;renderer.render(scene,camera);const cost=performance.now()-now;
-   if(cost>21){slow++;fast=0}else if(cost<10){fast++;slow=0}else{slow=0;fast=0}
-   if(slow>=3){targetMs=1000/30;if(pixelRatio>.72){pixelRatio=.72;renderer.setPixelRatio(pixelRatio);resize()}slow=0;fast=0}
-   else if(fast>=90){targetMs=1000/60;const best=Math.min(window.devicePixelRatio||1,1);if(pixelRatio<best){pixelRatio=best;renderer.setPixelRatio(pixelRatio);resize()}fast=0}
+   if(cost>20){slow++;fast=0}else if(cost<12){fast++;slow=0}else{slow=0;fast=0}
+   if(slow>=3){targetMs=1000/45;if(pixelRatio>.72){pixelRatio=.72;renderer.setPixelRatio(pixelRatio);resize()}slow=0;fast=0}
+   else if(fast>=45){targetMs=1000/60;const best=Math.min(window.devicePixelRatio||1,1);if(pixelRatio<best){pixelRatio=best;renderer.setPixelRatio(pixelRatio);resize()}fast=0}
   };
   raf=requestAnimationFrame(draw);
   return()=>{cancelAnimationFrame(raf);ro?.disconnect();scene.traverse(o=>{const m=o as T.Mesh;if(m.geometry)m.geometry.dispose();const mat=m.material;if(mat){if(Array.isArray(mat))mat.forEach(x=>x.dispose());else mat.dispose()}});renderer.dispose();renderer.domElement.remove()};
