@@ -156,11 +156,6 @@ function readJutsu(result: HandLandmarkerResult | null): { jutsu: Jutsu; gesture
   if (gestures.includes('fist')) return { jutsu: 'none', gesture: 'fist' };
   return { jutsu: 'none', gesture: 'none' };
 }
-function palm(points: Point[]) {
-  const ids = [0,5,9,13,17];
-  return ids.reduce((p, i) => ({ x: p.x + points[i].x / ids.length, y: p.y + points[i].y / ids.length }), { x: 0, y: 0 });
-}
-
 function drawLandmarks(ctx: CanvasRenderingContext2D, hands: Point[][], w: number, h: number) {
   ctx.save(); ctx.lineWidth = Math.max(1.5, w * 0.002); ctx.lineCap = 'round';
   for (const hand of hands) {
