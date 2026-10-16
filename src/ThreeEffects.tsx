@@ -359,8 +359,11 @@ export default function ThreeEffects({trackingRef,activeJutsu,chargeLevel}:Props
    raf=requestAnimationFrame(draw);const now=performance.now();if(now-lastAt<targetMs)return;const dt=lastAt?now-lastAt:16.7;lastAt=now;const time=now/1000,w=Math.max(1,element.clientWidth),h=Math.max(1,element.clientHeight),min=Math.min(w,h),state=trackingRef.current,props=latest.current;
    const hands=state?.effectHands?.length?state.effectHands:(state?.hands??[]),handForEffects=hands[state?.effectHandIndex??0]??hands[0],worldForEffects=state?.worldHands?.[state?.effectHandIndex??0],active=props.activeJutsu==='rasengan',scale=min/405,charge=clamp(props.chargeLevel/100,0,1),sampleAt=state?.sampledAt&&state.sampledAt>0?state.sampledAt:now;
    const formationProgress=active&&previous==='rasengan'&&formationStartedAt>0?clamp((now-formationStartedAt)/1080,0,1):0;
+   const grow=formationProgress;
+   const formationScale=grow<.22?.16+.18*ease01(grow/.22):grow<.48?.34+.25*ease01((grow-.22)/.26):grow<.76?.59+.24*ease01((grow-.48)/.28):.83+.17*ease01((grow-.76)/.24);
+   const spinUp=.38+.62*ease01(grow);
    if(active){
-    const center=palmAnchor(handForEffects,worldForEffects,w,h,25*scale);
+    const center=palmAnchor(handForEffects,worldForEffects,w,h,25*scale*formationScale);
     if(center){
      screen(center,w,h,palmSurface);
      targetPoint.copy(palmSurface);
@@ -385,11 +388,11 @@ export default function ThreeEffects({trackingRef,activeJutsu,chargeLevel}:Props
      rasengan.palmAura.visible=true;
      rasengan.palmAura.position.set(palmSurface.x,palmSurface.y,-38);
      rasengan.palmAura.rotation.z=palmAngle;
-     const auraRadius=25*scale;
+     const auraRadius=25*scale*formationScale;
      rasengan.palmAura.scale.set(auraRadius*2.5,auraRadius*.90,1);
      const auraMaterial=rasengan.palmAura.material as T.ShaderMaterial;
      auraMaterial.uniforms.uTime.value=time;
-     auraMaterial.uniforms.uIntensity.value=.44+charge*.18+formationProgress*.12;
+     auraMaterial.uniforms.uIntensity.value=.18+charge*.12+formationProgress*.22;
     }else if(!anchorReady){anchor.set(0,0,0);anchorReady=true;formationStartedAt=0}
     lastCharge=Math.max(lastCharge,charge);
    }
@@ -424,9 +427,6 @@ export default function ThreeEffects({trackingRef,activeJutsu,chargeLevel}:Props
    rasengan.root.visible=active;
    rasengan.palmAura.visible=active&&rasengan.palmAura.visible;
    if(active){
-    const grow=formationProgress;
-    const formationScale=grow<.22?.16+.18*ease01(grow/.22):grow<.48?.34+.25*ease01((grow-.22)/.26):grow<.76?.59+.24*ease01((grow-.48)/.28):.83+.17*ease01((grow-.76)/.24);
-    const spinUp=.38+.62*ease01(grow);
     rasengan.root.position.copy(anchor);
     rasengan.root.rotation.x+=(palmTiltX-rasengan.root.rotation.x)*(1-Math.exp(-10*Math.max(.008,dt/1000)));
     rasengan.root.rotation.y+=(palmTiltY-rasengan.root.rotation.y)*(1-Math.exp(-10*Math.max(.008,dt/1000)));
