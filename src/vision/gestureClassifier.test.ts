@@ -28,6 +28,14 @@ function rotateHand(points: Point[], depthTilt: number, imageRoll: number): Poin
 function showBackOfHand(points: Point[]): Point[] {
   return points.map((point) => ({ ...point, x: 1 - point.x }));
 }
+function gentlyCurlFingers(points:Point[],degrees:number[]):Point[]{
+  const result=points.map(p=>({...p})),pip=[6,10,14,18],dip=[7,11,15,19],tip=[8,12,16,20];
+  degrees.forEach((deg,i)=>{const a=deg*Math.PI/180,seg=0.13;
+    result[dip[i]]={x:result[pip[i]].x+Math.sin(a)*seg,y:result[pip[i]].y-Math.cos(a)*seg,z:result[pip[i]].z};
+    const b=a+0.18;
+    result[tip[i]]={x:result[dip[i]].x+Math.sin(b)*0.105,y:result[dip[i]].y-Math.cos(b)*0.105,z:result[dip[i]].z};
+  });return result;
+}
 
 describe('Rasengan gesture classifier', () => {
   const palm = () => makeHand([true, true, true, true]);
@@ -55,9 +63,19 @@ describe('Rasengan gesture classifier', () => {
     expect(classifyHand(obliquePalm, 'Left')).toBe('open');
   });
 
-  it('rejects an almost edge-on palm instead of guessing', () => {
-    const edgeOnPalm = rotateHand(palm(), 86 * Math.PI / 180, 0);
+  it('accepts an oblique palm almost sideways to the camera', () => {
+    const sidePalm = rotateHand(palm(), 84.5 * Math.PI / 180, 12 * Math.PI / 180);
+    expect(isPalmFacingCamera(sidePalm, 'Left')).toBe(true);
+    expect(classifyHand(sidePalm, 'Left')).toBe('open');
+  });
+  it('rejects an exactly edge-on palm where front/back is ambiguous', () => {
+    const edgeOnPalm = rotateHand(palm(), 89.5 * Math.PI / 180, 0);
     expect(classifyHand(edgeOnPalm, 'Left')).toBe('none');
+  });
+  it('recognizes a relaxed palm with partly curled fingers', () => {
+    const relaxedPalm = gentlyCurlFingers(palm(), [48, 48, 58, 58]);
+    expect(classifyHand(relaxedPalm, 'Left')).toBe('open');
+    expect(readJutsu([relaxedPalm], ['Left']).jutsu).toBe('rasengan');
   });
 
   it('recognizes a closed fist even without a reliable facing estimate', () => {

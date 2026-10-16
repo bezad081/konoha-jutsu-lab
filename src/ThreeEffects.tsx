@@ -14,7 +14,7 @@ const basic=(color:number,opacity:number,blending=additive)=>new T.MeshBasicMate
 function makeLine(points: T.Vector3[], color: number, opacity = 0.9): T.Mesh {
   // A slim volumetric tube reads like a strand of chakra instead of a flat debug line.
   const curve = new T.CatmullRomCurve3(points);
-  const geometry = new T.TubeGeometry(curve, Math.max(140, points.length), 0.56, 5, false);
+  const geometry = new T.TubeGeometry(curve, Math.max(140, points.length), 0.34, 5, false);
   const material = new T.MeshBasicMaterial({
     color, transparent: true, opacity, blending: additive, depthWrite: false, side: T.DoubleSide,
   });
@@ -64,26 +64,43 @@ function createRasengan(scene: T.Scene): RasenganFx {
                         * cos(vLocalPosition.x * 0.24 - uTime * 3.1);
         float flowingNoise = noise3(vLocalPosition * 0.11 + vec3(uTime * 0.27, -uTime * 0.19, uTime * 0.33));
         float turbulence = broadFlow * 0.36 + (flowingNoise - 0.5) * (2.1 + uCharge * 1.1);
-        float phase = angle * 12.0 + vLocalPosition.z * 0.38
-                    - uTime * (7.0 + uCharge * 8.0) + turbulence * (1.1 + uCharge * 1.8);
-        float bands = 0.5 + 0.5 * sin(phase);
-        float filaments = smoothstep(0.64 - uCharge * 0.12, 0.98, bands);
-        float fineLines = pow(0.5 + 0.5 * sin(angle * 29.0 - vLocalPosition.z * 0.25 - uTime * 9.0), 10.0);
-        float fresnel = pow(1.0 - max(0.0, dot(n, viewDir)), 2.15);
-        float core = pow(max(0.0, 1.0 - length(vLocalPosition.xy) * 0.041), 2.8);
-        float surge = 0.5 + 0.5 * sin(uTime * (12.0 + uCharge * 8.0) + angle * 4.0);
-        float ultimateGlow = smoothstep(1.4, 2.0, uPhase);
-        vec3 color = mix(uBaseColor, uHotColor,
-          clamp(filaments * (0.48 + uCharge * 0.27) + fineLines * 0.2 + fresnel * 0.55 + core * (0.15 + uCharge * 0.3) + ultimateGlow * 0.24, 0.0, 1.0));
-        float alpha = clamp(0.24 + fresnel * 0.55 + filaments * 0.3 + fineLines * 0.13 + core * (0.12 + surge * 0.12) + ultimateGlow * 0.08, 0.0, 0.96);
-        gl_FragColor = vec4(color * (0.7 + fresnel * 1.25 + filaments * 0.65 + uCharge * 0.25 + ultimateGlow * 0.38), alpha);
+        float radial=length(vLocalPosition.xy);
+        float phase=angle*5.4+radial*0.19+vLocalPosition.z*0.16-uTime*(4.2+uCharge*4.6)+turbulence*(1.0+uCharge*1.3);
+        float bands=0.5+0.5*sin(phase+sin(angle*2.0+uTime*1.2)*0.42);
+        float filaments=smoothstep(0.69-uCharge*0.10,0.98,bands);
+        float fineLines=pow(0.5+0.5*sin(angle*11.0+radial*0.34-uTime*5.5),13.0);
+        float fresnel=pow(1.0-max(0.0,dot(n,viewDir)),2.0);
+        float core=pow(max(0.0,1.0-radial*0.052),7.5);
+        float surge=0.5+0.5*sin(uTime*(8.0+uCharge*5.0)+angle*3.0);
+        float ultimateGlow=smoothstep(1.4,2.0,uPhase);
+        vec3 deepBlue=vec3(0.008,0.055,0.28);
+        vec3 color=mix(deepBlue,uBaseColor,clamp(0.18+bands*0.74+fresnel*0.12,0.0,1.0));
+        color=mix(color,vec3(0.25,0.79,1.0),clamp(filaments*0.66+fineLines*0.12,0.0,0.76));
+        color=mix(color,uHotColor,clamp(core*0.78+ultimateGlow*0.12,0.0,0.82));
+        float alpha=clamp(0.26+fresnel*0.34+filaments*0.25+fineLines*0.08+core*(0.12+surge*0.08)+ultimateGlow*0.05,0.0,0.79);
+        gl_FragColor=vec4(color*(0.74+fresnel*0.24+filaments*0.72+uCharge*0.12+core*0.40+ultimateGlow*0.14),alpha);
       }`,
     transparent: true,
     blending: additive,
     depthWrite: false,
     side: T.DoubleSide,
   });
-  const halo = new T.Mesh(new T.SphereGeometry(44, 24, 18), basic(0x258cff, 0.065));
+  const haloMaterial = new T.ShaderMaterial({
+    uniforms: { uTime: { value: 0 }, uCharge: { value: 0 }, uTint: { value: new T.Color(0x167fff) } },
+    vertexShader: `varying vec2 vUv; void main() { vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+    fragmentShader: `uniform float uTime; uniform float uCharge; uniform vec3 uTint; varying vec2 vUv;
+      void main() {
+        vec2 p=(vUv-0.5)*2.0; float r=length(p);
+        float auraRing=exp(-pow((r-(0.69+sin(uTime*2.2)*0.012))/0.19,2.0));
+        float innerAura=exp(-r*r*7.0); float edgeFade=1.0-smoothstep(0.82,1.0,r);
+        float alpha=(auraRing*(0.105+uCharge*0.045)+innerAura*0.045)*edgeFade;
+        vec3 color=uTint*(0.84+auraRing*0.34+uCharge*0.20);
+        gl_FragColor=vec4(color,alpha);
+      }`,
+    transparent:true,blending:additive,depthWrite:false,side:T.DoubleSide,
+  });
+  const halo = new T.Mesh(new T.PlaneGeometry(76, 76), haloMaterial);
+  halo.position.z=-4;
   root.add(halo);
   const shellShader = new T.ShaderMaterial({
     uniforms: { uTime: { value: 0 }, uCharge: { value: 0 } },
@@ -134,17 +151,17 @@ function createRasengan(scene: T.Scene): RasenganFx {
   });
   const shell = new T.Mesh(new T.SphereGeometry(33, 28, 22), shellShader);
   root.add(shell);
-  const core = new T.Mesh(new T.SphereGeometry(25, 36, 28), shader);
+  const core = new T.Mesh(new T.SphereGeometry(23, 40, 32), shader);
   root.add(core);
-  const innerCore = new T.Mesh(new T.SphereGeometry(10, 20, 16), basic(0xd7f8ff, 0.18));
-  innerCore.position.z = 2;
+  const innerCore = new T.Mesh(new T.SphereGeometry(6.4, 24, 20), basic(0xe8fcff, 0.13));
+  innerCore.position.z = 8;
   root.add(innerCore);
 
   const ringSpecs = [
-    { radius: 19, tube: 0.85, color: 0xf0fdff, tilt: [0.15, 0.28, 0.18] },
-    { radius: 27, tube: 0.7, color: 0x39adff, tilt: [0.8, 0.2, 0.84] },
-    { radius: 34, tube: 0.62, color: 0x86dfff, tilt: [1.1, 0.92, 0.2] },
-    { radius: 39, tube: 0.48, color: 0xffffff, tilt: [0.35, 1.3, 1.2] },
+    { radius: 16.5, tube: 0.58, color: 0xdefaff, tilt: [0.15, 0.28, 0.18] },
+    { radius: 21.5, tube: 0.52, color: 0x248dff, tilt: [0.8, 0.2, 0.84] },
+    { radius: 26.0, tube: 0.45, color: 0x58cfff, tilt: [1.1, 0.92, 0.2] },
+    { radius: 29.0, tube: 0.36, color: 0xbdefff, tilt: [0.35, 1.3, 1.2] },
   ];
   const rings = ringSpecs.map((spec) => {
     const mesh = new T.Mesh(new T.TorusGeometry(spec.radius, spec.tube, 7, 72), basic(spec.color, 0.68));
@@ -159,11 +176,11 @@ function createRasengan(scene: T.Scene): RasenganFx {
     for (let i = 0; i < 136; i++) {
       const q = i / 135;
       const angle = q * Math.PI * 8.0 + strand * Math.PI / 3;
-      const radius = 4 + q * 36;
+      const radius = 7 + q * 21;
       points.push(new T.Vector3(
         Math.cos(angle) * radius,
         Math.sin(angle) * radius,
-        Math.sin(angle * 0.46 + strand * 1.7) * (3 + q * 4),
+        Math.sin(angle * 0.46 + strand * 1.7) * (2 + q * 2.8),
       ));
     }
     const spiral = makeLine(points, strand % 2 ? 0x409cff : 0xe8fbff, strand === 1 ? 0.66 : 0.91);
@@ -176,8 +193,8 @@ function createRasengan(scene: T.Scene): RasenganFx {
   const seeds: Array<{ angle: number; radius: number; depth: number; speed: number }> = [];
   for (let i = 0; i < particleCount; i++) {
     const angle = Math.random() * Math.PI * 2;
-    const radius = 27 + Math.random() * 29;
-    const depth = (Math.random() - 0.5) * 14;
+    const radius = 22 + Math.random() * 10;
+    const depth = (Math.random() - 0.5) * 9;
     seeds.push({ angle, radius, depth, speed: (Math.random() * 0.55 + 0.35) * (Math.random() < 0.5 ? -1 : 1) });
     positions[i * 3] = Math.cos(angle) * radius;
     positions[i * 3 + 1] = Math.sin(angle) * radius;
@@ -187,7 +204,7 @@ function createRasengan(scene: T.Scene): RasenganFx {
   particleGeometry.setAttribute('position', new T.BufferAttribute(positions, 3));
   particleGeometry.userData.seeds = seeds;
   const particles = new T.Points(particleGeometry, new T.PointsMaterial({
-    color: 0x9deaff, size: 2.8, transparent: true, opacity: 0.68,
+    color: 0x9deaff, size: 2.1, transparent: true, opacity: 0.52,
     blending: additive, depthWrite: false, sizeAttenuation: false,
   }));
   root.add(particles);
@@ -229,7 +246,7 @@ export default function ThreeEffects({trackingRef,activeJutsu,chargeLevel}:Props
   // Bloom is applied only to this VFX canvas; CSS screen blending lets the webcam pass through the black areas.
   const composer=new EffectComposer(renderer);
   composer.setPixelRatio(renderer.getPixelRatio());
-  const bloomPass=new UnrealBloomPass(new T.Vector2(1,1),0.88,0.72,0.18);
+  const bloomPass=new UnrealBloomPass(new T.Vector2(1,1),0.52,0.52,0.32);
   const renderPass=new RenderPass(scene,camera);
   const outputPass=new OutputPass();
   composer.addPass(renderPass);
@@ -296,20 +313,25 @@ export default function ThreeEffects({trackingRef,activeJutsu,chargeLevel}:Props
     outerShell.uniforms.uTime.value=time;outerShell.uniforms.uCharge.value=charge;
     rasengan.shell.rotation.set(Math.sin(time*1.1)*.12,time*(.16+charge*.34),time*(.42+charge*.6));
     rasengan.shell.scale.setScalar(1+Math.sin(time*7.5)*.012+charge*.045);
-    rasengan.root.scale.setScalar(scale*(.78+charge*.64+pulse)*(chargePhase===2?1.035:1));rasengan.halo.scale.setScalar(.95+charge*.24+Math.sin(time*7.2)*.035);
-    const haloMaterial=rasengan.halo.material as T.MeshBasicMaterial;
-    if(chargePhase!==chargePhaseLast){const haloHex=chargePhase===0?0x258cff:chargePhase===1?0x31caff:0x9cefff;haloMaterial.color.setHex(haloHex);(rasengan.core.material as T.ShaderMaterial).uniforms.uBaseColor.value.setHex(chargePhase===0?0x168dff:chargePhase===1?0x26bfff:0x85e9ff);chargePhaseLast=chargePhase}
-    haloMaterial.opacity=.055+charge*.09+motionSpeed*.025+(chargePhase===2?.055:0);
-    const shader=rasengan.core.material as T.ShaderMaterial;shader.uniforms.uTime.value=time;shader.uniforms.uCharge.value=charge;shader.uniforms.uPhase.value=chargePhase;rasengan.innerCore.scale.setScalar(.88+charge*.46+Math.sin(time*13.2)*.08+(chargePhase===2?.12:0));
-    rasengan.rings.forEach((ring,i)=>{const d=i%2?-1:1;ring.rotation.x=time*(.8+i*.22)*motion+i*.7;ring.rotation.y=time*d*(1.0+charge*2.1+i*.20)*motion;ring.rotation.z=time*d*(1.8+charge*2.6)+i*1.3;ring.scale.setScalar(.7+charge*.38+Math.sin(time*10+i)*.035);(ring.material as T.MeshBasicMaterial).opacity=(.36+charge*.48)*(chargePhase===2?1.08:1)});
-    rasengan.spirals.forEach((line,i)=>{line.rotation.z=time*(i%2?-4.8:4.2)*(.68+charge*.7)*(1+clamp(motionSpeed*.7,0,1.2));line.rotation.x=Math.sin(time*2.0+i)*.28;(line.material as T.LineBasicMaterial).opacity=.5+charge*.44});
+    rasengan.root.scale.setScalar(scale*(.90+charge*.28+pulse*.45)*(chargePhase===2?1.025:1));rasengan.halo.scale.setScalar(.92+charge*.10+Math.sin(time*5.2)*.018);
+    const haloMaterial=rasengan.halo.material as T.ShaderMaterial;
+    if(chargePhase!==chargePhaseLast){
+      const haloHex=chargePhase===0?0x167fff:chargePhase===1?0x22bdff:0x8ae9ff;
+      haloMaterial.uniforms.uTint.value.setHex(haloHex);
+      (rasengan.core.material as T.ShaderMaterial).uniforms.uBaseColor.value.setHex(chargePhase===0?0x087aff:chargePhase===1?0x159fff:0x50d5ff);
+      chargePhaseLast=chargePhase;
+    }
+    haloMaterial.uniforms.uTime.value=time;haloMaterial.uniforms.uCharge.value=charge;
+    const shader=rasengan.core.material as T.ShaderMaterial;shader.uniforms.uTime.value=time;shader.uniforms.uCharge.value=charge;shader.uniforms.uPhase.value=chargePhase;rasengan.innerCore.scale.setScalar(.92+charge*.20+Math.sin(time*9.2)*.035+(chargePhase===2?.04:0));
+    rasengan.rings.forEach((ring,i)=>{const d=i%2?-1:1;ring.rotation.x=time*(.8+i*.22)*motion+i*.7;ring.rotation.y=time*d*(1.0+charge*2.1+i*.20)*motion;ring.rotation.z=time*d*(1.8+charge*2.6)+i*1.3;ring.scale.setScalar(.7+charge*.38+Math.sin(time*10+i)*.035);(ring.material as T.MeshBasicMaterial).opacity=(.24+charge*.24)*(chargePhase===2?1.06:1)});
+    rasengan.spirals.forEach((line,i)=>{line.rotation.z=time*(i%2?-4.8:4.2)*(.68+charge*.7)*(1+clamp(motionSpeed*.7,0,1.2));line.rotation.x=Math.sin(time*2.0+i)*.28;(line.material as T.MeshBasicMaterial).opacity=.36+charge*.34});
     const particles=rasengan.particles;particles.rotation.z=-time*(.9+charge*2.0)*motion;particles.rotation.y=time*(.7+charge*1.0)*(1+clamp(motionSpeed*.5,0,.9));(particles.material as T.PointsMaterial).opacity=.34+charge*.54+Math.sin(time*9)*.05;
     const pos=particles.geometry.getAttribute('position').array as Float32Array,seeds=particles.geometry.userData.seeds as Array<{angle:number;radius:number;depth:number;speed:number}>;
     for(let i=0;i<seeds.length;i++){const s=seeds[i],angle=s.angle+time*s.speed*(1.4+charge*2.0),radius=s.radius*(.82+charge*.18)+Math.sin(time*5+i)*1.7;pos[3*i]=Math.cos(angle)*radius;pos[3*i+1]=Math.sin(angle)*radius;pos[3*i+2]=s.depth+Math.sin(time*3+i)*2.4}particles.geometry.getAttribute('position').needsUpdate=true;
    }
    if(!(active||burstActive||trailActive)){if(wasDrawing){renderer.clear(true,true,true);wasDrawing=false}return}
-   bloomPass.strength=active?0.78+charge*0.36+clamp(motionSpeed*0.08,0,0.12):0.95+burstPower*0.78;
-   bloomPass.radius=active?0.68+charge*0.16:0.88;
+   bloomPass.strength=active?0.46+charge*0.24+clamp(motionSpeed*0.04,0,0.06):0.68+burstPower*0.30;
+   bloomPass.radius=active?0.42+charge*0.13:0.62;
    wasDrawing=true;composer.render(Math.min(dt,50)/1000);const cost=performance.now()-now;
    if(cost>20){slow++;fast=0}else if(cost<12){fast++;slow=0}else{slow=0;fast=0}
    if(slow>=3){targetMs=1000/45;if(pixelRatio>.72){pixelRatio=.72;composer.setPixelRatio(pixelRatio);resize()}slow=0;fast=0}

@@ -455,12 +455,12 @@ export default function App() {
             if (!noPoseAt) noPoseAt = now;
             const previewStillVisible = now < previewUntilRef.current;
             // Avoid cancelling the orb during a brief angle, occlusion, or motion-blur hiccup.
-            const releaseDelay = detected.gesture === 'fist' ? 340 : count > 0 ? 640 : 720;
+            const releaseDelay = detected.gesture === 'fist' ? 1450 : count > 0 ? 2100 : 1250;
             if (activeRef.current === 'rasengan' && !previewStillVisible && now > castUntilRef.current && now - noPoseAt > releaseDelay) {
               switchJutsu('none'); castUntilRef.current = 0; noPoseAt = 0;
-              setGestureLabel('Chakra released · show one open palm to cast again');
-            } else if (activeRef.current === 'rasengan') setGestureLabel('Rasengan sustained · keep one open palm in view');
-            else setGestureLabel(count ? 'Hand detected · face one open palm toward the camera' : 'Move one hand into the frame');
+              setGestureLabel('Chakra released · show your palm to form Rasengan again');
+            } else if (activeRef.current === 'rasengan') setGestureLabel(count ? 'Rasengan stable · slight finger bends and palm turns are okay' : 'Rasengan holding briefly · bring your hand back into view');
+            else setGestureLabel(count ? 'Relax your fingers and face your palm toward the camera' : 'Move one hand into the frame');
           }
         }
         if (overlayDirty) {
