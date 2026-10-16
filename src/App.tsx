@@ -576,7 +576,7 @@ export default function App() {
         threeTrackingRef.current = {
           hands: smoothedLandmarksRef.current,
           effectHands: effectLandmarksRef.current,
-          worldHands: (latest.worldLandmarks ?? []) as Point[][],
+          worldHands: (latest?.worldLandmarks ?? []) as Point[][],
           effectHandIndex: effectHandIndexRef.current,
           sampledAt: latestTimestamp,
         }

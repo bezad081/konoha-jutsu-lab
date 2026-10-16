@@ -295,9 +295,10 @@ export default function ThreeEffects({trackingRef,activeJutsu,chargeLevel}:Props
    let y=wrist.y*.46+index.y*.11+middle.y*.21+ring.y*.14+pinky.y*.08;
    const axisX=(middle.x-wrist.x)*w,axisY=(middle.y-wrist.y)*h,length=Math.hypot(axisX,axisY);
    let edgeOn=0;
-   if(worldHand&&worldHand.length>=21){
-    const a={x:worldHand[5].x-worldHand[0].x,y:worldHand[5].y-worldHand[0].y,z:worldHand[5].z-worldHand[0].z};
-    const b={x:worldHand[17].x-worldHand[0].x,y:worldHand[17].y-worldHand[0].y,z:worldHand[17].z-worldHand[0].z};
+   const wristWorld=worldHand?.[0],indexWorld=worldHand?.[5],pinkyWorld=worldHand?.[17];
+   if(wristWorld&&indexWorld&&pinkyWorld){
+    const a={x:indexWorld.x-wristWorld.x,y:indexWorld.y-wristWorld.y,z:indexWorld.z-wristWorld.z};
+    const b={x:pinkyWorld.x-wristWorld.x,y:pinkyWorld.y-wristWorld.y,z:pinkyWorld.z-wristWorld.z};
     const nx=a.y*b.z-a.z*b.y,ny=a.z*b.x-a.x*b.z,nz=a.x*b.y-a.y*b.x;
     const normalLength=Math.hypot(nx,ny,nz);
     if(normalLength>1e-6)edgeOn=1-clamp(Math.abs(nz)/normalLength,0,1);
