@@ -68,9 +68,10 @@ describe('Rasengan gesture classifier', () => {
     expect(isPalmFacingCamera(sidePalm, 'Left')).toBe(true);
     expect(classifyHand(sidePalm, 'Left')).toBe('open');
   });
-  it('rejects an exactly edge-on palm where front/back is ambiguous', () => {
+  it('keeps the Rasengan active for an open palm held exactly side-on', () => {
     const edgeOnPalm = rotateHand(palm(), 89.5 * Math.PI / 180, 0);
-    expect(classifyHand(edgeOnPalm, 'Left')).toBe('none');
+    expect(isPalmFacingCamera(edgeOnPalm, 'Left')).toBe(true);
+    expect(classifyHand(edgeOnPalm, 'Left')).toBe('open');
   });
   it('recognizes a relaxed palm with partly curled fingers', () => {
     const relaxedPalm = gentlyCurlFingers(palm(), [48, 48, 58, 58]);
@@ -78,8 +79,10 @@ describe('Rasengan gesture classifier', () => {
     expect(readJutsu([relaxedPalm], ['Left']).jutsu).toBe('rasengan');
   });
 
-  it('recognizes a closed fist even without a reliable facing estimate', () => {
-    expect(classifyHand(makeHand([false, false, false, false]))).toBe('fist');
+  it('recognizes a closed fist and never casts Rasengan from it', () => {
+    const fist = makeHand([false, false, false, false]);
+    expect(classifyHand(fist)).toBe('fist');
+    expect(readJutsu([fist], ['Left'])).toEqual({ jutsu: 'none', gesture: 'fist' });
   });
 
   it('keeps ambiguous two-finger poses neutral', () => {

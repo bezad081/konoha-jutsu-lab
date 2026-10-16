@@ -26,10 +26,11 @@ export function isPalmFacingCamera(points:Point[],mediaPipeHandedness?:string):b
   const normalLength=Math.hypot(nx,ny,nz);
   if(normalLength<1e-6)return false;
   const facingScore=nz/normalLength;
-  // A tiny dead zone rejects exactly edge-on poses while allowing oblique palms.
-  if(Math.abs(facingScore)<0.035)return false;
+  // At a true side angle, front/back cannot be reliably separated from the palm normal.
+  // Let the visible open-finger pose pass through this narrow ambiguous band.
+  if(Math.abs(facingScore)<0.12)return true;
   const expectedSign=mediaPipeHandedness==='Left'?1:-1;
-  return facingScore*expectedSign>0.035;
+  return facingScore*expectedSign>0.12;
 }
 /** Slightly curled fingers are valid; only a deep, clear fist is a different pose. */
 export function classifyHand(points:Point[],mediaPipeHandedness?:string):Gesture{
