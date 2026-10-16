@@ -1,17 +1,24 @@
 import { useEffect, useRef, type RefObject } from 'react';
 import * as T from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 export type EffectPoint = { x:number; y:number; z?:number };
 export type ThreeTrackingState = { hands:EffectPoint[][]; effectHands?:EffectPoint[][]; effectHandIndex?:number; sampledAt?:number };
 type Props = { trackingRef:RefObject<ThreeTrackingState>; activeJutsu:string; chargeLevel:number };
-type RasenganFx = { root:T.Group; halo:T.Mesh; shell:T.Mesh; core:T.Mesh; innerCore:T.Mesh; rings:T.Mesh[]; spirals:T.Line[]; particles:T.Points };
+type RasenganFx = { root:T.Group; halo:T.Mesh; shell:T.Mesh; core:T.Mesh; innerCore:T.Mesh; rings:T.Mesh[]; spirals:T.Mesh[]; particles:T.Points };
 const additive=T.AdditiveBlending;
 const clamp=(v:number,min:number,max:number)=>Math.max(min,Math.min(max,v));
 const basic=(color:number,opacity:number,blending=additive)=>new T.MeshBasicMaterial({color,transparent:true,opacity,blending,depthWrite:false,side:T.DoubleSide});
-function makeLine(points: T.Vector3[], color: number, opacity = 0.9) {
-  return new T.Line(
-    new T.BufferGeometry().setFromPoints(points),
-    new T.LineBasicMaterial({ color, transparent: true, opacity, blending: additive, depthWrite: false }),
-  );
+function makeLine(points: T.Vector3[], color: number, opacity = 0.9): T.Mesh {
+  // A slim volumetric tube reads like a strand of chakra instead of a flat debug line.
+  const curve = new T.CatmullRomCurve3(points);
+  const geometry = new T.TubeGeometry(curve, Math.max(140, points.length), 0.56, 5, false);
+  const material = new T.MeshBasicMaterial({
+    color, transparent: true, opacity, blending: additive, depthWrite: false, side: T.DoubleSide,
+  });
+  return new T.Mesh(geometry, material);
 }
 
 function createRasengan(scene: T.Scene): RasenganFx {
@@ -34,12 +41,29 @@ function createRasengan(scene: T.Scene): RasenganFx {
       }`,
     fragmentShader: `uniform float uTime; uniform float uCharge; uniform float uPhase; uniform vec3 uBaseColor; uniform vec3 uHotColor;
       varying vec3 vLocalPosition; varying vec3 vNormalView; varying vec3 vViewPosition;
+      float hash31(vec3 p) {
+        p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+        p += dot(p, p.yxz + 33.33);
+        return fract((p.x + p.y) * p.z);
+      }
+      float noise3(vec3 p) {
+        vec3 i = floor(p);
+        vec3 f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        float x00 = mix(hash31(i + vec3(0.0, 0.0, 0.0)), hash31(i + vec3(1.0, 0.0, 0.0)), f.x);
+        float x10 = mix(hash31(i + vec3(0.0, 1.0, 0.0)), hash31(i + vec3(1.0, 1.0, 0.0)), f.x);
+        float x01 = mix(hash31(i + vec3(0.0, 0.0, 1.0)), hash31(i + vec3(1.0, 0.0, 1.0)), f.x);
+        float x11 = mix(hash31(i + vec3(0.0, 1.0, 1.0)), hash31(i + vec3(1.0, 1.0, 1.0)), f.x);
+        return mix(mix(x00, x10, f.y), mix(x01, x11, f.y), f.z);
+      }
       void main() {
         vec3 n = normalize(vNormalView);
         vec3 viewDir = normalize(vViewPosition);
         float angle = atan(vLocalPosition.y, vLocalPosition.x);
-        float turbulence = sin(vLocalPosition.y * 0.31 + uTime * 3.8)
+        float broadFlow = sin(vLocalPosition.y * 0.31 + uTime * 3.8)
                         * cos(vLocalPosition.x * 0.24 - uTime * 3.1);
+        float flowingNoise = noise3(vLocalPosition * 0.11 + vec3(uTime * 0.27, -uTime * 0.19, uTime * 0.33));
+        float turbulence = broadFlow * 0.36 + (flowingNoise - 0.5) * (2.1 + uCharge * 1.1);
         float phase = angle * 12.0 + vLocalPosition.z * 0.38
                     - uTime * (7.0 + uCharge * 8.0) + turbulence * (1.1 + uCharge * 1.8);
         float bands = 0.5 + 0.5 * sin(phase);
@@ -73,12 +97,29 @@ function createRasengan(scene: T.Scene): RasenganFx {
       }`,
     fragmentShader: `uniform float uTime; uniform float uCharge;
       varying vec3 vLocalPosition; varying vec3 vNormalView; varying vec3 vViewPosition;
+      float hash31(vec3 p) {
+        p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+        p += dot(p, p.yxz + 33.33);
+        return fract((p.x + p.y) * p.z);
+      }
+      float noise3(vec3 p) {
+        vec3 i = floor(p);
+        vec3 f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        float x00 = mix(hash31(i + vec3(0.0, 0.0, 0.0)), hash31(i + vec3(1.0, 0.0, 0.0)), f.x);
+        float x10 = mix(hash31(i + vec3(0.0, 1.0, 0.0)), hash31(i + vec3(1.0, 1.0, 0.0)), f.x);
+        float x01 = mix(hash31(i + vec3(0.0, 0.0, 1.0)), hash31(i + vec3(1.0, 0.0, 1.0)), f.x);
+        float x11 = mix(hash31(i + vec3(0.0, 1.0, 1.0)), hash31(i + vec3(1.0, 1.0, 1.0)), f.x);
+        return mix(mix(x00, x10, f.y), mix(x01, x11, f.y), f.z);
+      }
       void main() {
         vec3 n = normalize(vNormalView);
         vec3 viewDir = normalize(vViewPosition);
         float angle = atan(vLocalPosition.y, vLocalPosition.x);
-        float turbulence = sin(vLocalPosition.y * 0.32 + uTime * 4.2) * cos(vLocalPosition.x * 0.27 - uTime * 3.3);
-        float swirl = sin(angle * 10.0 + vLocalPosition.z * 0.55 - uTime * (6.5 + uCharge * 9.0) + turbulence);
+        float broadFlow = sin(vLocalPosition.y * 0.32 + uTime * 4.2) * cos(vLocalPosition.x * 0.27 - uTime * 3.3);
+        float flowingNoise = noise3(vLocalPosition * 0.105 + vec3(uTime * 0.24, -uTime * 0.32, uTime * 0.41));
+        float turbulence = broadFlow * 0.24 + (flowingNoise - 0.5) * (2.4 + uCharge * 0.9);
+        float swirl = sin(angle * 10.0 + vLocalPosition.z * 0.55 - uTime * (6.5 + uCharge * 9.0) + turbulence * 1.35);
         float streak = pow(max(0.0, 0.5 + 0.5 * swirl), 7.0);
         float fresnel = pow(1.0 - max(0.0, dot(n, viewDir)), 2.0);
         float hot = clamp(streak * 0.68 + fresnel * 0.45 + uCharge * 0.18, 0.0, 1.0);
@@ -159,7 +200,7 @@ export default function ThreeEffects({trackingRef,activeJutsu,chargeLevel}:Props
  useEffect(()=>{
   const element=host.current;if(!element)return;let renderer:T.WebGLRenderer;
   try{renderer=new T.WebGLRenderer({alpha:true,antialias:false,powerPreference:'high-performance',premultipliedAlpha:false})}catch{element.dataset.renderer='unavailable';return}
-  renderer.setClearColor(0,0);renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1));renderer.outputColorSpace=T.SRGBColorSpace;renderer.domElement.className='three-effects-canvas';element.appendChild(renderer.domElement);
+  renderer.setClearColor(0x000000,0);renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1));renderer.outputColorSpace=T.SRGBColorSpace;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.12;renderer.domElement.className='three-effects-canvas';element.appendChild(renderer.domElement);
   const scene=new T.Scene(),camera=new T.OrthographicCamera(-1,1,1,-1,.1,1000);camera.position.z=400;
   const rasengan=createRasengan(scene),releaseRing=new T.Mesh(new T.TorusGeometry(13,1.4,7,64),basic(0xbcefff,0));releaseRing.visible=false;scene.add(releaseRing);
   const releaseRing2=new T.Mesh(new T.TorusGeometry(8,0.72,6,64),basic(0x62cfff,0));releaseRing2.visible=false;scene.add(releaseRing2);
@@ -184,9 +225,20 @@ export default function ThreeEffects({trackingRef,activeJutsu,chargeLevel}:Props
     void main(){vec2 p=gl_PointCoord-vec2(0.5);float r=length(p);float glow=1.0-smoothstep(0.04,0.5,r);float core=1.0-smoothstep(0.0,0.16,r);float alpha=glow*vLife*0.62;gl_FragColor=vec4(vec3(0.24,0.72,1.0)*(0.85+core*1.2),alpha);}`,
   });
   const trail=new T.Points(trailGeometry,trailMaterial);trail.visible=false;trail.frustumCulled=false;scene.add(trail);
+
+  // Bloom is applied only to this VFX canvas; CSS screen blending lets the webcam pass through the black areas.
+  const composer=new EffectComposer(renderer);
+  composer.setPixelRatio(renderer.getPixelRatio());
+  const bloomPass=new UnrealBloomPass(new T.Vector2(1,1),0.88,0.72,0.18);
+  const renderPass=new RenderPass(scene,camera);
+  const outputPass=new OutputPass();
+  composer.addPass(renderPass);
+  composer.addPass(bloomPass);
+  composer.addPass(outputPass);
+
   let raf=0,lastAt=0,targetMs=1000/60,slow=0,fast=0,pixelRatio=Math.min(window.devicePixelRatio||1,1),wasDrawing=false,previous='none',burstAt=-Infinity,burstPower=0,lastCharge=0,chargePhaseLast=-1,trailClock=0,trailCursor=0;
   const burstCenter=new T.Vector3(),anchor=new T.Vector3(),observed=new T.Vector3(),predicted=new T.Vector3(),velocity=new T.Vector3(),targetPoint=new T.Vector3(),motionDelta=new T.Vector3(),lastTrailAnchor=new T.Vector3(1e6,1e6,1e6);let anchorReady=false,observedAt=0,motionSpeed=0;
-  const resize=()=>{const w=Math.max(1,element.clientWidth),h=Math.max(1,element.clientHeight);camera.left=-w/2;camera.right=w/2;camera.top=h/2;camera.bottom=-h/2;camera.updateProjectionMatrix();renderer.setSize(w,h,false)};
+  const resize=()=>{const w=Math.max(1,element.clientWidth),h=Math.max(1,element.clientHeight);camera.left=-w/2;camera.right=w/2;camera.top=h/2;camera.bottom=-h/2;camera.updateProjectionMatrix();composer.setSize(w,h)};
   const ro=typeof ResizeObserver!=='undefined'?new ResizeObserver(resize):null;ro?.observe(element);resize();
   const palmCenter=(hand:EffectPoint[]|undefined)=>{if(!hand||hand.length<21)return null;return [0,5,9,13,17].reduce((p,i)=>({x:p.x+hand[i].x/5,y:p.y+hand[i].y/5}),{x:0,y:0})};
   // Mirror the landmark X coordinate to match the selfie-preview flip.
@@ -255,14 +307,16 @@ export default function ThreeEffects({trackingRef,activeJutsu,chargeLevel}:Props
     const pos=particles.geometry.getAttribute('position').array as Float32Array,seeds=particles.geometry.userData.seeds as Array<{angle:number;radius:number;depth:number;speed:number}>;
     for(let i=0;i<seeds.length;i++){const s=seeds[i],angle=s.angle+time*s.speed*(1.4+charge*2.0),radius=s.radius*(.82+charge*.18)+Math.sin(time*5+i)*1.7;pos[3*i]=Math.cos(angle)*radius;pos[3*i+1]=Math.sin(angle)*radius;pos[3*i+2]=s.depth+Math.sin(time*3+i)*2.4}particles.geometry.getAttribute('position').needsUpdate=true;
    }
-   if(!(active||burstActive||trailActive)){if(wasDrawing){renderer.clear();wasDrawing=false}return}
-   wasDrawing=true;renderer.render(scene,camera);const cost=performance.now()-now;
+   if(!(active||burstActive||trailActive)){if(wasDrawing){renderer.clear(true,true,true);wasDrawing=false}return}
+   bloomPass.strength=active?0.78+charge*0.36+clamp(motionSpeed*0.08,0,0.12):0.95+burstPower*0.78;
+   bloomPass.radius=active?0.68+charge*0.16:0.88;
+   wasDrawing=true;composer.render(Math.min(dt,50)/1000);const cost=performance.now()-now;
    if(cost>20){slow++;fast=0}else if(cost<12){fast++;slow=0}else{slow=0;fast=0}
-   if(slow>=3){targetMs=1000/45;if(pixelRatio>.72){pixelRatio=.72;renderer.setPixelRatio(pixelRatio);resize()}slow=0;fast=0}
-   else if(fast>=45){targetMs=1000/60;const best=Math.min(window.devicePixelRatio||1,1);if(pixelRatio<best){pixelRatio=best;renderer.setPixelRatio(pixelRatio);resize()}fast=0}
+   if(slow>=3){targetMs=1000/45;if(pixelRatio>.72){pixelRatio=.72;composer.setPixelRatio(pixelRatio);resize()}slow=0;fast=0}
+   else if(fast>=45){targetMs=1000/60;const best=Math.min(window.devicePixelRatio||1,1);if(pixelRatio<best){pixelRatio=best;composer.setPixelRatio(pixelRatio);resize()}fast=0}
   };
   raf=requestAnimationFrame(draw);
-  return()=>{cancelAnimationFrame(raf);ro?.disconnect();scene.traverse(o=>{const m=o as T.Mesh;if(m.geometry)m.geometry.dispose();const mat=m.material;if(mat){if(Array.isArray(mat))mat.forEach(x=>x.dispose());else mat.dispose()}});renderer.dispose();renderer.domElement.remove()};
+  return()=>{cancelAnimationFrame(raf);ro?.disconnect();composer.dispose();bloomPass.dispose();scene.traverse(o=>{const m=o as T.Mesh;if(m.geometry)m.geometry.dispose();const mat=m.material;if(mat){if(Array.isArray(mat))mat.forEach(x=>x.dispose());else mat.dispose()}});renderer.dispose();renderer.domElement.remove()};
  },[trackingRef]);
  return <div ref={host} className="three-effects-layer" aria-hidden="true"/>;
 }
