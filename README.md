@@ -8,12 +8,12 @@ A focused React + TypeScript + Vite browser experience: use one open palm to sum
 - Live mirrored webcam preview with an optional hand-landmark overlay.
 - MediaPipe Hand Landmarker processes one hand in the browser, using a Web Worker with GPU/CPU fallback and a main-thread compatibility fallback.
 - Relaxed-palm detection allows slight finger curls and palm angles including a true side-on pose. Clearly back-facing hands are rejected when orientation is measurable. A closed fist never casts, and a detected fist releases an existing orb quickly.
-- Procedural Three.js/WebGL Rasengan: a clearly visible saturated-blue spherical vortex, small white-blue hotspot, larger rotating chakra rings, long spiral filaments, orbiting particles, palm wisps, and controlled Bloom to keep the sphere colored rather than washed white. The orb is positioned from weighted palm landmarks.
-- Motion-aware positioning: the orb follows the palm with smoothed velocity prediction and adapts its follow rate to hand speed.
+- Procedural Three.js/WebGL Rasengan: a saturated-blue vortex with a bright hotspot, rotating chakra rings, spiral filaments, orbiting particles, palm wisps, and controlled Bloom. The orb grows in four smooth stages from a small core to full size while its spin accelerates.
+- Palm-aware positioning: the anchor blends wrist and knuckle landmarks, adds a small offset along the wrist-to-fingertip axis, and aligns the ring motion as the hand turns. This helps the orb stay above the palm instead of slipping to the edge of the hand.
 - Adaptive rendering targets 60 FPS and drops to 45 FPS with a reduced pixel ratio when the post-processing workload is heavy.
 - Three.js effects load on demand; the main-thread MediaPipe compatibility path is dynamically imported only when the worker cannot run.
 - Camera frames and hand landmarks stay in the browser; video is not uploaded to an application backend.
-- Responsive desktop/mobile UI, camera-permission messaging, synthesized chakra sound, and a manual preview.
+- Responsive desktop/mobile UI, camera-permission messaging, a short summoning whoosh plus continuous synthesized spinning/airflow that rises with chakra charge, and a manual preview.
 - The Rasengan technique card attempts to cache an anime still as a same-origin site asset during the build, then falls back across public image hosts if the download is unavailable. Check asset permissions before redistribution or commercial use.
 
 ## Run locally

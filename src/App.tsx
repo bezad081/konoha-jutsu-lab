@@ -121,17 +121,86 @@ function filterOneEuro(value: number, previous: OneEuroAxis | undefined, now: nu
 
 function playJutsuCue(audio: AudioContext, _jutsu: 'rasengan') {
   const now = audio.currentTime;
-  const master = audio.createGain(); master.gain.value = 0.34; master.connect(audio.destination);
+  const master = audio.createGain(); master.gain.setValueAtTime(0.0001, now); master.gain.exponentialRampToValueAtTime(0.26, now + 0.035); master.connect(audio.destination);
   const oscillator = audio.createOscillator(), overtone = audio.createOscillator();
-  const filter = audio.createBiquadFilter(), gain = audio.createGain();
-  oscillator.type = 'sine'; overtone.type = 'triangle'; filter.type = 'lowpass';
-  filter.frequency.setValueAtTime(720, now); filter.frequency.exponentialRampToValueAtTime(190, now + 0.55);
-  oscillator.frequency.setValueAtTime(180, now); oscillator.frequency.exponentialRampToValueAtTime(62, now + 0.56);
-  overtone.frequency.setValueAtTime(360, now); overtone.frequency.exponentialRampToValueAtTime(124, now + 0.52);
-  gain.gain.setValueAtTime(0.0001, now); gain.gain.exponentialRampToValueAtTime(0.42, now + 0.06);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.58);
-  oscillator.connect(filter); overtone.connect(filter); filter.connect(gain); gain.connect(master);
-  oscillator.start(now); overtone.start(now); oscillator.stop(now + 0.6); overtone.stop(now + 0.6);
+  const toneFilter = audio.createBiquadFilter(), toneGain = audio.createGain();
+  oscillator.type = 'sine'; overtone.type = 'triangle'; toneFilter.type = 'lowpass';
+  toneFilter.frequency.setValueAtTime(520, now); toneFilter.frequency.exponentialRampToValueAtTime(1450, now + 0.16); toneFilter.frequency.exponentialRampToValueAtTime(360, now + 0.62);
+  oscillator.frequency.setValueAtTime(86, now); oscillator.frequency.exponentialRampToValueAtTime(205, now + 0.16); oscillator.frequency.exponentialRampToValueAtTime(74, now + 0.62);
+  overtone.frequency.setValueAtTime(172, now); overtone.frequency.exponentialRampToValueAtTime(365, now + 0.16); overtone.frequency.exponentialRampToValueAtTime(118, now + 0.57);
+  toneGain.gain.setValueAtTime(0.0001, now); toneGain.gain.exponentialRampToValueAtTime(0.48, now + 0.075); toneGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.64);
+  oscillator.connect(toneFilter); overtone.connect(toneFilter); toneFilter.connect(toneGain); toneGain.connect(master);
+  const noiseBuffer = audio.createBuffer(1, Math.floor(audio.sampleRate * 0.68), audio.sampleRate);
+  const noiseData = noiseBuffer.getChannelData(0);
+  for (let i = 0; i < noiseData.length; i++) noiseData[i] = (Math.random() * 2 - 1) * 0.65;
+  const noise = audio.createBufferSource(); noise.buffer = noiseBuffer;
+  const airFilter = audio.createBiquadFilter(), airGain = audio.createGain();
+  airFilter.type = 'bandpass'; airFilter.Q.value = 0.8;
+  airFilter.frequency.setValueAtTime(420, now); airFilter.frequency.exponentialRampToValueAtTime(1650, now + 0.14); airFilter.frequency.exponentialRampToValueAtTime(390, now + 0.62);
+  airGain.gain.setValueAtTime(0.0001, now); airGain.gain.exponentialRampToValueAtTime(0.15, now + 0.055); airGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.62);
+  noise.connect(airFilter); airFilter.connect(airGain); airGain.connect(master);
+  oscillator.start(now); overtone.start(now); noise.start(now);
+  oscillator.stop(now + 0.66); overtone.stop(now + 0.66); noise.stop(now + 0.66);
+}
+
+type RasenganSoundLoop = { setIntensity: (level: number) => void; stop: () => void };
+
+function createRasenganLoop(audio: AudioContext): RasenganSoundLoop {
+  const now = audio.currentTime;
+  const master = audio.createGain();
+  master.gain.setValueAtTime(0.0001, now);
+  master.gain.exponentialRampToValueAtTime(0.30, now + 0.32);
+  master.connect(audio.destination);
+
+  const low = audio.createOscillator(), rotor = audio.createOscillator();
+  const lowGain = audio.createGain(), rotorGain = audio.createGain();
+  const rotorFilter = audio.createBiquadFilter();
+  low.type = 'sine'; low.frequency.setValueAtTime(58, now); lowGain.gain.value = 0.28;
+  rotor.type = 'triangle'; rotor.frequency.setValueAtTime(112, now); rotor.detune.value = -4;
+  rotorFilter.type = 'lowpass'; rotorFilter.frequency.value = 740; rotorFilter.Q.value = 0.7; rotorGain.gain.value = 0.13;
+  low.connect(lowGain); lowGain.connect(master);
+  rotor.connect(rotorFilter); rotorFilter.connect(rotorGain); rotorGain.connect(master);
+
+  const noiseBuffer = audio.createBuffer(1, Math.floor(audio.sampleRate * 2), audio.sampleRate);
+  const noiseData = noiseBuffer.getChannelData(0);
+  for (let i = 0; i < noiseData.length; i++) noiseData[i] = (Math.random() * 2 - 1) * 0.7;
+  const noise = audio.createBufferSource(); noise.buffer = noiseBuffer; noise.loop = true;
+  const noiseFilter = audio.createBiquadFilter(), noiseGain = audio.createGain();
+  noiseFilter.type = 'bandpass'; noiseFilter.Q.value = 0.72; noiseFilter.frequency.setValueAtTime(560, now);
+  noiseGain.gain.value = 0.115; noise.connect(noiseFilter); noiseFilter.connect(noiseGain); noiseGain.connect(master);
+
+  const spinLfo = audio.createOscillator(), spinDepth = audio.createGain();
+  spinLfo.type = 'sine'; spinLfo.frequency.setValueAtTime(4.1, now); spinDepth.gain.value = 0.034;
+  spinLfo.connect(spinDepth); spinDepth.connect(noiseGain.gain);
+  const sweepLfo = audio.createOscillator(), sweepDepth = audio.createGain();
+  sweepLfo.type = 'sine'; sweepLfo.frequency.setValueAtTime(0.22, now); sweepDepth.gain.value = 215;
+  sweepLfo.connect(sweepDepth); sweepDepth.connect(noiseFilter.frequency);
+
+  const sources: AudioScheduledSourceNode[] = [low, rotor, noise, spinLfo, sweepLfo];
+  let stopped = false;
+  const setIntensity = (level: number) => {
+    if (stopped) return;
+    const amount = Math.max(0, Math.min(1, level)), at = audio.currentTime;
+    low.frequency.setTargetAtTime(54 + amount * 31, at, 0.10);
+    rotor.frequency.setTargetAtTime(104 + amount * 82, at, 0.10);
+    noiseFilter.frequency.setTargetAtTime(455 + amount * 525, at, 0.12);
+    spinLfo.frequency.setTargetAtTime(3.4 + amount * 4.6, at, 0.10);
+    master.gain.setTargetAtTime(0.27 + amount * 0.035, at, 0.13);
+  };
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    const at = audio.currentTime;
+    master.gain.cancelScheduledValues(at);
+    master.gain.setTargetAtTime(0.0001, at, 0.045);
+    window.setTimeout(() => {
+      sources.forEach((source) => { try { source.stop(); } catch { /* already stopped */ } });
+      sources.forEach((source) => { try { source.disconnect(); } catch { /* optional cleanup */ } });
+      [master, lowGain, rotorGain, rotorFilter, noiseFilter, noiseGain, spinDepth, sweepDepth].forEach((node) => { try { node.disconnect(); } catch { /* optional cleanup */ } });
+    }, 320);
+  };
+  sources.forEach((source) => source.start(now));
+  return { setIntensity, stop };
 }
 
 function drawLandmarks(ctx: CanvasRenderingContext2D, hands: Point[][], w: number, h: number) {
@@ -180,6 +249,7 @@ export default function App() {
   const timeoutRef = useRef<number | null>(null);
   const activeRef = useRef<Jutsu>('none');
   const audioRef = useRef<AudioContext | null>(null);
+  const soundLoopRef = useRef<RasenganSoundLoop | null>(null);
   const jutsuStartedAtRef = useRef(0);
   const castUntilRef = useRef(0);
   const soundRef = useRef(false);
@@ -197,7 +267,25 @@ export default function App() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [fps, setFps] = useState(0);
   const [trackingEngine, setTrackingEngine] = useState<'idle'|'starting'|'worker-gpu'|'worker-cpu'|'main-thread'|'unavailable'>('idle');
-  useEffect(() => { soundRef.current=soundEnabled; if(soundEnabled)try{const a=audioRef.current??new window.AudioContext();audioRef.current=a;void a.resume();}catch{/* optional */} }, [soundEnabled]);
+  useEffect(() => {
+    soundRef.current = soundEnabled;
+    if (!soundEnabled) {
+      soundLoopRef.current?.stop();
+      soundLoopRef.current = null;
+      return;
+    }
+    try {
+      const audio = audioRef.current ?? new window.AudioContext();
+      audioRef.current = audio;
+      void audio.resume().then(() => {
+        if (activeRef.current === 'rasengan' && soundRef.current && !soundLoopRef.current) {
+          soundLoopRef.current = createRasenganLoop(audio);
+          soundLoopRef.current.setIntensity(chargeLevel / 100);
+        }
+      }).catch(() => undefined);
+    } catch { /* optional audio */ }
+  }, [soundEnabled]);
+  useEffect(() => { soundLoopRef.current?.setIntensity(chargeLevel / 100); }, [chargeLevel]);
   useEffect(() => { landmarksRef.current = showLandmarks; }, [showLandmarks]);
   useEffect(() => {
     if (activeJutsu === 'none') { setChargeLevel(0); return; }
@@ -220,8 +308,19 @@ export default function App() {
         window.setTimeout(() => stage.classList.remove('jutsu-impact'), 420);
       }
     }
+    if (next === 'none') {
+      soundLoopRef.current?.stop();
+      soundLoopRef.current = null;
+    }
     if(next!=='none'&&soundRef.current)try{
-      const audio=audioRef.current??new window.AudioContext();audioRef.current=audio;void audio.resume();playJutsuCue(audio,next);
+      const audio=audioRef.current??new window.AudioContext();audioRef.current=audio;
+      void audio.resume().then(()=>{
+        if(activeRef.current!=='rasengan'||!soundRef.current)return;
+        playJutsuCue(audio,next);
+        soundLoopRef.current?.stop();
+        soundLoopRef.current=createRasenganLoop(audio);
+        soundLoopRef.current.setIntensity(0);
+      }).catch(()=>undefined);
     }catch{/* optional audio */}
   }, []);
 
@@ -511,6 +610,8 @@ export default function App() {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     trackerRef.current?.close();
     visionWorkerRef.current?.terminate(); visionWorkerRef.current = null;
+    soundLoopRef.current?.stop();
+    soundLoopRef.current = null;
     audioRef.current?.close().catch(() => undefined);
   }, []);
 
@@ -587,7 +688,7 @@ export default function App() {
             {cameraState === 'ready' || cameraState === 'camera-only' ? <button className="primary-button stop-button" onClick={stopCamera}><span className="stop-square" /> Stop camera</button> :
               <button className="primary-button" onClick={startCamera} disabled={cameraState === 'loading'}>{cameraState === 'loading' ? <LoaderCircle className="spin" size={17} /> : <Camera size={17} />}{cameraState === 'loading' ? 'Starting camera…' : 'Start camera'}</button>}
             <button className={'secondary-button ' + (showLandmarks ? 'selected' : '')} onClick={() => setShowLandmarks((v) => !v)}><Hand size={16} /> Landmark overlay <span className="toggle-pill">{showLandmarks ? 'ON' : 'OFF'}</span></button>
-            <button className={'secondary-button ' + (soundEnabled ? 'selected' : '')} onClick={() => { const next = !soundEnabled; setSoundEnabled(next); if (next) { try { const audio = audioRef.current ?? new window.AudioContext(); audioRef.current = audio; void audio.resume().then(() => playJutsuCue(audio, 'rasengan')); } catch { /* optional audio */ } } }} title="Turn the chakra sound on or off"><Zap size={16} /> Chakra sound <span className="toggle-pill">{soundEnabled ? 'ON' : 'OFF'}</span></button>
+            <button className={'secondary-button ' + (soundEnabled ? 'selected' : '')} onClick={() => { const next = !soundEnabled; setSoundEnabled(next); if (next) { try { const audio = audioRef.current ?? new window.AudioContext(); audioRef.current = audio; void audio.resume().then(() => { if (activeRef.current === 'rasengan') { if (!soundLoopRef.current) soundLoopRef.current = createRasenganLoop(audio); soundLoopRef.current.setIntensity(chargeLevel / 100); } else playJutsuCue(audio, 'rasengan'); }).catch(() => undefined); } catch { /* optional audio */ } } }} title="Turn the chakra sound on or off"><Zap size={16} /> Chakra sound <span className="toggle-pill">{soundEnabled ? 'ON' : 'OFF'}</span></button>
             <button className="reset-button" onClick={() => { switchJutsu('none'); setGestureLabel('Rasengan released'); }} title="Clear current effect"><RotateCcw size={16} /></button>
           </div>
           {(cameraState === 'error' || cameraState === 'camera-only') && <p className="error-hint"><Info size={14} /> {cameraState === 'camera-only' ? 'The camera preview is being kept active. Hand tracking is unavailable until the model/runtime loads; use the GitHub Actions link to check that the newest build was deployed.' : 'Camera access requires browser permission and a secure context (localhost or HTTPS).'}</p>}
