@@ -73,8 +73,19 @@ describe('Rasengan gesture classifier', () => {
     expect(isPalmFacingCamera(edgeOnPalm, 'Left')).toBe(true);
     expect(classifyHand(edgeOnPalm, 'Left')).toBe('open');
   });
+
+  it('accepts relaxed palms at broader near-profile angles', () => {
+    const profilePalm = rotateHand(palm(), 80 * Math.PI / 180, 18 * Math.PI / 180);
+    expect(classifyHand(profilePalm, 'Left')).toBe('open');
+  });
   it('recognizes a relaxed palm with partly curled fingers', () => {
     const relaxedPalm = gentlyCurlFingers(palm(), [48, 48, 58, 58]);
+    expect(classifyHand(relaxedPalm, 'Left')).toBe('open');
+    expect(readJutsu([relaxedPalm], ['Left']).jutsu).toBe('rasengan');
+  });
+
+  it('keeps Rasengan eligible when one finger curls more than the others', () => {
+    const relaxedPalm = gentlyCurlFingers(palm(), [48, 48, 58, 78]);
     expect(classifyHand(relaxedPalm, 'Left')).toBe('open');
     expect(readJutsu([relaxedPalm], ['Left']).jutsu).toBe('rasengan');
   });

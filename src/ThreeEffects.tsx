@@ -5,7 +5,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 export type EffectPoint = { x:number; y:number; z?:number };
-export type ThreeTrackingState = { hands:EffectPoint[][]; effectHands?:EffectPoint[][]; effectHandIndex?:number; sampledAt?:number };
+export type ThreeTrackingState = { hands:EffectPoint[][]; effectHands?:EffectPoint[][]; worldHands?:EffectPoint[][]; effectHandIndex?:number; sampledAt?:number };
 type Props = { trackingRef:RefObject<ThreeTrackingState>; activeJutsu:string; chargeLevel:number };
 type RasenganFx = { root:T.Group; halo:T.Mesh; shell:T.Mesh; core:T.Mesh; innerCore:T.Mesh; rings:T.Mesh[]; spirals:T.Mesh[]; particles:T.Points; palmStreams:T.Line[] };
 const additive=T.AdditiveBlending;
@@ -70,15 +70,18 @@ function createRasengan(scene: T.Scene): RasenganFx {
         float bands=0.5+0.5*sin(phase+sin(angle*2.0+uTime*1.15)*0.38);
         float streak=smoothstep(0.53,0.93,bands);
         float fineLines=pow(0.5+0.5*sin(angle*24.0-radial*0.23-uTime*7.2),13.0);
+        float reflectionBand=pow(max(0.0,0.5+0.5*sin(angle*2.6+radial*0.17-uTime*3.6+flowingNoise*2.4)),16.0);
         float fresnel=pow(1.0-max(0.0,dot(n,viewDir)),2.0);
+        float specularGlint=pow(max(0.0,dot(reflect(-viewDir,n),normalize(vec3(-0.46,0.64,0.62)))),24.0);
         float center=exp(-radial*radial*0.030);
         vec3 deepBlue=vec3(0.004,0.018,0.10);
         vec3 midBlue=vec3(0.008,0.12,0.58);
         vec3 color=mix(deepBlue,midBlue,clamp(0.18+bands*0.62,0.0,0.88));
         color=mix(color,uBaseColor,clamp(0.20+bands*0.48,0.0,0.82));
-        color=mix(color,vec3(0.025,0.36,1.0),clamp(streak*0.64+fineLines*0.10,0.0,0.78));
-        color=mix(color,vec3(0.70,0.94,1.0),clamp(center*0.52+fresnel*0.11+fineLines*0.25,0.0,0.70));
-        float alpha=clamp(0.83+streak*0.08+center*0.06+fresnel*0.035,0.80,0.97);
+        color=mix(color,vec3(0.025,0.36,1.0),clamp(streak*0.64+fineLines*0.10+reflectionBand*0.17,0.0,0.82));
+        color+=vec3(0.10,0.48,1.0)*reflectionBand*(0.28+uCharge*0.22);
+        color=mix(color,uHotColor,clamp(center*0.48+fresnel*0.10+fineLines*0.20+specularGlint*0.62+reflectionBand*0.10,0.0,0.76));
+        float alpha=clamp(0.83+streak*0.08+center*0.06+fresnel*0.035+reflectionBand*0.025,0.80,0.98);
         gl_FragColor=vec4(color,alpha);
       }`,
     transparent: true,
@@ -140,10 +143,13 @@ function createRasengan(scene: T.Scene): RasenganFx {
         float swirl=sin(angle*10.0+vLocalPosition.z*0.55-uTime*(5.8+uCharge*6.0)+turbulence);
         float streak=pow(max(0.0,0.5+0.5*swirl),6.0);
         float fresnel=pow(1.0-max(0.0,dot(n,viewDir)),2.0);
-        float hot=clamp(streak*0.58+fresnel*0.32+uCharge*0.12,0.0,1.0);
+        float reflectionSweep=pow(max(0.0,0.5+0.5*sin(angle*2.1-uTime*2.8+flowingNoise*3.0)),12.0);
+        float specularGlint=pow(max(0.0,dot(reflect(-viewDir,n),normalize(vec3(0.44,0.58,0.70)))),18.0);
+        float hot=clamp(streak*0.58+fresnel*0.32+uCharge*0.12+reflectionSweep*0.14,0.0,1.0);
         vec3 color=mix(vec3(0.006,0.045,0.24),vec3(0.025,0.42,1.0),hot);
         color=mix(color,vec3(0.20,0.72,1.0),streak*0.24);
-        float alpha=clamp(fresnel*0.18+streak*(0.08+uCharge*0.10)+uCharge*0.018,0.0,0.30);
+        color=mix(color,vec3(0.68,0.92,1.0),clamp(reflectionSweep*0.38+specularGlint*0.42,0.0,0.66));
+        float alpha=clamp(fresnel*0.18+streak*(0.08+uCharge*0.10)+uCharge*0.018+reflectionSweep*0.025,0.0,0.34);
         gl_FragColor=vec4(color*(0.75+streak*0.50),alpha);
       }`,
     transparent: true,
@@ -164,6 +170,7 @@ function createRasengan(scene: T.Scene): RasenganFx {
     { radius: 27, tube: 0.68, color: 0x2793ff, tilt: [0.8, 0.2, 0.84] },
     { radius: 34, tube: 0.58, color: 0x58cfff, tilt: [1.1, 0.92, 0.2] },
     { radius: 39, tube: 0.42, color: 0xa9dfff, tilt: [0.35, 1.3, 1.2] },
+    { radius: 44, tube: 0.34, color: 0x6adfff, tilt: [0.52, 1.0, 0.48] },
   ];
   const rings = ringSpecs.map((spec) => {
     const mesh = new T.Mesh(new T.TorusGeometry(spec.radius, spec.tube, 7, 72), basic(spec.color, 0.48));
@@ -173,11 +180,11 @@ function createRasengan(scene: T.Scene): RasenganFx {
   });
 
   const spirals: T.Mesh[] = [];
-  for (let strand = 0; strand < 6; strand++) {
+  for (let strand = 0; strand < 8; strand++) {
     const points: T.Vector3[] = [];
     for (let i = 0; i < 136; i++) {
       const q = i / 135;
-      const angle = q * Math.PI * 8.0 + strand * Math.PI / 3;
+      const angle = q * Math.PI * 8.0 + strand * Math.PI / 4;
       const radius = 4 + q * 36;
       points.push(new T.Vector3(
         Math.cos(angle) * radius,
@@ -278,30 +285,40 @@ export default function ThreeEffects({trackingRef,activeJutsu,chargeLevel}:Props
   const burstCenter=new T.Vector3(),anchor=new T.Vector3(),observed=new T.Vector3(),predicted=new T.Vector3(),velocity=new T.Vector3(),targetPoint=new T.Vector3(),motionDelta=new T.Vector3(),lastTrailAnchor=new T.Vector3(1e6,1e6,1e6);let anchorReady=false,observedAt=0,motionSpeed=0,palmAngle=0,formationStartedAt=0;
   const resize=()=>{const w=Math.max(1,element.clientWidth),h=Math.max(1,element.clientHeight);camera.left=-w/2;camera.right=w/2;camera.top=h/2;camera.bottom=-h/2;camera.updateProjectionMatrix();composer.setSize(w,h)};
   const ro=typeof ResizeObserver!=='undefined'?new ResizeObserver(resize):null;ro?.observe(element);resize();
-  // Blend wrist and knuckle bases, then add a small offset along the palm axis.
-  // This keeps the orb over the hand when the palm turns edge-on instead of using
-  // a knuckle-heavy centroid that can slip to the side of the hand.
-  const palmAnchor=(hand:EffectPoint[]|undefined,w:number,h:number)=>{
+  // Estimate the palm's surface center rather than averaging mostly fingertip-side joints.
+  // World landmarks tell us when the palm is foreshortened; the projected wrist→middle
+  // axis still determines the hover direction, so the orb does not drift sideways.
+  const palmAnchor=(hand:EffectPoint[]|undefined,worldHand:EffectPoint[]|undefined,w:number,h:number,orbRadius:number)=>{
    if(!hand||hand.length<21)return null;
    const wrist=hand[0],index=hand[5],middle=hand[9],ring=hand[13],pinky=hand[17];
-   let x=wrist.x*.40+index.x*.12+middle.x*.22+ring.x*.16+pinky.x*.10;
-   let y=wrist.y*.40+index.y*.12+middle.y*.22+ring.y*.16+pinky.y*.10;
+   let x=wrist.x*.46+index.x*.11+middle.x*.21+ring.x*.14+pinky.x*.08;
+   let y=wrist.y*.46+index.y*.11+middle.y*.21+ring.y*.14+pinky.y*.08;
    const axisX=(middle.x-wrist.x)*w,axisY=(middle.y-wrist.y)*h,length=Math.hypot(axisX,axisY);
+   let edgeOn=0;
+   if(worldHand&&worldHand.length>=21){
+    const a={x:worldHand[5].x-worldHand[0].x,y:worldHand[5].y-worldHand[0].y,z:worldHand[5].z-worldHand[0].z};
+    const b={x:worldHand[17].x-worldHand[0].x,y:worldHand[17].y-worldHand[0].y,z:worldHand[17].z-worldHand[0].z};
+    const nx=a.y*b.z-a.z*b.y,ny=a.z*b.x-a.x*b.z,nz=a.x*b.y-a.y*b.x;
+    const normalLength=Math.hypot(nx,ny,nz);
+    if(normalLength>1e-6)edgeOn=1-clamp(Math.abs(nz)/normalLength,0,1);
+   }
    if(length>1){
-    const offset=clamp(length*.16,6,17);
+    // Float beyond the palm center, toward the finger bases. Scale the shift by
+    // visible palm length and sphere radius so side-on views do not push it off the hand.
+    const offset=Math.min(length*(.085+edgeOn*.025),orbRadius*(.32+edgeOn*.06));
     x+=(axisX/length*offset)/w;
     y+=(axisY/length*offset)/h;
    }
-   return {x,y,angle:length>1?Math.atan2(-axisY,-axisX):0};
+   return {x,y,angle:length>1?Math.atan2(-axisY,-axisX):0,edgeOn};
   };
   // Mirror the landmark X coordinate to match the selfie-preview flip.
   const screen=(p:{x:number;y:number},w:number,h:number,out:T.Vector3)=>out.set((.5-p.x)*w,(.5-p.y)*h,0);
   const draw=()=>{
    raf=requestAnimationFrame(draw);const now=performance.now();if(now-lastAt<targetMs)return;const dt=lastAt?now-lastAt:16.7;lastAt=now;const time=now/1000,w=Math.max(1,element.clientWidth),h=Math.max(1,element.clientHeight),min=Math.min(w,h),state=trackingRef.current,props=latest.current;
-   const hands=state?.effectHands?.length?state.effectHands:(state?.hands??[]),handForEffects=hands[state?.effectHandIndex??0]??hands[0],active=props.activeJutsu==='rasengan',scale=min/360,charge=clamp(props.chargeLevel/100,0,1),sampleAt=state?.sampledAt&&state.sampledAt>0?state.sampledAt:now;
+   const hands=state?.effectHands?.length?state.effectHands:(state?.hands??[]),handForEffects=hands[state?.effectHandIndex??0]??hands[0],worldForEffects=state?.worldHands?.[state?.effectHandIndex??0],active=props.activeJutsu==='rasengan',scale=min/360,charge=clamp(props.chargeLevel/100,0,1),sampleAt=state?.sampledAt&&state.sampledAt>0?state.sampledAt:now;
    const formationProgress=active&&previous==='rasengan'&&formationStartedAt>0?clamp((now-formationStartedAt)/1080,0,1):0;
    if(active){
-    const center=palmAnchor(handForEffects,w,h);
+    const center=palmAnchor(handForEffects,worldForEffects,w,h,25*scale);
     if(center){const target=screen(center,w,h,targetPoint);
      if(!anchorReady||previous!=='rasengan'||formationStartedAt===0){
       anchor.copy(target);observed.copy(target);predicted.copy(target);velocity.set(0,0,0);observedAt=sampleAt;motionSpeed=0;

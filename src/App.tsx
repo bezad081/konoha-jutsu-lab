@@ -233,7 +233,7 @@ export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const threeTrackingRef = useRef<ThreeTrackingState>({ hands: [], effectHands: [], effectHandIndex: 0, sampledAt: 0 });
+  const threeTrackingRef = useRef<ThreeTrackingState>({ hands: [], effectHands: [], worldHands: [], effectHandIndex: 0, sampledAt: 0 });
   const effectHandIndexRef = useRef(0);
   const trackerRef = useRef<HandLandmarker | null>(null);
   const visionWorkerRef = useRef<Worker | null>(null);
@@ -339,7 +339,7 @@ export default function App() {
     setTrackingEngine('idle');
     castUntilRef.current = 0;
     if (videoRef.current) videoRef.current.srcObject = null;
-    threeTrackingRef.current = { hands: [], effectHands: [], effectHandIndex: 0 };
+    threeTrackingRef.current = { hands: [], effectHands: [], worldHands: [], effectHandIndex: 0 };
     switchJutsu('none'); setCameraState('idle'); setHandCount(0); setGestureLabel('Camera stopped');
     const ctx = canvasRef.current?.getContext('2d');
     if (ctx && canvasRef.current) ctx.clearRect(0,0,canvasRef.current.width,canvasRef.current.height);
@@ -554,7 +554,9 @@ export default function App() {
             if (!noPoseAt) noPoseAt = now;
             const previewStillVisible = now < previewUntilRef.current;
             // Avoid cancelling the orb during a brief angle, occlusion, or motion-blur hiccup.
-            const releaseDelay = detected.gesture === 'fist' ? 180 : count > 0 ? 900 : 1100;
+            // Only a clear, sustained fist should release quickly. Transient angle misses
+            // and slightly curled fingers should not cancel an otherwise stable Rasengan.
+            const releaseDelay = detected.gesture === 'fist' ? 300 : count > 0 ? 1550 : 1200;
             if (activeRef.current === 'rasengan' && !previewStillVisible && now > castUntilRef.current && now - noPoseAt > releaseDelay) {
               switchJutsu('none'); castUntilRef.current = 0; noPoseAt = 0;
               setGestureLabel('Chakra released · show your palm to form Rasengan again');
@@ -574,6 +576,7 @@ export default function App() {
         threeTrackingRef.current = {
           hands: smoothedLandmarksRef.current,
           effectHands: effectLandmarksRef.current,
+          worldHands: (latest.worldLandmarks ?? []) as Point[][],
           effectHandIndex: effectHandIndexRef.current,
           sampledAt: latestTimestamp,
         }

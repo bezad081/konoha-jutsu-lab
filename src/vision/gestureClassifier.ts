@@ -13,8 +13,10 @@ function readFingerPose(points:Point[],tip:number,pip:number,mcp:number):FingerP
   const cosine=Math.max(-1,Math.min(1,(ax*bx+ay*by+az*bz)/(proximalLength*distalLength)));
   const angle=Math.acos(cosine)*180/Math.PI;
   const reachRatio=distance(points[tip],points[mcp])/Math.max(1e-5,distance(points[pip],points[mcp]));
-  // A naturally curved finger is okay; require clear curling before calling it folded.
-  return {extended:angle>128&&reachRatio>0.96,folded:angle<108||reachRatio<0.74};
+  // Medium bends are not a fist. A finger is folded only when sharply curled and
+  // its tip has tucked toward the palm. This is more stable across oblique views.
+  const folded=(angle<82&&reachRatio<0.72)||(angle<58&&reachRatio<0.88);
+  return {extended:angle>128&&reachRatio>0.96,folded};
 }
 /** Classify the visible palm from raw, unmirrored camera landmarks. */
 export function isPalmFacingCamera(points:Point[],mediaPipeHandedness?:string):boolean{
@@ -26,9 +28,9 @@ export function isPalmFacingCamera(points:Point[],mediaPipeHandedness?:string):b
   const normalLength=Math.hypot(nx,ny,nz);
   if(normalLength<1e-6)return false;
   const facingScore=nz/normalLength;
-  // At a true side angle, front/back cannot be reliably separated from the palm normal.
-  // Let the visible open-finger pose pass through this narrow ambiguous band.
-  if(Math.abs(facingScore)<0.12)return true;
+  // At oblique or edge-on angles, the palm normal becomes unreliable. Do not reject
+  // an otherwise relaxed hand just because the camera sees the palm nearly side-on.
+  if(Math.abs(facingScore)<0.24)return true;
   const expectedSign=mediaPipeHandedness==='Left'?1:-1;
   return facingScore*expectedSign>0.12;
 }
@@ -39,7 +41,7 @@ export function classifyHand(points:Point[],mediaPipeHandedness?:string):Gesture
   const extended=fingers.filter(f=>f.extended).length,folded=fingers.filter(f=>f.folded).length;
   const relaxedOrExtended=4-folded;
   if(folded>=3&&extended<=1)return 'fist';
-  if(relaxedOrExtended>=3&&(extended>=1||folded===0))
+  if(relaxedOrExtended>=3&&(extended>=1||folded<=1))
     return isPalmFacingCamera(points,mediaPipeHandedness)?'open':'none';
   return 'none';
 }

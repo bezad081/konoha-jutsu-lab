@@ -7,9 +7,9 @@ A focused React + TypeScript + Vite browser experience: use one open palm to sum
 - One technique only: Rasengan.
 - Live mirrored webcam preview with an optional hand-landmark overlay.
 - MediaPipe Hand Landmarker processes one hand in the browser, using a Web Worker with GPU/CPU fallback and a main-thread compatibility fallback.
-- Relaxed-palm detection allows slight finger curls and palm angles including a true side-on pose. Clearly back-facing hands are rejected when orientation is measurable. A closed fist never casts, and a detected fist releases an existing orb quickly.
-- Procedural Three.js/WebGL Rasengan: a saturated-blue vortex with a bright hotspot, rotating chakra rings, spiral filaments, orbiting particles, palm wisps, and controlled Bloom. The orb grows in four smooth stages from a small core to full size while its spin accelerates.
-- Palm-aware positioning: the anchor blends wrist and knuckle landmarks, adds a small offset along the wrist-to-fingertip axis, and aligns the ring motion as the hand turns. This helps the orb stay above the palm instead of slipping to the edge of the hand.
+- Relaxed-palm detection allows moderate finger bends, one more-curled finger, and palm angles including a true side-on pose. Deeply tucked fingers across most of the hand are required for a fist; a sustained fist releases the orb while brief tracking misses are tolerated.
+- Procedural Three.js/WebGL Rasengan: a saturated-blue vortex with a bright hotspot, moving specular glints/reflection bands, five rotating chakra rings, eight spiral filaments, orbiting particles, palm wisps, and controlled Bloom. The orb grows in four smooth stages from a small core to full size while its spin accelerates.
+- Palm-aware positioning: the anchor uses the wrist and metacarpal bases plus matched MediaPipe world landmarks to adapt its hover offset to palm foreshortening. The anchor sits closer to the true palm center, with only a controlled offset toward the fingers to avoid drifting to the hand's edge.
 - Adaptive rendering targets 60 FPS and drops to 45 FPS with a reduced pixel ratio when the post-processing workload is heavy.
 - Three.js effects load on demand; the main-thread MediaPipe compatibility path is dynamically imported only when the worker cannot run.
 - Camera frames and hand landmarks stay in the browser; video is not uploaded to an application backend.
