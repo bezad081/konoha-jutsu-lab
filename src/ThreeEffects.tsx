@@ -153,7 +153,7 @@ function createRasengan(scene: T.Scene): RasenganFx {
     return mesh;
   });
 
-  const spirals: T.Line[] = [];
+  const spirals: T.Mesh[] = [];
   for (let strand = 0; strand < 6; strand++) {
     const points: T.Vector3[] = [];
     for (let i = 0; i < 136; i++) {
