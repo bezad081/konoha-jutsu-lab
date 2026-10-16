@@ -7,7 +7,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 export type EffectPoint = { x:number; y:number; z?:number };
 export type ThreeTrackingState = { hands:EffectPoint[][]; effectHands?:EffectPoint[][]; worldHands?:EffectPoint[][]; effectHandIndex?:number; sampledAt?:number };
 type Props = { trackingRef:RefObject<ThreeTrackingState>; activeJutsu:string; chargeLevel:number };
-type RasenganFx = { root:T.Group; halo:T.Mesh; shell:T.Mesh; core:T.Mesh; innerCore:T.Mesh; rings:T.Mesh[]; spirals:T.Mesh[]; particles:T.Points; palmStreams:T.Line[] };
+type RasenganFx = { root:T.Group; palmAura:T.Mesh; halo:T.Mesh; shell:T.Mesh; core:T.Mesh; innerCore:T.Mesh; rings:T.Mesh[]; spirals:T.Mesh[]; particles:T.Points; palmStreams:T.Line[] };
 const additive=T.AdditiveBlending;
 const clamp=(v:number,min:number,max:number)=>Math.max(min,Math.min(max,v));
 const ease01=(value:number)=>{const t=clamp(value,0,1);return t*t*(3-2*t)};
@@ -24,6 +24,26 @@ function makeLine(points: T.Vector3[], color: number, opacity = 0.9): T.Mesh {
 
 function createRasengan(scene: T.Scene): RasenganFx {
   const root = new T.Group();
+  // A separate soft ellipse stays on the projected palm surface while the sphere
+  // floats away from it. This gives the viewer a visual reference for the hover gap.
+  const palmAuraMaterial = new T.ShaderMaterial({
+    uniforms: { uTime: { value: 0 }, uIntensity: { value: 0 } },
+    vertexShader: `varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
+    fragmentShader: `uniform float uTime; uniform float uIntensity; varying vec2 vUv;
+      void main(){
+        vec2 p=(vUv-0.5)*2.0;
+        float r=length(vec2(p.x,p.y*1.7));
+        float soft=exp(-r*r*4.2);
+        float ring=exp(-pow((r-(0.66+sin(uTime*2.8)*0.018))/0.17,2.0));
+        float fade=1.0-smoothstep(0.88,1.0,r);
+        float alpha=(soft*0.115+ring*0.15)*uIntensity*fade;
+        vec3 color=mix(vec3(0.015,0.10,0.52),vec3(0.06,0.60,1.0),ring);
+        gl_FragColor=vec4(color,alpha);
+      }`,
+    transparent:true,blending:additive,depthWrite:false,side:T.DoubleSide,
+  });
+  const palmAura = new T.Mesh(new T.PlaneGeometry(1,1),palmAuraMaterial);
+  palmAura.position.z=-38;palmAura.visible=false;palmAura.renderOrder=-5;scene.add(palmAura);
   const shader = new T.ShaderMaterial({
     uniforms: {
       uTime: { value: 0 },
@@ -103,7 +123,7 @@ function createRasengan(scene: T.Scene): RasenganFx {
       }`,
     transparent:true,blending:additive,depthWrite:false,side:T.DoubleSide,
   });
-  const halo = new T.Mesh(new T.PlaneGeometry(92, 92), haloMaterial);
+  const halo = new T.Mesh(new T.PlaneGeometry(74, 74), haloMaterial);
   halo.position.z=-4;
   root.add(halo);
   const shellShader = new T.ShaderMaterial({
@@ -157,7 +177,7 @@ function createRasengan(scene: T.Scene): RasenganFx {
     depthWrite: false,
     side: T.DoubleSide,
   });
-  const shell = new T.Mesh(new T.SphereGeometry(33, 28, 22), shellShader);
+  const shell = new T.Mesh(new T.SphereGeometry(29.5, 36, 28), shellShader);
   root.add(shell);
   const core = new T.Mesh(new T.SphereGeometry(25, 40, 32), shader);
   root.add(core);
@@ -166,11 +186,10 @@ function createRasengan(scene: T.Scene): RasenganFx {
   root.add(innerCore);
 
   const ringSpecs = [
-    { radius: 19, tube: 0.78, color: 0x9edfff, tilt: [0.15, 0.28, 0.18] },
-    { radius: 27, tube: 0.68, color: 0x2793ff, tilt: [0.8, 0.2, 0.84] },
-    { radius: 34, tube: 0.58, color: 0x58cfff, tilt: [1.1, 0.92, 0.2] },
-    { radius: 39, tube: 0.42, color: 0xa9dfff, tilt: [0.35, 1.3, 1.2] },
-    { radius: 44, tube: 0.34, color: 0x6adfff, tilt: [0.52, 1.0, 0.48] },
+    { radius: 17, tube: 0.72, color: 0x9edfff, tilt: [0.15, 0.28, 0.18] },
+    { radius: 22, tube: 0.62, color: 0x2793ff, tilt: [0.8, 0.2, 0.84] },
+    { radius: 27, tube: 0.52, color: 0x58cfff, tilt: [1.1, 0.92, 0.2] },
+    { radius: 32, tube: 0.38, color: 0xa9dfff, tilt: [0.35, 1.3, 1.2] },
   ];
   const rings = ringSpecs.map((spec) => {
     const mesh = new T.Mesh(new T.TorusGeometry(spec.radius, spec.tube, 7, 72), basic(spec.color, 0.48));
@@ -180,12 +199,12 @@ function createRasengan(scene: T.Scene): RasenganFx {
   });
 
   const spirals: T.Mesh[] = [];
-  for (let strand = 0; strand < 8; strand++) {
+  for (let strand = 0; strand < 6; strand++) {
     const points: T.Vector3[] = [];
     for (let i = 0; i < 136; i++) {
       const q = i / 135;
-      const angle = q * Math.PI * 8.0 + strand * Math.PI / 4;
-      const radius = 4 + q * 36;
+      const angle = q * Math.PI * 8.0 + strand * Math.PI / 3;
+      const radius = 4 + q * 29;
       points.push(new T.Vector3(
         Math.cos(angle) * radius,
         Math.sin(angle) * radius,
@@ -221,8 +240,8 @@ function createRasengan(scene: T.Scene): RasenganFx {
   const seeds: Array<{ angle: number; radius: number; depth: number; speed: number }> = [];
   for (let i = 0; i < particleCount; i++) {
     const angle = Math.random() * Math.PI * 2;
-    const radius = 27 + Math.random() * 29;
-    const depth = (Math.random() - 0.5) * 14;
+    const radius = 19 + Math.random() * 16;
+    const depth = (Math.random() - 0.5) * 11;
     seeds.push({ angle, radius, depth, speed: (Math.random() * 0.55 + 0.35) * (Math.random() < 0.5 ? -1 : 1) });
     positions[i * 3] = Math.cos(angle) * radius;
     positions[i * 3 + 1] = Math.sin(angle) * radius;
@@ -232,12 +251,12 @@ function createRasengan(scene: T.Scene): RasenganFx {
   particleGeometry.setAttribute('position', new T.BufferAttribute(positions, 3));
   particleGeometry.userData.seeds = seeds;
   const particles = new T.Points(particleGeometry, new T.PointsMaterial({
-    color: 0x9deaff, size: 2.8, transparent: true, opacity: 0.58,
+    color: 0x9deaff, size: 2.2, transparent: true, opacity: 0.60,
     blending: additive, depthWrite: false, sizeAttenuation: false,
   }));
   root.add(particles);
   scene.add(root);
-  return { root, halo, shell, core, innerCore, rings, spirals, particles, palmStreams };
+  return { root, palmAura, halo, shell, core, innerCore, rings, spirals, particles, palmStreams };
 }
 
 export default function ThreeEffects({trackingRef,activeJutsu,chargeLevel}:Props){
@@ -274,7 +293,7 @@ export default function ThreeEffects({trackingRef,activeJutsu,chargeLevel}:Props
   // Bloom is applied only to this VFX canvas; CSS screen blending lets the webcam pass through the black areas.
   const composer=new EffectComposer(renderer);
   composer.setPixelRatio(renderer.getPixelRatio());
-  const bloomPass=new UnrealBloomPass(new T.Vector2(1,1),0.52,0.52,0.32);
+  const bloomPass=new UnrealBloomPass(new T.Vector2(1,1),0.52,0.42,0.48);
   const renderPass=new RenderPass(scene,camera);
   const outputPass=new OutputPass();
   composer.addPass(renderPass);
@@ -282,59 +301,95 @@ export default function ThreeEffects({trackingRef,activeJutsu,chargeLevel}:Props
   composer.addPass(outputPass);
 
   let raf=0,lastAt=0,targetMs=1000/60,slow=0,fast=0,pixelRatio=Math.min(window.devicePixelRatio||1,1),wasDrawing=false,previous='none',burstAt=-Infinity,burstPower=0,lastCharge=0,chargePhaseLast=-1,trailClock=0,trailCursor=0;
-  const burstCenter=new T.Vector3(),anchor=new T.Vector3(),observed=new T.Vector3(),predicted=new T.Vector3(),velocity=new T.Vector3(),targetPoint=new T.Vector3(),motionDelta=new T.Vector3(),lastTrailAnchor=new T.Vector3(1e6,1e6,1e6);let anchorReady=false,observedAt=0,motionSpeed=0,palmAngle=0,formationStartedAt=0;
+  const burstCenter=new T.Vector3(),anchor=new T.Vector3(),palmSurface=new T.Vector3(),observed=new T.Vector3(),predicted=new T.Vector3(),velocity=new T.Vector3(),targetPoint=new T.Vector3(),motionDelta=new T.Vector3(),lastTrailAnchor=new T.Vector3(1e6,1e6,1e6);let anchorReady=false,observedAt=0,motionSpeed=0,palmAngle=0,palmTiltX=0,palmTiltY=0,formationStartedAt=0;
   const resize=()=>{const w=Math.max(1,element.clientWidth),h=Math.max(1,element.clientHeight);camera.left=-w/2;camera.right=w/2;camera.top=h/2;camera.bottom=-h/2;camera.updateProjectionMatrix();composer.setSize(w,h)};
   const ro=typeof ResizeObserver!=='undefined'?new ResizeObserver(resize):null;ro?.observe(element);resize();
-  // Estimate the palm's surface center rather than averaging mostly fingertip-side joints.
-  // World landmarks tell us when the palm is foreshortened; the projected wrist→middle
-  // axis still determines the hover direction, so the orb does not drift sideways.
+  // Approximate the palm surface center separately from the ball's hover position.
+  // For an edge-on hand, the 3D palm normal projects into the image plane; use that
+  // projected normal to lift the ball by roughly one radius instead of sliding toward fingers.
   const palmAnchor=(hand:EffectPoint[]|undefined,worldHand:EffectPoint[]|undefined,w:number,h:number,orbRadius:number)=>{
    if(!hand||hand.length<21)return null;
    const wrist=hand[0],index=hand[5],middle=hand[9],ring=hand[13],pinky=hand[17];
-   let x=wrist.x*.46+index.x*.11+middle.x*.21+ring.x*.14+pinky.x*.08;
-   let y=wrist.y*.46+index.y*.11+middle.y*.21+ring.y*.14+pinky.y*.08;
-   const axisX=(middle.x-wrist.x)*w,axisY=(middle.y-wrist.y)*h,length=Math.hypot(axisX,axisY);
-   let edgeOn=0;
+   const x=wrist.x*.30+index.x*.18+middle.x*.20+ring.x*.18+pinky.x*.14;
+   const y=wrist.y*.30+index.y*.18+middle.y*.20+ring.y*.18+pinky.y*.14;
+   const axisScreenX=-(middle.x-wrist.x)*w,axisScreenY=-(middle.y-wrist.y)*h;
+   const axisLength=Math.hypot(axisScreenX,axisScreenY);
+   const angle=axisLength>1?Math.atan2(axisScreenY,axisScreenX):0;
+   let edgeOn=0,hoverX=0,hoverY=1,tiltX=0,tiltY=0;
    const wristWorld=worldHand?.[0],indexWorld=worldHand?.[5],pinkyWorld=worldHand?.[17];
    if(wristWorld&&indexWorld&&pinkyWorld){
-    const a={x:indexWorld.x-wristWorld.x,y:indexWorld.y-wristWorld.y,z:(indexWorld.z??0)-(wristWorld.z??0)};
-    const b={x:pinkyWorld.x-wristWorld.x,y:pinkyWorld.y-wristWorld.y,z:(pinkyWorld.z??0)-(wristWorld.z??0)};
-    const nx=a.y*b.z-a.z*b.y,ny=a.z*b.x-a.x*b.z,nz=a.x*b.y-a.y*b.x;
+    const ax=indexWorld.x-wristWorld.x,ay=indexWorld.y-wristWorld.y,az=(indexWorld.z??0)-(wristWorld.z??0);
+    const bx=pinkyWorld.x-wristWorld.x,by=pinkyWorld.y-wristWorld.y,bz=(pinkyWorld.z??0)-(wristWorld.z??0);
+    const nx=ay*bz-az*by,ny=az*bx-ax*bz,nz=ax*by-ay*bx;
     const normalLength=Math.hypot(nx,ny,nz);
-    if(normalLength>1e-6)edgeOn=1-clamp(Math.abs(nz)/normalLength,0,1);
+    if(normalLength>1e-6){
+     edgeOn=clamp(Math.hypot(nx,ny)/normalLength,0,1);
+     tiltX=clamp(ny/normalLength*.58,-.58,.58);
+     tiltY=clamp(-nx/normalLength*.58,-.58,.58);
+     if(edgeOn>.18){
+      // Screen X is mirrored with the selfie camera; Y is the upward Three.js axis.
+      hoverX=-nx/normalLength;hoverY=ny/normalLength;
+      const projectedLength=Math.hypot(hoverX,hoverY);
+      if(projectedLength>1e-4){hoverX/=projectedLength;hoverY/=projectedLength}
+      if(hoverY<0){hoverX=-hoverX;hoverY=-hoverY}
+      // When the normal projects mostly sideways, use the palm's perpendicular axis
+      // so a horizontally held hand still gets a clean upward hover.
+      if(Math.abs(hoverY)<.30&&axisLength>1){
+       let qx=-axisScreenY,qy=axisScreenX,qLength=Math.hypot(qx,qy);
+       if(qLength>1e-4){
+        qx/=qLength;qy/=qLength;
+        if(qy<0){qx=-qx;qy=-qy}
+        const blend=clamp((.30-Math.abs(hoverY))/.30,0,1);
+        hoverX=hoverX*(1-blend)+qx*blend;hoverY=hoverY*(1-blend)+qy*blend;
+        const mixLength=Math.hypot(hoverX,hoverY);
+        if(mixLength>1e-4){hoverX/=mixLength;hoverY/=mixLength}
+       }
+      }
+     }
+    }
    }
-   if(length>1){
-    // Float beyond the palm center, toward the finger bases. Scale the shift by
-    // visible palm length and sphere radius so side-on views do not push it off the hand.
-    const offset=Math.min(length*(.085+edgeOn*.025),orbRadius*(.32+edgeOn*.06));
-    x+=(axisX/length*offset)/w;
-    y+=(axisY/length*offset)/h;
-   }
-   return {x,y,angle:length>1?Math.atan2(-axisY,-axisX):0,edgeOn};
+   // Front-facing palms barely move in screen space; near-profile palms float by
+   // approximately one orb radius so the sphere sits above the skin rather than in it.
+   const offset=orbRadius*(.10+edgeOn*.98);
+   return {x,y,angle,edgeOn,hoverX,hoverY,offset,tiltX,tiltY};
   };
   // Mirror the landmark X coordinate to match the selfie-preview flip.
   const screen=(p:{x:number;y:number},w:number,h:number,out:T.Vector3)=>out.set((.5-p.x)*w,(.5-p.y)*h,0);
   const draw=()=>{
    raf=requestAnimationFrame(draw);const now=performance.now();if(now-lastAt<targetMs)return;const dt=lastAt?now-lastAt:16.7;lastAt=now;const time=now/1000,w=Math.max(1,element.clientWidth),h=Math.max(1,element.clientHeight),min=Math.min(w,h),state=trackingRef.current,props=latest.current;
-   const hands=state?.effectHands?.length?state.effectHands:(state?.hands??[]),handForEffects=hands[state?.effectHandIndex??0]??hands[0],worldForEffects=state?.worldHands?.[state?.effectHandIndex??0],active=props.activeJutsu==='rasengan',scale=min/360,charge=clamp(props.chargeLevel/100,0,1),sampleAt=state?.sampledAt&&state.sampledAt>0?state.sampledAt:now;
+   const hands=state?.effectHands?.length?state.effectHands:(state?.hands??[]),handForEffects=hands[state?.effectHandIndex??0]??hands[0],worldForEffects=state?.worldHands?.[state?.effectHandIndex??0],active=props.activeJutsu==='rasengan',scale=min/405,charge=clamp(props.chargeLevel/100,0,1),sampleAt=state?.sampledAt&&state.sampledAt>0?state.sampledAt:now;
    const formationProgress=active&&previous==='rasengan'&&formationStartedAt>0?clamp((now-formationStartedAt)/1080,0,1):0;
    if(active){
     const center=palmAnchor(handForEffects,worldForEffects,w,h,25*scale);
-    if(center){const target=screen(center,w,h,targetPoint);
+    if(center){
+     screen(center,w,h,palmSurface);
+     targetPoint.copy(palmSurface);
+     targetPoint.x+=center.hoverX*center.offset;
+     targetPoint.y+=center.hoverY*center.offset;
      if(!anchorReady||previous!=='rasengan'||formationStartedAt===0){
-      anchor.copy(target);observed.copy(target);predicted.copy(target);velocity.set(0,0,0);observedAt=sampleAt;motionSpeed=0;
-      palmAngle=center.angle;formationStartedAt=now;anchorReady=true;lastCharge=0;
+      anchor.copy(targetPoint);observed.copy(targetPoint);predicted.copy(targetPoint);velocity.set(0,0,0);observedAt=sampleAt;motionSpeed=0;
+      palmAngle=center.angle;palmTiltX=center.tiltX;palmTiltY=center.tiltY;formationStartedAt=now;anchorReady=true;lastCharge=0;
       lastTrailAnchor.set(1e6,1e6,1e6);trailClock=0;trailLife.fill(0);trailLifeAttribute.needsUpdate=true;
      }else{
       const angleDelta=Math.atan2(Math.sin(center.angle-palmAngle),Math.cos(center.angle-palmAngle));
-      palmAngle+=angleDelta*(1-Math.exp(-14*Math.max(.008,dt/1000)));
-      const moved=target.distanceTo(observed);
-      if(moved>.12){const elapsed=clamp((sampleAt-observedAt)/1000,.012,.12);motionDelta.subVectors(target,observed).divideScalar(elapsed);velocity.lerp(motionDelta,.82);motionSpeed=velocity.length()/Math.max(1,min);observed.copy(target);observedAt=sampleAt}
+      palmAngle+=angleDelta*(1-Math.exp(-16*Math.max(.008,dt/1000)));
+      palmTiltX+=(center.tiltX-palmTiltX)*(1-Math.exp(-12*Math.max(.008,dt/1000)));
+      palmTiltY+=(center.tiltY-palmTiltY)*(1-Math.exp(-12*Math.max(.008,dt/1000)));
+      const moved=targetPoint.distanceTo(observed);
+      if(moved>.12){const elapsed=clamp((sampleAt-observedAt)/1000,.012,.12);motionDelta.subVectors(targetPoint,observed).divideScalar(elapsed);velocity.lerp(motionDelta,.82);motionSpeed=velocity.length()/Math.max(1,min);observed.copy(targetPoint);observedAt=sampleAt}
       else{velocity.multiplyScalar(Math.exp(-dt/100));motionSpeed=velocity.length()/Math.max(1,min)}
-      predicted.copy(target);const pred=Math.min(.026,Math.max(.010,dt/1000*1.05));let lx=velocity.x*pred,ly=velocity.y*pred;const lead=Math.hypot(lx,ly),cap=min*.048;
+      predicted.copy(targetPoint);const pred=Math.min(.026,Math.max(.010,dt/1000*1.05));let lx=velocity.x*pred,ly=velocity.y*pred;const lead=Math.hypot(lx,ly),cap=min*.048;
       if(lead>cap&&lead>0){lx*=cap/lead;ly*=cap/lead}predicted.x+=lx;predicted.y+=ly;
       anchor.lerp(predicted,1-Math.exp(-clamp(132+motionSpeed*28,132,260)*Math.max(.008,dt/1000)));
      }
+     rasengan.palmAura.visible=true;
+     rasengan.palmAura.position.set(palmSurface.x,palmSurface.y,-38);
+     rasengan.palmAura.rotation.z=palmAngle;
+     const auraRadius=25*scale;
+     rasengan.palmAura.scale.set(auraRadius*2.5,auraRadius*.90,1);
+     const auraMaterial=rasengan.palmAura.material as T.ShaderMaterial;
+     auraMaterial.uniforms.uTime.value=time;
+     auraMaterial.uniforms.uIntensity.value=.44+charge*.18+formationProgress*.12;
     }else if(!anchorReady){anchor.set(0,0,0);anchorReady=true;formationStartedAt=0}
     lastCharge=Math.max(lastCharge,charge);
    }
@@ -367,17 +422,22 @@ export default function ThreeEffects({trackingRef,activeJutsu,chargeLevel}:Props
    }else if(!active){trailClock=0}
    trail.visible=trailActive;
    rasengan.root.visible=active;
+   rasengan.palmAura.visible=active&&rasengan.palmAura.visible;
    if(active){
     const grow=formationProgress;
     const formationScale=grow<.22?.16+.18*ease01(grow/.22):grow<.48?.34+.25*ease01((grow-.22)/.26):grow<.76?.59+.24*ease01((grow-.48)/.28):.83+.17*ease01((grow-.76)/.24);
     const spinUp=.38+.62*ease01(grow);
-    rasengan.root.position.copy(anchor);const motion=1+clamp(motionSpeed*.72,0,1.35),pulse=Math.sin(time*13.5*spinUp)*(.012+charge*.025);
+    rasengan.root.position.copy(anchor);
+    rasengan.root.rotation.x+=(palmTiltX-rasengan.root.rotation.x)*(1-Math.exp(-10*Math.max(.008,dt/1000)));
+    rasengan.root.rotation.y+=(palmTiltY-rasengan.root.rotation.y)*(1-Math.exp(-10*Math.max(.008,dt/1000)));
+    rasengan.root.rotation.z+=(palmAngle*.08-rasengan.root.rotation.z)*(1-Math.exp(-12*Math.max(.008,dt/1000)));
+    const motion=1+clamp(motionSpeed*.72,0,1.35),pulse=Math.sin(time*16.5*spinUp)*(.014+charge*.032);
     const chargePhase=charge<.35?0:charge<.78?1:2;
     const outerShell=rasengan.shell.material as T.ShaderMaterial;
     outerShell.uniforms.uTime.value=time;outerShell.uniforms.uCharge.value=charge;
     rasengan.shell.rotation.set(Math.sin(time*1.1*spinUp)*.12,time*(.16+charge*.34)*spinUp,time*(.42+charge*.6)*spinUp+palmAngle*.10);
-    rasengan.shell.scale.setScalar(1+Math.sin(time*7.5*spinUp)*.012+charge*.045);
-    rasengan.root.scale.setScalar(scale*formationScale*(.90+charge*.28+pulse*.45)*(chargePhase===2?1.025:1));rasengan.halo.scale.setScalar(.92+charge*.10+Math.sin(time*5.2*spinUp)*.018);
+    rasengan.shell.scale.setScalar(1+Math.sin(time*8.8*spinUp)*.014+charge*.025);
+    rasengan.root.scale.setScalar(scale*formationScale*(.92+charge*.08+pulse*.45)*(chargePhase===2?1.018:1));rasengan.halo.scale.setScalar(.92+charge*.07+Math.sin(time*6.2*spinUp)*.018);
     // Three short animated filaments hug the orb near the tracked knuckles,
     // visually tying the spherical chakra to the hand that is holding it.
     if(handForEffects&&handForEffects.length>=21){
@@ -412,15 +472,15 @@ export default function ThreeEffects({trackingRef,activeJutsu,chargeLevel}:Props
     }
     haloMaterial.uniforms.uTime.value=time;haloMaterial.uniforms.uCharge.value=charge;
     const shader=rasengan.core.material as T.ShaderMaterial;shader.uniforms.uTime.value=time;shader.uniforms.uCharge.value=charge;shader.uniforms.uPhase.value=chargePhase;rasengan.innerCore.scale.setScalar(.92+charge*.20+Math.sin(time*9.2*spinUp)*.035+(chargePhase===2?.04:0));
-    rasengan.rings.forEach((ring,i)=>{const d=i%2?-1:1;ring.rotation.x=time*(.8+i*.22)*motion*spinUp+i*.7;ring.rotation.y=time*d*(1.0+charge*2.1+i*.20)*motion*spinUp;ring.rotation.z=time*d*(1.8+charge*2.6)*spinUp+i*1.3+palmAngle;ring.scale.setScalar(.7+charge*.38+Math.sin(time*10*spinUp+i)*.035);(ring.material as T.MeshBasicMaterial).opacity=(.24+charge*.24)*(chargePhase===2?1.06:1)});
-    rasengan.spirals.forEach((line,i)=>{line.rotation.z=palmAngle*.18+time*(i%2?-4.8:4.2)*(.68+charge*.7)*(1+clamp(motionSpeed*.7,0,1.2))*spinUp;line.rotation.x=Math.sin(time*2.0*spinUp+i)*.28;(line.material as T.MeshBasicMaterial).opacity=.36+charge*.34});
-    const particles=rasengan.particles;particles.rotation.z=-time*(.9+charge*2.0)*motion*spinUp+palmAngle*.12;particles.rotation.y=time*(.7+charge*1.0)*(1+clamp(motionSpeed*.5,0,.9))*spinUp;(particles.material as T.PointsMaterial).opacity=.34+charge*.54+Math.sin(time*9*spinUp)*.05;
+    rasengan.rings.forEach((ring,i)=>{const d=i%2?-1:1;ring.rotation.x=time*(1.0+i*.25)*motion*spinUp+i*.7;ring.rotation.y=time*d*(1.32+charge*2.55+i*.24)*motion*spinUp;ring.rotation.z=time*d*(2.2+charge*3.2)*spinUp+i*1.3+palmAngle;ring.scale.setScalar(.78+charge*.25+Math.sin(time*12*spinUp+i)*.028);(ring.material as T.MeshBasicMaterial).opacity=(.28+charge*.20)*(chargePhase===2?1.06:1)});
+    rasengan.spirals.forEach((line,i)=>{line.rotation.z=palmAngle*.18+time*(i%2?-6.1:5.5)*(.72+charge*.62)*(1+clamp(motionSpeed*.7,0,1.2))*spinUp;line.rotation.x=Math.sin(time*2.8*spinUp+i)*.31;(line.material as T.MeshBasicMaterial).opacity=.39+charge*.30});
+    const particles=rasengan.particles;particles.rotation.z=-time*(1.18+charge*2.25)*motion*spinUp+palmAngle*.12;particles.rotation.y=time*(.92+charge*1.25)*(1+clamp(motionSpeed*.5,0,.9))*spinUp;(particles.material as T.PointsMaterial).opacity=.38+charge*.48+Math.sin(time*12*spinUp)*.04;
     const pos=particles.geometry.getAttribute('position').array as Float32Array,seeds=particles.geometry.userData.seeds as Array<{angle:number;radius:number;depth:number;speed:number}>;
-    for(let i=0;i<seeds.length;i++){const s=seeds[i],angle=s.angle+time*s.speed*(1.4+charge*1.8)*spinUp,radius=s.radius*(.86+charge*.14)+Math.sin(time*4.5*spinUp+i)*1.3;pos[3*i]=Math.cos(angle)*radius;pos[3*i+1]=Math.sin(angle)*radius;pos[3*i+2]=s.depth+Math.sin(time*3*spinUp+i)*2.4}particles.geometry.getAttribute('position').needsUpdate=true;
+    for(let i=0;i<seeds.length;i++){const s=seeds[i],angle=s.angle+time*s.speed*(1.8+charge*2.0)*spinUp,radius=s.radius*(.90+charge*.10)+Math.sin(time*5.8*spinUp+i)*.9;pos[3*i]=Math.cos(angle)*radius;pos[3*i+1]=Math.sin(angle)*radius;pos[3*i+2]=s.depth+Math.sin(time*3.8*spinUp+i)*1.6}particles.geometry.getAttribute('position').needsUpdate=true;
    }
    if(!(active||burstActive||trailActive)){if(wasDrawing){renderer.clear(true,true,true);wasDrawing=false}return}
-   bloomPass.strength=active?0.16+formationProgress*0.18+charge*0.14+clamp(motionSpeed*0.025,0,0.04):0.48+burstPower*0.22;
-   bloomPass.radius=active?0.34+formationProgress*0.14+charge*0.10:0.60;
+   bloomPass.strength=active?0.40+charge*0.10+clamp(motionSpeed*0.025,0,0.04):0.55+burstPower*0.18;
+   bloomPass.radius=active?0.36+charge*0.08:0.52;
    wasDrawing=true;composer.render(Math.min(dt,50)/1000);const cost=performance.now()-now;
    if(cost>20){slow++;fast=0}else if(cost<12){fast++;slow=0}else{slow=0;fast=0}
    if(slow>=3){targetMs=1000/45;if(pixelRatio>.72){pixelRatio=.72;composer.setPixelRatio(pixelRatio);resize()}slow=0;fast=0}
