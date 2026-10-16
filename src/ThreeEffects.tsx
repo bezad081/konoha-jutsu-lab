@@ -7,7 +7,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 export type EffectPoint = { x:number; y:number; z?:number };
 export type ThreeTrackingState = { hands:EffectPoint[][]; effectHands?:EffectPoint[][]; effectHandIndex?:number; sampledAt?:number };
 type Props = { trackingRef:RefObject<ThreeTrackingState>; activeJutsu:string; chargeLevel:number };
-type RasenganFx = { root:T.Group; halo:T.Mesh; shell:T.Mesh; core:T.Mesh; innerCore:T.Mesh; rings:T.Mesh[]; spirals:T.Mesh[]; particles:T.Points };
+type RasenganFx = { root:T.Group; halo:T.Mesh; shell:T.Mesh; core:T.Mesh; innerCore:T.Mesh; rings:T.Mesh[]; spirals:T.Mesh[]; particles:T.Points; palmStreams:T.Line[] };
 const additive=T.AdditiveBlending;
 const clamp=(v:number,min:number,max:number)=>Math.max(min,Math.min(max,v));
 const basic=(color:number,opacity:number,blending=additive)=>new T.MeshBasicMaterial({color,transparent:true,opacity,blending,depthWrite:false,side:T.DoubleSide});
@@ -188,6 +188,25 @@ function createRasengan(scene: T.Scene): RasenganFx {
     root.add(spiral);
   }
 
+  // Fine energy streams sit on the front hemisphere near the knuckles.
+  const palmStreams: T.Line[] = [];
+  for (let i = 0; i < 3; i++) {
+    const geometry = new T.BufferGeometry();
+    const attribute = new T.BufferAttribute(new Float32Array(9 * 3), 3);
+    attribute.setUsage(T.DynamicDrawUsage);
+    geometry.setAttribute('position', attribute);
+    const material = new T.LineBasicMaterial({
+      color: i === 1 ? 0xe8fbff : 0x64cfff, transparent: true, opacity: 0.42,
+      blending: additive, depthTest: false, depthWrite: false,
+    });
+    const stream = new T.Line(geometry, material);
+    stream.frustumCulled = false;
+    stream.renderOrder = 5;
+    stream.visible = false;
+    root.add(stream);
+    palmStreams.push(stream);
+  }
+
   const particleCount = 104;
   const positions = new Float32Array(particleCount * 3);
   const seeds: Array<{ angle: number; radius: number; depth: number; speed: number }> = [];
@@ -209,7 +228,7 @@ function createRasengan(scene: T.Scene): RasenganFx {
   }));
   root.add(particles);
   scene.add(root);
-  return { root, halo, shell, core, innerCore, rings, spirals, particles };
+  return { root, halo, shell, core, innerCore, rings, spirals, particles, palmStreams };
 }
 
 export default function ThreeEffects({trackingRef,activeJutsu,chargeLevel}:Props){
@@ -262,9 +281,9 @@ export default function ThreeEffects({trackingRef,activeJutsu,chargeLevel}:Props
   const screen=(p:{x:number;y:number},w:number,h:number,out:T.Vector3)=>out.set((.5-p.x)*w,(.5-p.y)*h,0);
   const draw=()=>{
    raf=requestAnimationFrame(draw);const now=performance.now();if(now-lastAt<targetMs)return;const dt=lastAt?now-lastAt:16.7;lastAt=now;const time=now/1000,w=Math.max(1,element.clientWidth),h=Math.max(1,element.clientHeight),min=Math.min(w,h),state=trackingRef.current,props=latest.current;
-   const hands=state?.effectHands?.length?state.effectHands:(state?.hands??[]),active=props.activeJutsu==='rasengan',scale=min/360,charge=clamp(props.chargeLevel/100,0,1),sampleAt=state?.sampledAt&&state.sampledAt>0?state.sampledAt:now;
+   const hands=state?.effectHands?.length?state.effectHands:(state?.hands??[]),handForEffects=hands[state?.effectHandIndex??0]??hands[0],active=props.activeJutsu==='rasengan',scale=min/410,charge=clamp(props.chargeLevel/100,0,1),sampleAt=state?.sampledAt&&state.sampledAt>0?state.sampledAt:now;
    if(active){
-    const hand=hands[state?.effectHandIndex??0]??hands[0],center=palmCenter(hand);
+    const center=palmCenter(handForEffects);
     if(center){const target=screen(center,w,h,targetPoint);
      if(!anchorReady||previous!=='rasengan'){anchor.copy(target);observed.copy(target);predicted.copy(target);velocity.set(0,0,0);observedAt=sampleAt;motionSpeed=0;anchorReady=true;lastCharge=0;lastTrailAnchor.set(1e6,1e6,1e6);trailClock=0;trailLife.fill(0);trailLifeAttribute.needsUpdate=true}
      else{const moved=target.distanceTo(observed);
@@ -314,6 +333,31 @@ export default function ThreeEffects({trackingRef,activeJutsu,chargeLevel}:Props
     rasengan.shell.rotation.set(Math.sin(time*1.1)*.12,time*(.16+charge*.34),time*(.42+charge*.6));
     rasengan.shell.scale.setScalar(1+Math.sin(time*7.5)*.012+charge*.045);
     rasengan.root.scale.setScalar(scale*(.90+charge*.28+pulse*.45)*(chargePhase===2?1.025:1));rasengan.halo.scale.setScalar(.92+charge*.10+Math.sin(time*5.2)*.018);
+    // Three short animated filaments hug the orb near the tracked knuckles,
+    // visually tying the spherical chakra to the hand that is holding it.
+    if(handForEffects&&handForEffects.length>=21){
+      const knuckles=[5,9,17],rootScale=Math.max(0.001,rasengan.root.scale.x),shellRadius=28.8;
+      rasengan.palmStreams.forEach((stream,streamIndex)=>{
+        const tracked=screen(handForEffects[knuckles[streamIndex]],w,h,targetPoint);
+        let dx=(tracked.x-anchor.x)/rootScale,dy=(tracked.y-anchor.y)/rootScale;
+        const length=Math.hypot(dx,dy);
+        if(length<0.001){dx=0;dy=-1}
+        const safeLength=Math.max(0.001,length),ux=dx/safeLength,uy=dy/safeLength;
+        const startDistance=18.5,endDistance=clamp(Math.max(25,safeLength+2),25,32);
+        const attribute=stream.geometry.getAttribute('position');
+        const array=attribute.array as Float32Array;
+        for(let pointIndex=0;pointIndex<9;pointIndex++){
+          const t=pointIndex/8,dist=startDistance+(endDistance-startDistance)*t;
+          const lateral=Math.sin(t*Math.PI)*(Math.sin(time*5.8+streamIndex*1.7)*0.9+Math.sin(time*2.4+streamIndex)*0.45);
+          array[pointIndex*3]=ux*dist-uy*lateral;
+          array[pointIndex*3+1]=uy*dist+ux*lateral;
+          array[pointIndex*3+2]=Math.sqrt(Math.max(0,shellRadius*shellRadius-Math.min(shellRadius,dist)**2))+0.7+Math.sin(t*Math.PI)*0.6;
+        }
+        attribute.needsUpdate=true;
+        (stream.material as T.LineBasicMaterial).opacity=0.30+charge*0.28+Math.sin(time*7+streamIndex)*0.035;
+        stream.visible=true;
+      });
+    }else rasengan.palmStreams.forEach(stream=>{stream.visible=false});
     const haloMaterial=rasengan.halo.material as T.ShaderMaterial;
     if(chargePhase!==chargePhaseLast){
       const haloHex=chargePhase===0?0x167fff:chargePhase===1?0x22bdff:0x8ae9ff;

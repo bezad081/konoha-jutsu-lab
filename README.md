@@ -8,7 +8,7 @@ A focused React + TypeScript + Vite browser experience: use one open palm to sum
 - Live mirrored webcam preview with an optional hand-landmark overlay.
 - MediaPipe Hand Landmarker processes one hand in the browser, using a Web Worker with GPU/CPU fallback and a main-thread compatibility fallback.
 - Relaxed-palm detection allows slight finger curls and oblique palm angles while checking the hand-plane normal and MediaPipe handedness; the back of the hand and a truly edge-on ambiguous pose are rejected. Once formed, the orb has a longer grace period against tracking flicker.
-- Procedural Three.js/WebGL Rasengan: a compact spherical vortex with a deep-blue/white anime-style core, radial circular aura, tight rotating rings, six short volumetric chakra filaments, and restrained charge-reactive Bloom. The post-processing layer uses screen blending so the glow overlays the webcam without a black rectangle.
+- Procedural Three.js/WebGL Rasengan: a compact spherical vortex with a deep-blue/white anime-style core, radial circular aura, tight rotating rings, six short volumetric chakra filaments, three palm-attached energy wisps, and restrained charge-reactive Bloom. The post-processing layer uses screen blending so the glow overlays the webcam without a black rectangle.
 - Motion-aware positioning: the orb follows the palm with smoothed velocity prediction and adapts its follow rate to hand speed.
 - Adaptive rendering targets 60 FPS and drops to 45 FPS with a reduced pixel ratio when the post-processing workload is heavy.
 - Three.js effects load on demand; the main-thread MediaPipe compatibility path is dynamically imported only when the worker cannot run.
